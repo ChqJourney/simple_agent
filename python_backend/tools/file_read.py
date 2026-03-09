@@ -1,6 +1,11 @@
+import logging
 from pathlib import Path
 from typing import Any
 from .base import BaseTool, ToolResult
+
+logger = logging.getLogger(__name__)
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 class FileReadTool(BaseTool):
@@ -12,15 +17,23 @@ class FileReadTool(BaseTool):
             "path": {
                 "type": "string",
                 "description": "The absolute path to the file to read"
+            },
+            "encoding": {
+                "type": "string",
+                "description": "The encoding to use when reading the file (default: utf-8)",
+                "default": "utf-8"
             }
         },
         "required": ["path"]
     }
     require_confirmation: bool = False
 
-    async def execute(self, path: str, tool_call_id: str = "", **kwargs) -> ToolResult:
+    async def execute(self, path: str, tool_call_id: str = "", encoding: str = "utf-8", **kwargs) -> ToolResult:
         try:
-            file_path = Path(path)
+            file_path = Path(path).resolve()
+
+            if ".." in path:
+                logger.warning(f"Suspicious path traversal attempt detected: {path}")
 
             if not file_path.exists():
                 return ToolResult(
@@ -40,7 +53,26 @@ class FileReadTool(BaseTool):
                     error=f"Path is not a file: {path}"
                 )
 
-            content = file_path.read_text(encoding='utf-8')
+            file_size = file_path.stat().st_size
+            if file_size > MAX_FILE_SIZE:
+                return ToolResult(
+                    tool_call_id=tool_call_id,
+                    tool_name=self.name,
+                    success=False,
+                    output=None,
+                    error=f"File too large: {file_size} bytes (max: {MAX_FILE_SIZE} bytes)"
+                )
+
+            try:
+                content = file_path.read_text(encoding=encoding)
+            except UnicodeDecodeError as e:
+                return ToolResult(
+                    tool_call_id=tool_call_id,
+                    tool_name=self.name,
+                    success=False,
+                    output=None,
+                    error=f"Failed to decode file with encoding '{encoding}': {str(e)}"
+                )
 
             return ToolResult(
                 tool_call_id=tool_call_id,

@@ -22,16 +22,12 @@ class Agent:
         self.user_manager = user_manager
         self.max_tool_rounds = 10
         self.max_retries = 3
-        self.interrupted = False
         self._interrupt_event = asyncio.Event()
-        self._running_task: Optional[asyncio.Task] = None
 
     def interrupt(self) -> None:
-        self.interrupted = True
         self._interrupt_event.set()
 
     def reset_interrupt(self) -> None:
-        self.interrupted = False
         self._interrupt_event.clear()
 
     async def run(self, user_message: str, session: Session) -> None:
@@ -45,7 +41,7 @@ class Agent:
 
         try:
             for round_num in range(self.max_tool_rounds):
-                if self.interrupted:
+                if self._interrupt_event.is_set():
                     await self.user_manager.send_to_frontend({
                         "type": "interrupted",
                         "session_id": session.session_id
@@ -102,7 +98,7 @@ class Agent:
         last_error: Optional[Exception] = None
 
         for attempt in range(self.max_retries):
-            if self.interrupted:
+            if self._interrupt_event.is_set():
                 return None
 
             try:
@@ -139,7 +135,7 @@ class Agent:
         finish_reason: Optional[str] = None
 
         async for chunk in self.llm.stream(messages, tools):
-            if self.interrupted:
+            if self._interrupt_event.is_set():
                 return Message(role="assistant", content="")
 
             if not chunk.choices:
@@ -207,12 +203,16 @@ class Agent:
                     }
                 })
 
+                try:
+                    args = json.loads(tc["function"]["arguments"]) if tc["function"]["arguments"] else {}
+                except json.JSONDecodeError:
+                    args = {}
                 await self.user_manager.send_to_frontend({
                     "type": "tool_call",
                     "session_id": session.session_id,
                     "tool_call_id": tc["id"],
                     "name": tc["function"]["name"],
-                    "arguments": json.loads(tc["function"]["arguments"]) if tc["function"]["arguments"] else {}
+                    "arguments": args
                 })
 
         return Message(
@@ -228,9 +228,10 @@ class Agent:
         session: Session
     ) -> List[ToolResult]:
         tasks: List[asyncio.Task[ToolResult]] = []
+        tool_results: List[ToolResult] = []
 
         for tool_call in tool_calls:
-            if self.interrupted:
+            if self._interrupt_event.is_set():
                 break
 
             tool_call_id = tool_call["id"]
@@ -241,47 +242,46 @@ class Agent:
                 arguments = json.loads(arguments_str) if arguments_str else {}
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse tool arguments: {e}")
-                return [ToolResult(
+                tool_results.append(ToolResult(
                     tool_call_id=tool_call_id,
                     tool_name=function_name,
                     success=False,
                     output=None,
                     error=f"Invalid JSON in arguments: {e}"
-                )]
+                ))
+                continue
 
             tool = self.tool_registry.get_tool(function_name)
             if not tool:
                 logger.error(f"Unknown tool: {function_name}")
-                return [ToolResult(
+                tool_results.append(ToolResult(
                     tool_call_id=tool_call_id,
                     tool_name=function_name,
                     success=False,
                     output=None,
                     error=f"Unknown tool: {function_name}"
-                )]
+                ))
+                continue
 
             tasks.append(asyncio.create_task(
                 self._execute_single_tool(tool_call_id, tool, arguments, session)
             ))
 
-        if not tasks:
-            return []
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        tool_results: List[ToolResult] = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                tc = tool_calls[i]
-                tool_results.append(ToolResult(
-                    tool_call_id=tc["id"],
-                    tool_name=tc["function"]["name"],
-                    success=False,
-                    output=None,
-                    error=str(result)
-                ))
-            elif isinstance(result, ToolResult):
-                tool_results.append(result)
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    tc = tool_calls[i]
+                    tool_results.append(ToolResult(
+                        tool_call_id=tc["id"],
+                        tool_name=tc["function"]["name"],
+                        success=False,
+                        output=None,
+                        error=str(result)
+                    ))
+                elif isinstance(result, ToolResult):
+                    tool_results.append(result)
 
         return tool_results
 

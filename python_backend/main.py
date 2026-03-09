@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Set
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +16,8 @@ from tools.base import ToolRegistry
 from tools.file_read import FileReadTool
 from tools.file_write import FileWriteTool
 
+SendCallback = Callable[[Dict[str, Any]], Any]
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -26,7 +28,7 @@ app = FastAPI(title="AI Agent Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:1420", "http://127.0.0.1:1420"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,10 +39,12 @@ tool_registry.register(FileReadTool())
 tool_registry.register(FileWriteTool())
 
 user_manager = UserManager()
+state_lock = asyncio.Lock()
 active_agents: Dict[str, Agent] = {}
 current_llm: Optional[BaseLLM] = None
 current_config: Optional[Dict[str, Any]] = None
 current_workspace: str = str(Path.cwd())
+pending_tasks: Set[asyncio.Task] = set()
 
 
 def create_llm(config: Dict[str, Any]) -> BaseLLM:
@@ -56,27 +60,24 @@ def create_llm(config: Dict[str, Any]) -> BaseLLM:
         raise ValueError(f"Unknown provider: {provider}")
 
 
-def get_or_create_agent(session_id: str) -> Optional[Agent]:
-    global current_llm
-    
-    if not current_llm:
-        return None
-    
-    if session_id not in active_agents:
-        agent = Agent(
-            llm=current_llm,
-            tool_registry=tool_registry,
-            user_manager=user_manager
-        )
-        active_agents[session_id] = agent
-    
-    return active_agents.get(session_id)
+async def get_or_create_agent(session_id: str) -> Optional[Agent]:
+    async with state_lock:
+        if not current_llm:
+            return None
+        
+        if session_id not in active_agents:
+            agent = Agent(
+                llm=current_llm,
+                tool_registry=tool_registry,
+                user_manager=user_manager
+            )
+            active_agents[session_id] = agent
+        
+        return active_agents.get(session_id)
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    global current_llm, current_config, current_workspace
-    
     await websocket.accept()
     logger.info("WebSocket client connected")
     
@@ -111,7 +112,7 @@ async def websocket_endpoint(websocket: WebSocket):
 async def handle_message(
     websocket: WebSocket,
     data: Dict[str, Any],
-    send_callback: Any
+    send_callback: SendCallback
 ) -> None:
     message_type = data.get("type")
     
@@ -132,11 +133,9 @@ async def handle_message(
         })
 
 
-async def handle_config(data: Dict[str, Any], send_callback: Any) -> None:
-    global current_llm, current_config
-    
+async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> None:
     try:
-        current_config = {
+        config = {
             "provider": data.get("provider", "openai"),
             "model": data.get("model", "gpt-4"),
             "api_key": data.get("api_key"),
@@ -144,9 +143,13 @@ async def handle_config(data: Dict[str, Any], send_callback: Any) -> None:
             "enable_reasoning": data.get("enable_reasoning", False)
         }
         
-        current_llm = create_llm(current_config)
+        new_llm = create_llm(config)
         
-        active_agents.clear()
+        async with state_lock:
+            global current_llm, current_config
+            current_config = config
+            current_llm = new_llm
+            active_agents.clear()
         
         await send_callback({
             "type": "config_updated",
@@ -164,9 +167,7 @@ async def handle_config(data: Dict[str, Any], send_callback: Any) -> None:
         })
 
 
-async def handle_user_message(data: Dict[str, Any], send_callback: Any) -> None:
-    global current_llm, current_workspace
-    
+async def handle_user_message(data: Dict[str, Any], send_callback: SendCallback) -> None:
     session_id = data.get("session_id")
     content = data.get("content")
     
@@ -184,7 +185,11 @@ async def handle_user_message(data: Dict[str, Any], send_callback: Any) -> None:
         })
         return
     
-    if not current_llm:
+    async with state_lock:
+        llm = current_llm
+        workspace = current_workspace
+    
+    if not llm:
         await send_callback({
             "type": "error",
             "session_id": session_id,
@@ -195,9 +200,9 @@ async def handle_user_message(data: Dict[str, Any], send_callback: Any) -> None:
     try:
         session = user_manager.get_session(session_id)
         if not session:
-            session = await user_manager.create_session(current_workspace, session_id)
+            session = await user_manager.create_session(workspace, session_id)
         
-        agent = get_or_create_agent(session_id)
+        agent = await get_or_create_agent(session_id)
         if not agent:
             await send_callback({
                 "type": "error",
@@ -208,7 +213,9 @@ async def handle_user_message(data: Dict[str, Any], send_callback: Any) -> None:
         
         agent.reset_interrupt()
         
-        asyncio.create_task(run_agent_task(agent, content, session))
+        task = asyncio.create_task(run_agent_task(agent, content, session))
+        pending_tasks.add(task)
+        task.add_done_callback(pending_tasks.discard)
         
     except Exception as e:
         logger.exception(f"Failed to handle user message: {e}")
@@ -245,15 +252,15 @@ async def handle_interrupt(data: Dict[str, Any]) -> None:
         logger.warning("Interrupt received without session_id")
         return
     
-    agent = active_agents.get(session_id)
+    async with state_lock:
+        agent = active_agents.get(session_id)
+    
     if agent:
         agent.interrupt()
         logger.info(f"Agent interrupted for session: {session_id}")
 
 
-async def handle_set_workspace(data: Dict[str, Any], send_callback: Any) -> None:
-    global current_workspace
-    
+async def handle_set_workspace(data: Dict[str, Any], send_callback: SendCallback) -> None:
     workspace_path = data.get("workspace_path")
     
     if not workspace_path:
@@ -278,23 +285,29 @@ async def handle_set_workspace(data: Dict[str, Any], send_callback: Any) -> None
         })
         return
     
-    current_workspace = str(workspace.resolve())
+    resolved_workspace = str(workspace.resolve())
+    
+    async with state_lock:
+        global current_workspace
+        current_workspace = resolved_workspace
     
     await send_callback({
         "type": "workspace_updated",
-        "workspace_path": current_workspace
+        "workspace_path": resolved_workspace
     })
     
-    logger.info(f"Workspace updated: {current_workspace}")
+    logger.info(f"Workspace updated: {resolved_workspace}")
 
 
 @app.get("/")
 async def root():
+    async with state_lock:
+        config = current_config
     return {
         "message": "AI Agent Backend",
         "status": "running",
-        "provider": current_config.get("provider") if current_config else None,
-        "model": current_config.get("model") if current_config else None
+        "provider": config.get("provider") if config else None,
+        "model": config.get("model") if config else None
     }
 
 

@@ -38,9 +38,7 @@ class FileWriteTool(BaseTool):
             )
 
         try:
-            file_path = Path(path).resolve()
-
-            if not file_path.is_absolute():
+            if not Path(path).is_absolute():
                 return ToolResult(
                     tool_call_id=tool_call_id,
                     tool_name=self.name,
@@ -48,6 +46,8 @@ class FileWriteTool(BaseTool):
                     output=None,
                     error=f"Path must be absolute: {path}"
                 )
+
+            file_path = Path(path).resolve()
 
             content_size = len(content.encode('utf-8'))
             if content_size > MAX_FILE_SIZE:

@@ -115,6 +115,9 @@ class UserManager:
         self.ws_callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
         self._lock = asyncio.Lock()
 
+    def set_ws_callback(self, callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]]) -> None:
+        self.ws_callback = callback
+
     async def create_session(self, workspace_path: str, session_id: Optional[str] = None) -> Session:
         if session_id is None:
             session_id = str(uuid.uuid4())
@@ -136,9 +139,6 @@ class UserManager:
                 del self.sessions[session_id]
                 return True
             return False
-
-    def set_ws_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]) -> None:
-        self.ws_callback = callback
 
     async def send_to_frontend(self, message: Dict[str, Any]) -> None:
         if self.ws_callback:

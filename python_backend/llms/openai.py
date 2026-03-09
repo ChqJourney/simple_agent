@@ -1,7 +1,6 @@
 from typing import AsyncIterator, Dict, Any, List, Optional
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
-from openai import APIError, APIConnectionError, RateLimitError, AuthenticationError
 from .base import BaseLLM
 
 __all__ = ["OpenAILLM"]
@@ -32,29 +31,18 @@ class OpenAILLM(BaseLLM):
 
         Yields:
             ChatCompletionChunk objects from the streaming response.
-
-        Raises:
-            APIError: If the API request fails.
-            APIConnectionError: If connection to the API fails.
-            RateLimitError: If rate limit is exceeded.
-            AuthenticationError: If authentication fails.
         """
         tool_schemas = self._build_tool_schemas(tools) if tools else None
 
-        try:
-            stream = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,  # type: ignore[arg-type]
-                tools=tool_schemas,  # type: ignore[arg-type]
-                stream=True
-            )
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,  # type: ignore[arg-type]
+            tools=tool_schemas,  # type: ignore[arg-type]
+            stream=True
+        )
 
-            async for chunk in stream:
-                yield chunk
-        except (APIConnectionError, RateLimitError, AuthenticationError):
-            raise
-        except APIError:
-            raise
+        async for chunk in stream:
+            yield chunk
 
     async def complete(  # type: ignore[override]
         self, messages: List[Dict], tools: Optional[List[Dict]] = None
@@ -67,25 +55,14 @@ class OpenAILLM(BaseLLM):
 
         Returns:
             ChatCompletion object containing the full response.
-
-        Raises:
-            APIError: If the API request fails.
-            APIConnectionError: If connection to the API fails.
-            RateLimitError: If rate limit is exceeded.
-            AuthenticationError: If authentication fails.
         """
         tool_schemas = self._build_tool_schemas(tools) if tools else None
 
-        try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,  # type: ignore[arg-type]
-                tools=tool_schemas,  # type: ignore[arg-type]
-                stream=False
-            )
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,  # type: ignore[arg-type]
+            tools=tool_schemas,  # type: ignore[arg-type]
+            stream=False
+        )
 
-            return response
-        except (APIConnectionError, RateLimitError, AuthenticationError):
-            raise
-        except APIError:
-            raise
+        return response

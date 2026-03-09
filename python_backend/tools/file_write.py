@@ -5,6 +5,8 @@ from .base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
+MAX_FILE_SIZE = 10 * 1024 * 1024
+
 
 class FileWriteTool(BaseTool):
     name: str = "file_write"
@@ -32,13 +34,35 @@ class FileWriteTool(BaseTool):
                 tool_name=self.name,
                 success=False,
                 output=None,
-                error="Path traversal not allowed: paths with '..' are not permitted"
+                error="Path traversal not allowed"
             )
 
         try:
             file_path = Path(path).resolve()
 
+            if not file_path.is_absolute():
+                return ToolResult(
+                    tool_call_id=tool_call_id,
+                    tool_name=self.name,
+                    success=False,
+                    output=None,
+                    error=f"Path must be absolute: {path}"
+                )
+
+            content_size = len(content.encode('utf-8'))
+            if content_size > MAX_FILE_SIZE:
+                return ToolResult(
+                    tool_call_id=tool_call_id,
+                    tool_name=self.name,
+                    success=False,
+                    output=None,
+                    error=f"Content too large: {content_size} bytes (max: {MAX_FILE_SIZE} bytes)"
+                )
+
             file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if content and not content.endswith('\n'):
+                content = content + '\n'
 
             file_path.write_text(content, encoding='utf-8')
 

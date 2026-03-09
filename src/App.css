@@ -1,0 +1,301 @@
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #1a1a1a;
+  background-color: #ffffff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.app-container {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Sidebar Styles */
+.sidebar {
+  transition: width 0.2s ease;
+}
+
+.sidebar-collapsed {
+  transition: width 0.2s ease;
+}
+
+/* Chat Container Styles */
+.chat-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.connection-status {
+  font-size: 12px;
+}
+
+/* Message List Styles */
+.message-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.message-item {
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  max-width: 85%;
+}
+
+.message-item.user {
+  background-color: #e3f2fd;
+  margin-left: auto;
+}
+
+.message-item.assistant {
+  background-color: #f5f5f5;
+}
+
+.message-item.tool {
+  background-color: #fff3e0;
+  font-size: 13px;
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.message-role {
+  font-weight: 600;
+  font-size: 12px;
+  color: #666;
+}
+
+.message-usage {
+  font-size: 11px;
+  color: #999;
+}
+
+.message-content {
+  line-height: 1.6;
+}
+
+.message-content p {
+  margin-bottom: 8px;
+}
+
+.message-content pre {
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.message-content code {
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+}
+
+.message-content code:not(pre code) {
+  background-color: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #c7254e;
+}
+
+/* Streaming Message */
+.streaming-message {
+  min-height: 20px;
+}
+
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background-color: #333;
+  animation: blink 1s infinite;
+  vertical-align: text-bottom;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Message Input */
+.message-input-container {
+  background-color: #fff;
+}
+
+.message-input-container textarea {
+  font-family: inherit;
+  font-size: 14px;
+  resize: none;
+  max-height: 200px;
+}
+
+/* Reasoning Block */
+.reasoning-block {
+  padding: 8px 12px;
+  background-color: #fafafa;
+  border-left: 3px solid #9e9e9e;
+  margin: 8px 0;
+}
+
+/* Tool Call Display */
+.tool-call-display {
+  background-color: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0;
+}
+
+.tool-call-display pre {
+  background-color: #f5f5f5;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+/* Tool Confirmation */
+.tool-confirmation {
+  background-color: #fff8e1;
+  border-top: 1px solid #ffcc80;
+}
+
+/* Modal Styles */
+.settings-modal,
+.tool-confirm-modal {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.settings-modal > div,
+.tool-confirm-modal > div {
+  background-color: white;
+  border-radius: 12px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Empty State */
+.empty-state {
+  color: #999;
+}
+
+/* Animations */
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+
+/* Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #e4e4e7;
+    background-color: #18181b;
+  }
+
+  .message-item.user {
+    background-color: #1e3a5f;
+    color: #e4e4e7;
+  }
+
+  .message-item.assistant {
+    background-color: #27272a;
+    color: #e4e4e7;
+  }
+
+  .message-item.tool {
+    background-color: #3d2914;
+    color: #e4e4e7;
+  }
+
+  .message-content pre {
+    background-color: #0d0d0d;
+    color: #d4d4d4;
+  }
+
+  .message-content code:not(pre code) {
+    background-color: #3f3f46;
+    color: #fca5a5;
+  }
+
+  .sidebar {
+    background-color: #1f1f23;
+    border-color: #3f3f46;
+  }
+
+  .reasoning-block {
+    background-color: #27272a;
+    border-left-color: #52525b;
+  }
+
+  .tool-call-display {
+    background-color: #27272a;
+    border-color: #3f3f46;
+  }
+
+  .tool-call-display pre {
+    background-color: #18181b;
+  }
+
+  .tool-confirmation {
+    background-color: #422006;
+    border-top-color: #92400e;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #27272a;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #3f3f46;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #52525b;
+  }
+}

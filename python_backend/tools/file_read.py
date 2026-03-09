@@ -30,10 +30,16 @@ class FileReadTool(BaseTool):
 
     async def execute(self, path: str, tool_call_id: str = "", encoding: str = "utf-8", **kwargs) -> ToolResult:
         try:
-            file_path = Path(path).resolve()
-
             if ".." in path:
-                logger.warning(f"Suspicious path traversal attempt detected: {path}")
+                return ToolResult(
+                    tool_call_id=tool_call_id,
+                    tool_name=self.name,
+                    success=False,
+                    output=None,
+                    error="Path traversal not allowed"
+                )
+
+            file_path = Path(path).resolve()
 
             if not file_path.exists():
                 return ToolResult(

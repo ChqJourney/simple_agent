@@ -1,9 +1,8 @@
 import asyncio
 import json
 import logging
-import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -19,7 +18,7 @@ class Message(BaseModel):
     tool_call_id: Optional[str] = None
     name: Optional[str] = None
     reasoning_content: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Session:
@@ -27,37 +26,36 @@ class Session:
         self.session_id = session_id
         self.workspace_path = workspace_path
         self.messages: List[Message] = []
-        self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
+        self.created_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
         self.file_path = self._get_file_path()
         self._ensure_directory()
         self.load_history()
 
-    def _get_file_path(self) -> str:
-        return os.path.join(self.workspace_path, ".agent", "sessions", f"{self.session_id}.jsonl")
+    def _get_file_path(self) -> Path:
+        return Path(self.workspace_path) / ".agent" / "sessions" / f"{self.session_id}.jsonl"
 
     def _ensure_directory(self) -> None:
-        directory = os.path.dirname(self.file_path)
-        os.makedirs(directory, exist_ok=True)
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
     def add_message(self, message: Message) -> None:
         self.messages.append(message)
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
         self._append_to_file(message)
 
     def _append_to_file(self, message: Message) -> None:
         try:
-            with open(self.file_path, "a", encoding="utf-8") as f:
+            with self.file_path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(message.model_dump(), default=str) + "\n")
         except Exception as e:
             logger.error(f"Failed to append message to file: {e}")
 
     def load_history(self) -> None:
-        if not os.path.exists(self.file_path):
+        if not self.file_path.exists():
             return
 
         try:
-            with open(self.file_path, "r", encoding="utf-8") as f:
+            with self.file_path.open("r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -99,40 +97,45 @@ class Session:
 
     def clear(self) -> None:
         self.messages = []
-        self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
-        if os.path.exists(self.file_path):
+        self.created_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
+        if self.file_path.exists():
             try:
-                os.remove(self.file_path)
+                self.file_path.unlink()
             except Exception as e:
                 logger.error(f"Failed to remove session file: {e}")
 
 
 class UserManager:
+    DEFAULT_CONFIRMATION_TIMEOUT = 300
+
     def __init__(self):
         self.sessions: Dict[str, Session] = {}
         self.tool_confirmations: Dict[str, asyncio.Future[bool]] = {}
         self.ws_callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
+        self._lock = asyncio.Lock()
 
-    def create_session(self, workspace_path: str, session_id: Optional[str] = None) -> Session:
+    async def create_session(self, workspace_path: str, session_id: Optional[str] = None) -> Session:
         if session_id is None:
             session_id = str(uuid.uuid4())
 
-        if session_id in self.sessions:
-            return self.sessions[session_id]
+        async with self._lock:
+            if session_id in self.sessions:
+                return self.sessions[session_id]
 
-        session = Session(session_id, workspace_path)
-        self.sessions[session_id] = session
-        return session
+            session = Session(session_id, workspace_path)
+            self.sessions[session_id] = session
+            return session
 
     def get_session(self, session_id: str) -> Optional[Session]:
         return self.sessions.get(session_id)
 
-    def remove_session(self, session_id: str) -> bool:
-        if session_id in self.sessions:
-            del self.sessions[session_id]
-            return True
-        return False
+    async def remove_session(self, session_id: str) -> bool:
+        async with self._lock:
+            if session_id in self.sessions:
+                del self.sessions[session_id]
+                return True
+            return False
 
     def set_ws_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]) -> None:
         self.ws_callback = callback
@@ -151,12 +154,13 @@ class UserManager:
         tool_name: str,
         arguments: Dict[str, Any]
     ) -> bool:
-        if tool_call_id in self.tool_confirmations:
-            logger.warning(f"Tool confirmation already pending for {tool_call_id}")
-            return False
+        async with self._lock:
+            if tool_call_id in self.tool_confirmations:
+                logger.warning(f"Tool confirmation already pending for {tool_call_id}")
+                return False
 
-        future: asyncio.Future[bool] = asyncio.Future()
-        self.tool_confirmations[tool_call_id] = future
+            future: asyncio.Future[bool] = asyncio.Future()
+            self.tool_confirmations[tool_call_id] = future
 
         await self.send_to_frontend({
             "type": "tool_confirm_request",
@@ -167,41 +171,45 @@ class UserManager:
         })
 
         try:
-            result = await asyncio.wait_for(future, timeout=300.0)
+            result = await asyncio.wait_for(future, timeout=self.DEFAULT_CONFIRMATION_TIMEOUT)
             return result
         except asyncio.TimeoutError:
             logger.warning(f"Tool confirmation timeout for {tool_call_id}")
-            del self.tool_confirmations[tool_call_id]
+            async with self._lock:
+                self.tool_confirmations.pop(tool_call_id, None)
             return False
         except Exception as e:
             logger.error(f"Error waiting for tool confirmation: {e}")
-            if tool_call_id in self.tool_confirmations:
-                del self.tool_confirmations[tool_call_id]
+            async with self._lock:
+                self.tool_confirmations.pop(tool_call_id, None)
             return False
 
-    def handle_tool_confirmation(self, tool_call_id: str, approved: bool) -> bool:
-        if tool_call_id not in self.tool_confirmations:
-            logger.warning(f"No pending confirmation for {tool_call_id}")
+    async def handle_tool_confirmation(self, tool_call_id: str, approved: bool) -> bool:
+        async with self._lock:
+            if tool_call_id not in self.tool_confirmations:
+                logger.warning(f"No pending confirmation for {tool_call_id}")
+                return False
+
+            future = self.tool_confirmations.pop(tool_call_id)
+            if not future.done():
+                future.set_result(approved)
+                return True
             return False
 
-        future = self.tool_confirmations.pop(tool_call_id)
-        if not future.done():
-            future.set_result(approved)
-            return True
-        return False
+    async def cancel_tool_confirmation(self, tool_call_id: str) -> bool:
+        async with self._lock:
+            if tool_call_id not in self.tool_confirmations:
+                return False
 
-    def cancel_tool_confirmation(self, tool_call_id: str) -> bool:
-        if tool_call_id not in self.tool_confirmations:
-            return False
-
-        future = self.tool_confirmations.pop(tool_call_id)
-        if not future.done():
-            future.cancel()
-            return True
-        return False
-
-    def clear_all_confirmations(self) -> None:
-        for tool_call_id, future in list(self.tool_confirmations.items()):
+            future = self.tool_confirmations.pop(tool_call_id)
             if not future.done():
                 future.cancel()
-        self.tool_confirmations.clear()
+                return True
+            return False
+
+    async def clear_all_confirmations(self) -> None:
+        async with self._lock:
+            for tool_call_id, future in list(self.tool_confirmations.items()):
+                if not future.done():
+                    future.cancel()
+            self.tool_confirmations.clear()

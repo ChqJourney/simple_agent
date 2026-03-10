@@ -24,9 +24,9 @@ export const MessageList: React.FC<MessageListProps> = ({
   }, [messages, currentStreamingContent, currentReasoningContent]);
 
   return (
-    <div ref={listRef} className="message-list flex-1 overflow-y-auto p-4">
+    <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-4">
       {messages.length === 0 && !isStreaming && (
-        <div className="empty-state text-center text-gray-500 py-8">
+        <div className="text-center text-gray-500 dark:text-gray-400 py-8">
           <p>Start a conversation</p>
         </div>
       )}

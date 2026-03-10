@@ -4,7 +4,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { useSession } from '../../hooks/useSession';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
-import '../../App.css';
+
 export const ChatContainer: React.FC = () => {
   const { currentSessionId, createSession } = useSession();
   const { sendMessage, isConnected } = useWebSocket();
@@ -41,12 +41,12 @@ export const ChatContainer: React.FC = () => {
   }, [pendingToolCall]);
 
   return (
-    <div className="chat-container flex flex-col h-full">
-      <div className="connection-status p-2 text-sm text-center">
+    <div className="flex flex-col h-full">
+      <div className="p-2 text-sm text-center">
         {isConnected ? (
-          <span className="text-green-500">Connected</span>
+          <span className="text-green-600 dark:text-green-400">Connected</span>
         ) : (
-          <span className="text-red-500">Disconnected</span>
+          <span className="text-red-600 dark:text-red-400">Disconnected</span>
         )}
       </div>
       
@@ -58,23 +58,23 @@ export const ChatContainer: React.FC = () => {
       />
       
       {pendingToolCall && (
-        <div className="tool-confirmation p-4 bg-yellow-50 border-t border-yellow-200">
-          <p className="mb-2">
+        <div className="p-4 bg-yellow-50 dark:bg-yellow-950 border-t border-yellow-200 dark:border-yellow-800">
+          <p className="mb-2 text-yellow-900 dark:text-yellow-100">
             Tool call: <strong>{pendingToolCall.name}</strong>
           </p>
-          <pre className="text-xs bg-gray-100 p-2 rounded mb-2 overflow-auto">
+          <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded mb-2 overflow-auto text-gray-900 dark:text-gray-100">
             {JSON.stringify(pendingToolCall.args, null, 2)}
           </pre>
           <div className="flex gap-2">
             <button
               onClick={() => handleConfirmTool(true)}
-              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
             >
               Approve
             </button>
             <button
               onClick={() => handleConfirmTool(false)}
-              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
             >
               Reject
             </button>

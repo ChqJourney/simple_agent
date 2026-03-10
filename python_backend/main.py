@@ -94,12 +94,17 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 data = await websocket.receive_json()
                 await handle_message(websocket, data, send_callback)
+            except WebSocketDisconnect:
+                raise
             except Exception as e:
                 logger.exception(f"Error processing message: {e}")
-                await websocket.send_json({
-                    "type": "error",
-                    "error": str(e)
-                })
+                try:
+                    await websocket.send_json({
+                        "type": "error",
+                        "error": str(e)
+                    })
+                except Exception:
+                    pass
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")
     except Exception as e:

@@ -88,7 +88,12 @@ export interface ClientInterrupt {
   session_id: string;
 }
 
-export type ClientWebSocketMessage = ClientMessage | ClientConfig | ClientToolConfirm | ClientInterrupt;
+export interface ClientSetWorkspace {
+  type: 'set_workspace';
+  workspace_path: string;
+}
+
+export type ClientWebSocketMessage = ClientMessage | ClientConfig | ClientToolConfirm | ClientInterrupt | ClientSetWorkspace;
 
 export interface ServerToken {
   type: 'token';
@@ -162,6 +167,17 @@ export interface ServerInterrupted {
   session_id: string;
 }
 
+export interface ServerConfigUpdated {
+  type: 'config_updated';
+  provider: string;
+  model: string;
+}
+
+export interface ServerWorkspaceUpdated {
+  type: 'workspace_updated';
+  workspace_path: string;
+}
+
 export type ServerWebSocketMessage =
   | ServerToken
   | ServerReasoningToken
@@ -173,6 +189,8 @@ export type ServerWebSocketMessage =
   | ServerError
   | ServerCompleted
   | ServerStarted
-  | ServerInterrupted;
+  | ServerInterrupted
+  | ServerConfigUpdated
+  | ServerWorkspaceUpdated;
 
 export type WebSocketMessage = ClientWebSocketMessage | ServerWebSocketMessage;

@@ -1,25 +1,40 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../../stores/chatStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useSession } from '../../hooks/useSession';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 
-export const ChatContainer: React.FC = () => {
+const emptySession = {
+  messages: [] as never[],
+  streamingContent: '',
+  reasoningContent: '',
+  isStreaming: false,
+};
+
+export const ChatContainer = () => {
   const { currentSessionId, createSession } = useSession();
-  const { sendMessage, isConnected } = useWebSocket();
-  const { sessions } = useChatStore();
+  const { sendMessage, isConnected, confirmTool } = useWebSocket();
+  
+  const { messages, streamingContent, reasoningContent, isStreaming } = useChatStore(
+    useShallow((state) => {
+      if (!currentSessionId) return emptySession;
+      const session = state.sessions[currentSessionId];
+      return session ? {
+        messages: session.messages,
+        streamingContent: session.currentStreamingContent,
+        reasoningContent: session.currentReasoningContent,
+        isStreaming: session.isStreaming,
+      } : emptySession;
+    })
+  );
+  
   const [pendingToolCall, setPendingToolCall] = useState<{
     toolCallId: string;
     name: string;
     args: Record<string, unknown>;
   } | null>(null);
-
-  const currentSession = currentSessionId ? sessions[currentSessionId] : null;
-  const messages = currentSession?.messages || [];
-  const streamingContent = currentSession?.currentStreamingContent || '';
-  const reasoningContent = currentSession?.currentReasoningContent || '';
-  const isStreaming = currentSession?.isStreaming || false;
 
   const handleSend = useCallback((content: string) => {
     let sessionId = currentSessionId;
@@ -34,11 +49,10 @@ export const ChatContainer: React.FC = () => {
 
   const handleConfirmTool = useCallback((approved: boolean) => {
     if (pendingToolCall) {
-      const { confirmTool } = useWebSocket();
       confirmTool(pendingToolCall.toolCallId, approved);
       setPendingToolCall(null);
     }
-  }, [pendingToolCall]);
+  }, [pendingToolCall, confirmTool]);
 
   return (
     <div className="flex flex-col h-full">

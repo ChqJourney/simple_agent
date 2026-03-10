@@ -1,16 +1,18 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { WelcomePage, WorkspacePage, SettingsPage } from './pages';
+import { WebSocketProvider } from './contexts/WebSocketContext';
 import "./index.css";
 
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<WelcomePage />} />
-        <Route path="/workspace/:workspaceId" element={<WorkspacePage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <WebSocketProvider>
+        <Routes>
+          <Route path="/" element={<WelcomePage />} />
+          <Route path="/workspace/:workspaceId" element={<WorkspacePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Routes>
+      </WebSocketProvider>
     </BrowserRouter>
   );
 }

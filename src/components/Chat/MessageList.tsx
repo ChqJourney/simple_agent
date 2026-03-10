@@ -1,4 +1,4 @@
-import React from 'react';
+import { memo, useRef, useEffect } from 'react';
 import { Message } from '../../types';
 import { MessageItem } from './MessageItem';
 
@@ -9,15 +9,15 @@ interface MessageListProps {
   isStreaming?: boolean;
 }
 
-export const MessageList: React.FC<MessageListProps> = ({
+export const MessageList = memo<MessageListProps>(({
   messages,
   currentStreamingContent = '',
   currentReasoningContent = '',
   isStreaming = false,
 }) => {
-  const listRef = React.useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
@@ -52,4 +52,6 @@ export const MessageList: React.FC<MessageListProps> = ({
       )}
     </div>
   );
-};
+});
+
+MessageList.displayName = 'MessageList';

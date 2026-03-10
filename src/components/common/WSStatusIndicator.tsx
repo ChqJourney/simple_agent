@@ -1,5 +1,5 @@
 import React from 'react';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocket } from '../../contexts/WebSocketContext';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 

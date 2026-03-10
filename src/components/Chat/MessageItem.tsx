@@ -1,4 +1,4 @@
-import React from 'react';
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Message } from '../../types';
 import { StreamingMessage } from './StreamingMessage';
@@ -12,7 +12,7 @@ interface MessageItemProps {
   streamingContent?: string;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({ 
+export const MessageItem = memo<MessageItemProps>(({ 
   message, 
   isStreaming = false,
   streamingContent = '',
@@ -64,4 +64,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       </div>
     </div>
   );
-};
+});
+
+MessageItem.displayName = 'MessageItem';

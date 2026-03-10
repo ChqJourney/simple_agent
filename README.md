@@ -153,3 +153,43 @@ tauri_agent/
    - 大圆角 (16px): `rounded-2xl` - 模态框
 3. **间距**: 遵循 Tailwind 默认间距（4px 基准）
 4. **暗色模式**: 始终添加 `dark:` 变体
+
+## 常见问题
+
+### Vite HMR 与 WebSocket 冲突导致页面刷新
+
+**症状**: 开发模式下，每次发送或接收消息都会导致页面完全刷新（白屏重新加载）。
+
+**原因**: Vite HMR 的 WebSocket 配置与应用层的 WebSocket 连接产生冲突。错误的手动 HMR 配置会导致 Vite 频繁触发完整页面刷新作为回退机制。
+
+**解决方案**: 在 `vite.config.ts` 中，当没有外部 `TAURI_DEV_HOST` 时，让 Vite 使用默认的 HMR 配置：
+
+```typescript
+server: {
+  hmr: host
+    ? { protocol: "ws", host, port: 1421 }
+    : false,  // 关键：让 Vite 使用默认配置，避免冲突
+}
+```
+
+**参考**: Vite HMR 和应用 WebSocket 是两个独立的连接，但错误的手动 HMR 配置会导致 Vite 在连接不稳定时触发完整页面刷新。
+
+## 常见问题
+
+### Vite HMR 与 WebSocket 冲突导致页面刷新
+
+**症状**: 开发模式下，每次发送或接收消息都会导致页面完全刷新（白屏重新加载）。
+
+**原因**: Vite HMR 的 WebSocket 配置与应用层的 WebSocket 连接产生冲突。错误的手动 HMR 配置会导致 Vite 频繁触发完整页面刷新作为回退机制。
+
+**解决方案**: 在 `vite.config.ts` 中，当没有外部 `TAURI_DEV_HOST` 时，让 Vite 使用默认的 HMR 配置：
+
+```typescript
+server: {
+  hmr: host
+    ? { protocol: "ws", host, port: 1421 }
+    : false,  // 关键：让 Vite 使用默认配置，避免冲突
+}
+```
+
+**参考**: Vite HMR 和应用 WebSocket 是两个独立的连接，但错误的手动 HMR 配置会导致 Vite 在连接不稳定时触发完整页面刷新。

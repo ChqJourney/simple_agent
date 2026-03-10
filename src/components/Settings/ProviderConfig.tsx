@@ -23,16 +23,16 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
     onChange({ ...config, [key]: value });
   };
 
-  return (
-    <div className="provider-config space-y-4">
+return (
+    <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Provider
         </label>
         <select
           value={config.provider || ''}
           onChange={(e) => handleChange('provider', e.target.value as ProviderType)}
-          className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
         >
           <option value="">Select a provider</option>
           {PROVIDERS.map((p) => (
@@ -46,13 +46,13 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
       {config.provider && (
         <>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Model
             </label>
             <select
               value={config.model || ''}
               onChange={(e) => handleChange('model', e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             >
               <option value="">Select a model</option>
               {MODELS[config.provider].map((m) => (
@@ -65,7 +65,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
 
           {config.provider !== 'ollama' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 API Key
               </label>
               <input
@@ -73,13 +73,13 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
                 value={config.api_key || ''}
                 onChange={(e) => handleChange('api_key', e.target.value)}
                 placeholder="Enter your API key"
-                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
               />
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Base URL (optional)
             </label>
             <input
@@ -87,7 +87,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
               value={config.base_url || ''}
               onChange={(e) => handleChange('base_url', e.target.value)}
               placeholder="Custom API endpoint"
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             />
           </div>
 
@@ -97,9 +97,9 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
               id="enable_reasoning"
               checked={config.enable_reasoning || false}
               onChange={(e) => handleChange('enable_reasoning', e.target.checked)}
-              className="rounded"
+              className="rounded border-gray-300 dark:border-gray-600"
             />
-            <label htmlFor="enable_reasoning" className="text-sm text-gray-700">
+            <label htmlFor="enable_reasoning" className="text-sm text-gray-700 dark:text-gray-300">
               Enable reasoning (for o1 models)
             </label>
           </div>

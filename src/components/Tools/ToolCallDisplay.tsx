@@ -10,34 +10,34 @@ interface ToolCallDisplayProps {
 }
 
 export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, result }) => {
-  return (
-    <div className="tool-call-display my-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+return (
+    <div className="my-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-medium text-blue-600">
+        <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
           {toolCall.name}
         </span>
         {result && (
           <span className={`text-xs px-2 py-0.5 rounded ${
             result.success 
-              ? 'bg-green-100 text-green-700' 
-              : 'bg-red-100 text-red-700'
+              ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' 
+              : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300'
           }`}>
             {result.success ? 'Success' : 'Failed'}
           </span>
         )}
       </div>
       
-      <div className="text-xs text-gray-600">
+      <div className="text-xs text-gray-600 dark:text-gray-400">
         <span className="font-medium">Arguments:</span>
-        <pre className="mt-1 p-2 bg-gray-100 rounded overflow-auto">
+        <pre className="mt-1 p-2 bg-gray-100 dark:bg-gray-900 rounded overflow-auto text-gray-900 dark:text-gray-100">
           {JSON.stringify(toolCall.arguments, null, 2)}
         </pre>
       </div>
       
       {result && (
-        <div className="text-xs text-gray-600 mt-2">
+        <div className="text-xs text-gray-600 dark:text-gray-400 mt-2">
           <span className="font-medium">Output:</span>
-          <pre className="mt-1 p-2 bg-gray-100 rounded overflow-auto max-h-40">
+          <pre className="mt-1 p-2 bg-gray-100 dark:bg-gray-900 rounded overflow-auto max-h-40 text-gray-900 dark:text-gray-100">
             {typeof result.output === 'string' 
               ? result.output 
               : JSON.stringify(result.output, null, 2)}

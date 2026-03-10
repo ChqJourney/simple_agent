@@ -14,7 +14,7 @@ const PROVIDERS: { value: ProviderType; label: string }[] = [
 
 const MODELS: Record<ProviderType, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
-  qwen: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen-long'],
+  qwen: ['qwen3-max-2026-01-23', 'qwen3.5-plus', 'qwen3-coder-next'],
   ollama: ['llama3.1', 'llama3.2', 'qwen2.5', 'mistral', 'codellama'],
 };
 

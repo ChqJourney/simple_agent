@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatContainer } from './components/Chat';
 import { SettingsModal } from './components/Settings';
-
+import "./index.css";
 const IS_DEV = import.meta.env.DEV;
 
 function App() {
@@ -35,14 +35,17 @@ function App() {
       <Sidebar onOpenSettings={() => setIsSettingsOpen(true)} />
       
       <main className="flex-1 flex flex-col">
-        {IS_DEV && !backendReady && (
-          <div className="p-4 bg-yellow-50 dark:bg-yellow-950 text-yellow-900 dark:text-yellow-200 text-center text-sm">
-            Waiting for Python backend at http://127.0.0.1:8765...
-            <br />
-            <code className="text-xs bg-yellow-100 dark:bg-yellow-900 px-1.5 py-0.5 rounded">cd python_backend && python main.py</code>
+        {IS_DEV && !backendReady ? (
+          <div className="flex-1 flex items-center justify-center p-4 bg-yellow-50 dark:bg-yellow-950 text-yellow-900 dark:text-yellow-200 text-center text-sm">
+            <div>
+              Waiting for Python backend at http://127.0.0.1:8765...
+              <br />
+              <code className="text-xs bg-yellow-100 dark:bg-yellow-900 px-1.5 py-0.5 rounded">cd python_backend && python main.py</code>
+            </div>
           </div>
+        ) : (
+          <ChatContainer />
         )}
-        <ChatContainer />
       </main>
       
       <SettingsModal 

@@ -9,11 +9,11 @@ interface StreamingMessageProps {
 
 export const StreamingMessage: React.FC<StreamingMessageProps> = ({ content, isStreaming }) => {
   return (
-    <div className="streaming-message">
+    <div className="min-h-5">
       <ReactMarkdown components={markdownComponents}>
         {content}
       </ReactMarkdown>
-      {isStreaming && <span className="cursor animate-pulse">|</span>}
+      {isStreaming && <span className="inline-block w-0.5 h-5 bg-gray-900 dark:bg-gray-100 animate-blink align-bottom ml-0.5">|</span>}
     </div>
   );
 };

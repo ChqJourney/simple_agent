@@ -27,19 +27,25 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   }
 
   return (
-    <div className={`message-item ${message.role}`}>
-      <div className="message-header">
-        <span className="message-role">
+    <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+      isUser 
+        ? 'ml-auto bg-blue-50 dark:bg-blue-950' 
+        : isTool 
+        ? 'bg-orange-50 dark:bg-orange-950 rounded-xl text-sm'
+        : 'bg-gray-50 dark:bg-gray-800'
+    }`}>
+      <div className="flex justify-between items-center mb-2">
+        <span className="font-semibold text-xs text-gray-600 dark:text-gray-400">
           {isUser ? 'You' : isTool ? 'Tool' : 'Assistant'}
         </span>
         {message.usage && (
-          <span className="message-usage">
+          <span className="text-xs text-gray-400 dark:text-gray-500">
             {message.usage.total_tokens} tokens
           </span>
         )}
       </div>
       
-      <div className="message-content">
+      <div className="prose prose-sm dark:prose-invert max-w-none text-gray-900 dark:text-gray-100 leading-relaxed">
         {isAssistant && isStreaming && streamingContent ? (
           <StreamingMessage content={streamingContent} isStreaming={true} />
         ) : (
@@ -49,7 +55,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         )}
         
         {message.tool_calls && message.tool_calls.length > 0 && (
-          <div className="tool-calls">
+          <div className="mt-3 space-y-2">
             {message.tool_calls.map((toolCall) => (
               <ToolCallDisplay key={toolCall.tool_call_id} toolCall={toolCall} />
             ))}

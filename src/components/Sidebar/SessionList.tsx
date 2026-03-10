@@ -14,27 +14,27 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
     : sessions;
 
   return (
-    <div className="session-list">
-      <h3 className="text-sm font-semibold text-gray-600 mb-2">Sessions</h3>
+    <div>
+      <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">Sessions</h3>
       
       {filteredSessions.length === 0 ? (
-        <p className="text-xs text-gray-400">No sessions yet</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">No sessions yet</p>
       ) : (
         <ul className="space-y-1">
           {filteredSessions.map((session) => (
             <li key={session.session_id}>
               <button
                 onClick={() => setCurrentSession(session.session_id)}
-                className={`w-full text-left p-2 rounded-lg text-sm ${
+                className={`w-full text-left p-2 rounded-lg text-sm transition-colors ${
                   currentSessionId === session.session_id
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'hover:bg-gray-100'
+                    ? 'bg-blue-50 dark:bg-blue-900 text-blue-900 dark:text-blue-100'
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100'
                 }`}
               >
                 <div className="font-medium truncate">
                   {truncateText(session.session_id, 20)}
                 </div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
                   {formatTimestamp(session.created_at)}
                 </div>
               </button>

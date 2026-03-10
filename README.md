@@ -10,6 +10,23 @@
 - 会话持久化
 - 多工作区支持
 - 支持 OpenAI、Qwen、Ollama
+- 现代简约 UI 设计（Tailwind CSS）
+- 暗色模式支持
+
+## 技术栈
+
+### 前端
+- React 19 + TypeScript
+- Tailwind CSS v4 - 现代 CSS-first 方法
+- Zustand - 状态管理
+- React Markdown - Markdown 渲染
+- React Syntax Highlighter - 代码高亮
+
+### 后端
+- Tauri 2.0 - 桌面应用框架
+- Python 3.10+ - AI Agent 核心
+- FastAPI + WebSocket - 后端通信
+- PyInstaller - Python 打包
 
 ## 开发环境设置
 
@@ -116,3 +133,23 @@ tauri_agent/
 - [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode)
 - [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-analyzer.rust-analyzer)
 - [Python](https://marketplace.visualstudio.com/items?itemName=ms-python.python)
+- [Tailwind CSS IntelliSense](https://marketplace.visualstudio.com/items?itemName=bradlc.vscode-tailwindcss)
+
+## 样式系统
+
+本项目使用 Tailwind CSS v4，采用现代 CSS-first 方法：
+
+- **配置**: 通过 `src/index.css` 中的 `@import "tailwindcss"` 引入
+- **自定义样式**: 在 `src/index.css` 中添加自定义样式和动画
+- **暗色模式**: 使用 `dark:` 前缀自动适配系统主题
+- **设计风格**: 现代简约风格，中性灰白色调，中等圆角
+
+### 自定义样式指南
+
+1. **颜色**: 使用 Tailwind 默认颜色系统，保持一致性
+2. **圆角**: 
+   - 小圆角 (8px): `rounded-lg` - 按钮、输入框
+   - 中圆角 (12px): `rounded-xl` - 卡片、消息框
+   - 大圆角 (16px): `rounded-2xl` - 模态框
+3. **间距**: 遵循 Tailwind 默认间距（4px 基准）
+4. **暗色模式**: 始终添加 `dark:` 变体

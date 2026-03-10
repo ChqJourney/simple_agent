@@ -1,21 +1,42 @@
 import React from 'react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { formatTimestamp, truncateText } from '../../utils/storage';
+import { useSession } from '../../hooks/useSession';
 
 interface SessionListProps {
   workspacePath: string | null;
 }
 
 export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
-  const { sessions, currentSessionId, setCurrentSession } = useSessionStore();
+  const { sessions, currentSessionId } = useSessionStore();
+  const { createSession, switchSession } = useSession();
 
   const filteredSessions = workspacePath
     ? sessions.filter(s => s.workspace_path === workspacePath)
     : sessions;
 
+  const handleNewSession = () => {
+    createSession();
+  };
+
+  const handleSessionClick = (sessionId: string) => {
+    switchSession(sessionId);
+  };
+
   return (
     <div>
-      <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">Sessions</h3>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">Sessions</h3>
+        <button
+          onClick={handleNewSession}
+          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 transition-colors"
+          title="New Session"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      </div>
       
       {filteredSessions.length === 0 ? (
         <p className="text-xs text-gray-400 dark:text-gray-500">No sessions yet</p>
@@ -24,7 +45,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
           {filteredSessions.map((session) => (
             <li key={session.session_id}>
               <button
-                onClick={() => setCurrentSession(session.session_id)}
+                onClick={() => handleSessionClick(session.session_id)}
                 className={`w-full text-left p-2 rounded-lg text-sm transition-colors ${
                   currentSessionId === session.session_id
                     ? 'bg-blue-50 dark:bg-blue-900 text-blue-900 dark:text-blue-100'

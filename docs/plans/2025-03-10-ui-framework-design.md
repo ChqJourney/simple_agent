@@ -1,5 +1,7 @@
 # UI Framework Design
 
+> **Status:** ✅ Completed (2025-03-10)
+
 ## Overview
 
 This document describes the UI framework design for Tauri Agent, transitioning from a simple single-page layout to a multi-page application with Welcome and Workspace pages.

@@ -42,10 +42,8 @@ export const WorkspacePage: React.FC = () => {
   }, [isConnected, currentWorkspace?.path, sendWorkspace]);
 
   useEffect(() => {
-    if (currentWorkspace) {
-      setPageLoading(false);
-    }
-  }, [currentWorkspace, setPageLoading]);
+    setPageLoading(false);
+  }, [setPageLoading]);
 
   useEffect(() => {
     if (IS_DEV && !backendReady) {

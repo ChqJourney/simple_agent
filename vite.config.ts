@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig(async () => {
   // @ts-expect-error process is a nodejs global
   const host = process.env.TAURI_DEV_HOST;
-  
+
   return {
     plugins: [react(), tailwindcss()],
 
@@ -26,7 +26,18 @@ export default defineConfig(async () => {
       },
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', 'react-router-dom', 'zustand'],
+      include: ["react", "react-dom", "react-router-dom", "zustand"],
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            react: ["react", "react-dom", "react-router-dom", "zustand"],
+            markdown: ["react-markdown"],
+          },
+        },
+      },
     },
   };
 });
+

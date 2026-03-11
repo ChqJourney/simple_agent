@@ -40,6 +40,14 @@ async function tauriReadTextFile(path: string) {
   return readTextFile(path);
 }
 
+async function tauriRemove(path: string): Promise<void> {
+  if (!(await checkIsTauri())) {
+    return;
+  }
+  const { remove } = await import('@tauri-apps/plugin-fs');
+  await remove(path);
+}
+
 export function formatTimestamp(isoString: string): string {
   const date = new Date(isoString);
   return date.toLocaleString();
@@ -61,7 +69,7 @@ export async function loadSessionHistory(
   sessionId: string
 ): Promise<Message[]> {
   const sessionPath = `${workspacePath}/.agent/sessions/${sessionId}.jsonl`;
-  
+
   try {
     const fileExists = await tauriExists(sessionPath);
     if (!fileExists) {
@@ -70,11 +78,11 @@ export async function loadSessionHistory(
 
     const content = await tauriReadTextFile(sessionPath);
     const messages: Message[] = [];
-    
+
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      
+
       try {
         const data = JSON.parse(trimmed);
         const message: Message = {
@@ -92,7 +100,7 @@ export async function loadSessionHistory(
         continue;
       }
     }
-    
+
     return messages;
   } catch (error) {
     console.error('Failed to load session history:', error);
@@ -109,7 +117,7 @@ interface SessionMeta {
 
 export async function scanSessions(workspacePath: string): Promise<SessionMeta[]> {
   const sessionsDir = `${workspacePath}/.agent/sessions`;
-  
+
   try {
     const dirExists = await tauriExists(sessionsDir);
     if (!dirExists) {
@@ -118,32 +126,32 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
 
     const entries = await tauriReadDir(sessionsDir);
     const sessions: SessionMeta[] = [];
-    
+
     for (const entry of entries) {
       if (!entry.isFile || !entry.name?.endsWith('.jsonl')) continue;
-      
+
       const sessionId = entry.name.replace('.jsonl', '');
       const sessionPath = `${sessionsDir}/${entry.name}`;
-      
+
       try {
         const content = await tauriReadTextFile(sessionPath);
         const lines = content.split('\n').filter(l => l.trim());
-        
+
         if (lines.length === 0) continue;
-        
+
         let createdAt = new Date().toISOString();
         let updatedAt = new Date().toISOString();
-        
+
         const firstLine = JSON.parse(lines[0]);
         const lastLine = JSON.parse(lines[lines.length - 1]);
-        
+
         if (firstLine.timestamp) {
           createdAt = firstLine.timestamp;
         }
         if (lastLine.timestamp) {
           updatedAt = lastLine.timestamp;
         }
-        
+
         sessions.push({
           session_id: sessionId,
           workspace_path: workspacePath,
@@ -154,7 +162,7 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
         continue;
       }
     }
-    
+
     return sessions.sort((a, b) => {
       const aTime = new Date(a.updated_at).getTime();
       const bTime = new Date(b.updated_at).getTime();
@@ -163,5 +171,21 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
   } catch (error) {
     console.error('Failed to scan sessions:', error);
     return [];
+  }
+}
+
+export async function deleteSessionHistory(workspacePath: string, sessionId: string): Promise<void> {
+  const sessionPath = `${workspacePath}/.agent/sessions/${sessionId}.jsonl`;
+
+  try {
+    const fileExists = await tauriExists(sessionPath);
+    if (!fileExists) {
+      return;
+    }
+
+    await tauriRemove(sessionPath);
+  } catch (error) {
+    console.error('Failed to delete session history:', error);
+    throw error;
   }
 }

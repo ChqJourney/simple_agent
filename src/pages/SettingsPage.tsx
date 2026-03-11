@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProviderConfigForm } from '../components/Settings/ProviderConfig';
 import { useConfigStore } from '../stores/configStore';
 import { useUIStore } from '../stores';
 import { ProviderConfig } from '../types';
+import { useWebSocket } from '../contexts/WebSocketContext';
+import { normalizeBaseUrl, normalizeProviderConfig } from '../utils/config';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 
@@ -11,26 +13,32 @@ export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const { config, setConfig } = useConfigStore();
   const { theme, setTheme } = useUIStore();
+  const { sendConfig } = useWebSocket();
+  const [draftConfig, setDraftConfig] = useState<Partial<ProviderConfig>>(config || {});
   const [testStatus, setTestStatus] = useState<TestStatus>('idle');
   const [testError, setTestError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setDraftConfig(config || {});
+  }, [config]);
+
   const handleTest = async () => {
-    if (!config) return;
+    if (!draftConfig.provider || !draftConfig.model) return;
 
     setTestStatus('testing');
     setTestError(null);
 
     try {
-      const baseUrl = config.base_url || getDefaultBaseUrl(config.provider);
+      const baseUrl = normalizeBaseUrl(draftConfig.provider, draftConfig.base_url);
       const response = await fetch('http://127.0.0.1:8765/test-config', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          provider: config.provider,
-          model: config.model,
-          api_key: config.api_key,
+          provider: draftConfig.provider,
+          model: draftConfig.model,
+          api_key: draftConfig.api_key,
           base_url: baseUrl,
         }),
       });
@@ -49,16 +57,29 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const getDefaultBaseUrl = (provider: string): string => {
-    switch (provider) {
-      case 'openai': return 'https://api.openai.com/v1';
-      case 'qwen': return 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-      case 'ollama': return 'http://localhost:11434/v1';
-      default: return '';
-    }
-  };
-
   const handleSave = () => {
+    if (!draftConfig.provider || !draftConfig.model) {
+      setTestStatus('error');
+      setTestError('Provider and model are required');
+      return;
+    }
+
+    if (draftConfig.provider !== 'ollama' && !draftConfig.api_key) {
+      setTestStatus('error');
+      setTestError('API key is required for this provider');
+      return;
+    }
+
+    const normalizedConfig = normalizeProviderConfig({
+      provider: draftConfig.provider,
+      model: draftConfig.model,
+      api_key: draftConfig.api_key || '',
+      base_url: draftConfig.base_url || '',
+      enable_reasoning: draftConfig.enable_reasoning || false,
+    });
+
+    setConfig(normalizedConfig);
+    sendConfig(normalizedConfig);
     navigate(-1);
   };
 
@@ -85,10 +106,10 @@ export const SettingsPage: React.FC = () => {
           </h2>
           <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-4">
             <ProviderConfigForm
-              config={config || {}}
-              onChange={(partialConfig) => setConfig(partialConfig as ProviderConfig)}
+              config={draftConfig}
+              onChange={setDraftConfig}
             />
-            {config?.provider && config.provider !== 'ollama' && (
+            {draftConfig.provider && draftConfig.provider !== 'ollama' && (
               <div className="flex items-center gap-3 pt-2">
                 <button
                   onClick={handleTest}
@@ -144,5 +165,3 @@ export const SettingsPage: React.FC = () => {
     </div>
   );
 };
-
-

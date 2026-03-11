@@ -1,7 +1,10 @@
 import { Components } from 'react-markdown';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { ReactNode } from 'react';
+import { lazy, ReactNode, Suspense } from 'react';
+
+const LazyCodeBlock = lazy(async () => {
+  const module = await import('../components/common/CodeBlock');
+  return { default: module.CodeBlock };
+});
 
 interface CodeProps {
   node?: unknown;
@@ -14,20 +17,23 @@ export const markdownComponents: Components = {
   code({ node, inline, className, children, ...props }: CodeProps) {
     const match = /language-(\w+)/.exec(className || '');
     const codeString = String(children || '').replace(/\n$/, '');
-    
+
     if (!inline && match) {
       return (
-        <SyntaxHighlighter
-          style={oneDark}
-          language={match[1]}
-          PreTag="div"
-          {...props}
+        <Suspense
+          fallback={(
+            <pre className="bg-gray-900 dark:bg-black rounded-lg p-3 my-2 overflow-x-auto">
+              <code className="text-sm font-mono text-gray-100" {...props}>
+                {codeString}
+              </code>
+            </pre>
+          )}
         >
-          {codeString}
-        </SyntaxHighlighter>
+          <LazyCodeBlock language={match[1]} code={codeString} />
+        </Suspense>
       );
     }
-    
+
     return (
       <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-red-600 dark:text-red-400 rounded text-sm font-mono" {...props}>
         {children}

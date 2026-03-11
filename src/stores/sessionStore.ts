@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
-import { scanSessions } from '../utils/storage';
+import { deleteSessionHistory, scanSessions } from '../utils/storage';
 
 interface SessionMeta {
   session_id: string;
@@ -14,12 +14,12 @@ interface SessionState {
   sessions: SessionMeta[];
   currentSessionId: string | null;
   currentWorkspacePath: string | null;
-  
+
   setWorkspace: (path: string) => void;
   setCurrentSession: (sessionId: string | null) => void;
   addSession: (session: SessionMeta) => void;
   updateSession: (sessionId: string, updates: Partial<SessionMeta>) => void;
-  removeSession: (sessionId: string, workspacePath: string) => void;
+  removeSession: (sessionId: string, workspacePath: string) => Promise<string | null>;
   getSessionsByWorkspace: (workspacePath: string) => SessionMeta[];
   loadSessionsFromDisk: (workspacePath: string) => Promise<void>;
   ensureSession: (workspacePath: string) => void;
@@ -32,12 +32,12 @@ export const useSessionStore = create<SessionState>()(
       currentSessionId: null,
       currentWorkspacePath: null,
 
-      setWorkspace: (path) => set({ 
+      setWorkspace: (path) => set({
         currentWorkspacePath: path,
         currentSessionId: null,
       }),
 
-      setCurrentSession: (sessionId) => set({ 
+      setCurrentSession: (sessionId) => set({
         currentSessionId: sessionId,
       }),
 
@@ -58,30 +58,41 @@ export const useSessionStore = create<SessionState>()(
         ),
       })),
 
-      removeSession: (sessionId, workspacePath) => {
+      removeSession: async (sessionId, workspacePath) => {
+        await deleteSessionHistory(workspacePath, sessionId);
+
         const state = get();
-        const workspaceSessions = state.sessions.filter(s => s.workspace_path === workspacePath);
-        
-        if (workspaceSessions.length <= 1) {
-          return;
-        }
-        
-        const newSessionId = uuidv4();
-        const now = new Date().toISOString();
-        
-        set({
-          sessions: state.sessions.filter(s => s.session_id !== sessionId),
-          currentSessionId: state.currentSessionId === sessionId ? newSessionId : state.currentSessionId,
-        });
-        
-        if (state.sessions.filter(s => s.workspace_path === workspacePath).length === 1) {
-          get().addSession({
-            session_id: newSessionId,
+        const remainingSessions = state.sessions.filter(s => s.session_id !== sessionId);
+        const workspaceSessions = remainingSessions.filter(s => s.workspace_path === workspacePath);
+
+        let nextSessionId = state.currentSessionId === sessionId
+          ? (workspaceSessions[0]?.session_id ?? null)
+          : state.currentSessionId;
+
+        if (workspaceSessions.length === 0) {
+          const replacementSessionId = uuidv4();
+          const now = new Date().toISOString();
+          const replacementSession: SessionMeta = {
+            session_id: replacementSessionId,
             workspace_path: workspacePath,
             created_at: now,
             updated_at: now,
+          };
+
+          set({
+            sessions: [...remainingSessions, replacementSession],
+            currentSessionId: replacementSessionId,
           });
+
+          return replacementSessionId;
         }
+
+        set({
+          sessions: remainingSessions,
+          currentSessionId: nextSessionId,
+        });
+
+        return nextSessionId;
       },
 
       getSessionsByWorkspace: (workspacePath) => {
@@ -91,11 +102,11 @@ export const useSessionStore = create<SessionState>()(
       ensureSession: (workspacePath) => {
         const state = get();
         const workspaceSessions = state.sessions.filter(s => s.workspace_path === workspacePath);
-        
+
         if (workspaceSessions.length === 0) {
           const sessionId = uuidv4();
           const now = new Date().toISOString();
-          
+
           set({
             sessions: [...state.sessions, {
               session_id: sessionId,
@@ -111,23 +122,23 @@ export const useSessionStore = create<SessionState>()(
       loadSessionsFromDisk: async (workspacePath) => {
         try {
           const diskSessions = await scanSessions(workspacePath);
-          
+
           const state = get();
-          
-          const fixedSessions = state.sessions.map(s => 
-            s.workspace_path === '.' || !s.workspace_path 
+
+          const fixedSessions = state.sessions.map(s =>
+            s.workspace_path === '.' || !s.workspace_path
               ? { ...s, workspace_path: workspacePath }
               : s
           );
-          
+
           const existingIds = new Set(fixedSessions.map(s => s.session_id));
-          
+
           const newSessions = diskSessions.filter(s => !existingIds.has(s.session_id));
-          
+
           if (newSessions.length > 0 || JSON.stringify(fixedSessions) !== JSON.stringify(state.sessions)) {
             set({ sessions: [...fixedSessions, ...newSessions] });
           }
-          
+
           get().ensureSession(workspacePath);
         } catch (error) {
           console.error('Failed to load sessions from disk:', error);

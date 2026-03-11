@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+SendCallback = Callable[[Dict[str, Any]], Awaitable[None]]
+ConnectionId = str
+
 
 class Message(BaseModel):
     role: str
@@ -118,11 +121,47 @@ class UserManager:
         self.pending_tool_context: Dict[str, Dict[str, str]] = {}
         self.session_tool_policies: Dict[str, Set[str]] = {}
         self.workspace_tool_policies: Dict[str, Set[str]] = {}
-        self.ws_callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
+        self.connection_callbacks: Dict[ConnectionId, SendCallback] = {}
+        self.session_connections: Dict[str, ConnectionId] = {}
         self._lock = asyncio.Lock()
 
-    def set_ws_callback(self, callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]]) -> None:
-        self.ws_callback = callback
+    async def register_connection(self, connection_id: ConnectionId, callback: SendCallback) -> None:
+        async with self._lock:
+            self.connection_callbacks[connection_id] = callback
+
+    async def unregister_connection(self, connection_id: ConnectionId) -> None:
+        confirmations_to_cancel: List[asyncio.Future[Dict[str, str]]] = []
+
+        async with self._lock:
+            self.connection_callbacks.pop(connection_id, None)
+
+            self.session_connections = {
+                session_id: bound_connection_id
+                for session_id, bound_connection_id in self.session_connections.items()
+                if bound_connection_id != connection_id
+            }
+
+            for tool_call_id, context in list(self.pending_tool_context.items()):
+                if context.get("connection_id") != connection_id:
+                    continue
+
+                future = self.tool_confirmations.pop(tool_call_id, None)
+                self.pending_tool_context.pop(tool_call_id, None)
+                if future and not future.done():
+                    confirmations_to_cancel.append(future)
+
+        for future in confirmations_to_cancel:
+            future.set_result({
+                "decision": "reject",
+                "scope": "session",
+                "reason": "connection_closed",
+            })
+
+    async def bind_session_to_connection(self, session_id: str, connection_id: ConnectionId) -> None:
+        async with self._lock:
+            if connection_id not in self.connection_callbacks:
+                raise KeyError(f"Unknown connection_id: {connection_id}")
+            self.session_connections[session_id] = connection_id
 
     async def create_session(self, workspace_path: str, session_id: Optional[str] = None) -> Session:
         if session_id is None:
@@ -141,15 +180,40 @@ class UserManager:
 
     async def remove_session(self, session_id: str) -> bool:
         async with self._lock:
+            self.session_connections.pop(session_id, None)
             if session_id in self.sessions:
                 del self.sessions[session_id]
                 return True
             return False
 
-    async def send_to_frontend(self, message: Dict[str, Any]) -> None:
-        if self.ws_callback:
+    async def send_to_frontend(
+        self,
+        message: Dict[str, Any],
+        connection_id: Optional[ConnectionId] = None,
+    ) -> None:
+        callbacks: List[SendCallback] = []
+
+        async with self._lock:
+            target_connection_id = connection_id
+            if target_connection_id is None:
+                session_id = message.get("session_id")
+                if session_id:
+                    target_connection_id = self.session_connections.get(session_id)
+
+            if target_connection_id:
+                callback = self.connection_callbacks.get(target_connection_id)
+                if callback:
+                    callbacks = [callback]
+            elif len(self.connection_callbacks) == 1:
+                callbacks = list(self.connection_callbacks.values())
+
+        if not callbacks:
+            logger.warning("No frontend connection available for message: %s", message)
+            return
+
+        for callback in callbacks:
             try:
-                await self.ws_callback(message)
+                await callback(message)
             except Exception as e:
                 logger.error(f"Failed to send message to frontend: {e}")
 
@@ -166,12 +230,18 @@ class UserManager:
                 logger.warning(f"Tool confirmation already pending for {tool_call_id}")
                 return {"decision": "reject", "scope": "session", "reason": "duplicate_pending"}
 
+            connection_id = self.session_connections.get(session_id)
+            if not connection_id or connection_id not in self.connection_callbacks:
+                logger.warning("Tool confirmation requested without active connection for session %s", session_id)
+                return {"decision": "reject", "scope": "session", "reason": "connection_missing"}
+
             future: asyncio.Future[Dict[str, str]] = asyncio.Future()
             self.tool_confirmations[tool_call_id] = future
             self.pending_tool_context[tool_call_id] = {
                 "session_id": session_id,
                 "workspace_path": workspace_path,
                 "tool_name": tool_name,
+                "connection_id": connection_id,
             }
 
         await self.send_to_frontend({
@@ -180,7 +250,7 @@ class UserManager:
             "tool_call_id": tool_call_id,
             "name": tool_name,
             "arguments": arguments
-        })
+        }, connection_id=connection_id)
 
         try:
             result = await asyncio.wait_for(future, timeout=self.DEFAULT_CONFIRMATION_TIMEOUT)

@@ -1,11 +1,21 @@
 import json
 from typing import AsyncIterator, Dict, Any, List, Optional
+
 import aiohttp
+
 from .base import BaseLLM
 
-__all__ = ["OllamaLLM"]
+__all__ = ["OllamaLLM", "normalize_ollama_base_url", "OLLAMA_DEFAULT_BASE_URL"]
 
-OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434"
+OLLAMA_DEFAULT_BASE_URL = "http://127.0.0.1:11434"
+
+
+def normalize_ollama_base_url(base_url: Optional[str]) -> str:
+    normalized = (base_url or "").strip() or OLLAMA_DEFAULT_BASE_URL
+    normalized = normalized.rstrip("/")
+    if normalized.endswith("/v1"):
+        normalized = normalized[:-3].rstrip("/")
+    return normalized or OLLAMA_DEFAULT_BASE_URL
 
 
 class OllamaLLM(BaseLLM):
@@ -15,8 +25,9 @@ class OllamaLLM(BaseLLM):
     """
 
     def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
-        self.base_url = config.get("base_url", OLLAMA_DEFAULT_BASE_URL)
+        base_url = normalize_ollama_base_url(config.get("base_url"))
+        config_with_defaults = {**config, "base_url": base_url}
+        super().__init__(config_with_defaults)
 
     async def stream(  # type: ignore[override]
         self, messages: List[Dict], tools: Optional[List[Dict]] = None
@@ -26,7 +37,7 @@ class OllamaLLM(BaseLLM):
         payload = {
             "model": self.model,
             "messages": messages,
-            "stream": True
+            "stream": True,
         }
 
         if tools:
@@ -48,7 +59,7 @@ class OllamaLLM(BaseLLM):
         payload = {
             "model": self.model,
             "messages": messages,
-            "stream": False
+            "stream": False,
         }
 
         if tools:
@@ -69,8 +80,8 @@ class OllamaLLM(BaseLLM):
                     "function": {
                         "name": tool.name,
                         "description": tool.description,
-                        "parameters": tool.parameters
-                    }
+                        "parameters": tool.parameters,
+                    },
                 })
             elif isinstance(tool, dict):
                 ollama_tools.append(tool)
@@ -81,7 +92,7 @@ class OllamaLLM(BaseLLM):
 
         delta: Dict[str, Any] = {
             "role": message.get("role"),
-            "content": message.get("content", "")
+            "content": message.get("content", ""),
         }
 
         raw_tool_calls = message.get("tool_calls") or []
@@ -98,7 +109,7 @@ class OllamaLLM(BaseLLM):
                         "arguments": json.dumps(function.get("arguments", {}), ensure_ascii=False)
                         if not isinstance(function.get("arguments"), str)
                         else function.get("arguments", ""),
-                    }
+                    },
                 })
             delta["tool_calls"] = converted_tool_calls
 
@@ -110,8 +121,8 @@ class OllamaLLM(BaseLLM):
             "choices": [{
                 "index": 0,
                 "delta": delta,
-                "finish_reason": "stop" if chunk.get("done") else None
-            }]
+                "finish_reason": "stop" if chunk.get("done") else None,
+            }],
         }
 
     def _convert_response_to_openai(self, response: Dict) -> Dict:
@@ -125,13 +136,13 @@ class OllamaLLM(BaseLLM):
                 "index": 0,
                 "message": {
                     "role": message.get("role", "assistant"),
-                    "content": message.get("content", "")
+                    "content": message.get("content", ""),
                 },
-                "finish_reason": "stop"
+                "finish_reason": "stop",
             }],
             "usage": {
                 "prompt_tokens": response.get("prompt_eval_count", 0),
                 "completion_tokens": response.get("eval_count", 0),
-                "total_tokens": response.get("prompt_eval_count", 0) + response.get("eval_count", 0)
-            }
+                "total_tokens": response.get("prompt_eval_count", 0) + response.get("eval_count", 0),
+            },
         }

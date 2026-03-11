@@ -10,12 +10,14 @@ import {
   ToolCall,
   ToolDecision,
   ToolDecisionScope,
+  ProviderConfig,
 } from '../types';
+import { normalizeProviderConfig } from '../utils/config';
 
 interface WebSocketContextValue {
   isConnected: boolean;
   sendMessage: (sessionId: string, content: string, workspacePath?: string) => void;
-  sendConfig: () => void;
+  sendConfig: (configOverride?: ProviderConfig) => void;
   confirmTool: (toolCallId: string, decision: ToolDecision, scope?: ToolDecisionScope) => void;
   interrupt: (sessionId: string) => void;
   sendWorkspace: (workspacePath: string) => void;
@@ -25,7 +27,8 @@ const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
-  const configSentRef = useRef(false);
+  const lastSentConfigKeyRef = useRef<string | null>(null);
+  const config = useConfigStore((state) => state.config);
 
   useEffect(() => {
     const handleMessage = (data: ServerWebSocketMessage) => {
@@ -103,7 +106,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           break;
         }
         case 'retry':
-          store.setError(data.session_id, `Retry ${data.attempt}/${data.max_retries}`, data.error);
+          console.info('Retrying agent run:', data.session_id, data.attempt, data.max_retries, data.error);
           break;
         case 'interrupted':
           store.setCompleted(data.session_id);
@@ -122,7 +125,10 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     wsService.onMessage(handleMessage);
     const cleanup = wsService.connect(
       () => setIsConnected(true),
-      () => setIsConnected(false)
+      () => {
+        lastSentConfigKeyRef.current = null;
+        setIsConnected(false);
+      }
     );
 
     return () => {
@@ -131,19 +137,33 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (isConnected) {
-      const config = useConfigStore.getState().config;
-      if (config && !configSentRef.current) {
-        wsService.send({ type: 'config', ...config });
-        configSentRef.current = true;
-      }
-    }
-  }, [isConnected]);
-
   const send = useCallback((message: ClientWebSocketMessage) => {
     wsService.send(message);
   }, []);
+
+  const sendConfig = useCallback((configOverride?: ProviderConfig) => {
+    const sourceConfig = configOverride || config;
+    if (!sourceConfig) {
+      return;
+    }
+
+    const runtimeConfig = normalizeProviderConfig(sourceConfig);
+    send({ type: 'config', ...runtimeConfig });
+    lastSentConfigKeyRef.current = JSON.stringify(runtimeConfig);
+  }, [config, send]);
+
+  useEffect(() => {
+    if (!isConnected || !config) {
+      return;
+    }
+
+    const runtimeConfig = normalizeProviderConfig(config);
+    const nextConfigKey = JSON.stringify(runtimeConfig);
+    if (nextConfigKey !== lastSentConfigKeyRef.current) {
+      send({ type: 'config', ...runtimeConfig });
+      lastSentConfigKeyRef.current = nextConfigKey;
+    }
+  }, [config, isConnected, send]);
 
   const sendMessage = useCallback((sessionId: string, content: string, workspacePath?: string) => {
     const message: ClientWebSocketMessage = { type: 'message', session_id: sessionId, content };
@@ -151,13 +171,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       (message as ClientMessage).workspace_path = workspacePath;
     }
     send(message);
-  }, [send]);
-
-  const sendConfig = useCallback(() => {
-    const config = useConfigStore.getState().config;
-    if (config) {
-      send({ type: 'config', ...config });
-    }
   }, [send]);
 
   const confirmTool = useCallback((toolCallId: string, decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
@@ -192,4 +205,3 @@ export function useWebSocket() {
   }
   return context;
 }
-

@@ -8,9 +8,10 @@ interface SessionListProps {
 }
 
 export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
-  const { sessions, currentSessionId, removeSession } = useSessionStore();
-  const { createSession, switchSession } = useSession();
+  const { sessions, currentSessionId } = useSessionStore();
+  const { createSession, switchSession, deleteSession } = useSession();
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const filteredSessions = workspacePath
     ? sessions.filter(s => s.workspace_path === workspacePath)
@@ -21,7 +22,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
   };
 
   const handleSessionClick = (sessionId: string) => {
-    switchSession(sessionId);
+    void switchSession(sessionId);
   };
 
   const handleDeleteClick = (e: React.MouseEvent, sessionId: string) => {
@@ -29,14 +30,24 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
     setDeleteConfirm(sessionId);
   };
 
-  const handleConfirmDelete = () => {
-    if (deleteConfirm && workspacePath) {
-      removeSession(deleteConfirm, workspacePath);
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirm) {
+      return;
     }
-    setDeleteConfirm(null);
+
+    setIsDeleting(true);
+    try {
+      await deleteSession(deleteConfirm);
+      setDeleteConfirm(null);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleCancelDelete = () => {
+    if (isDeleting) {
+      return;
+    }
     setDeleteConfirm(null);
   };
 
@@ -54,7 +65,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
           </svg>
         </button>
       </div>
-      
+
       {filteredSessions.length === 0 ? (
         <p className="text-xs text-gray-400 dark:text-gray-500">No sessions yet</p>
       ) : (
@@ -100,15 +111,17 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
             <div className="flex justify-end gap-2">
               <button
                 onClick={handleCancelDelete}
-                className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                disabled={isDeleting}
+                className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
-                onClick={handleConfirmDelete}
-                className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
+                onClick={() => void handleConfirmDelete()}
+                disabled={isDeleting}
+                className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors disabled:opacity-50"
               >
-                Delete
+                {isDeleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

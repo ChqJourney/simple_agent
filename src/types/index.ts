@@ -2,6 +2,10 @@ export type MessageRole = 'user' | 'assistant' | 'tool' | 'reasoning';
 
 export type MessageStatus = 'streaming' | 'completed' | 'error';
 
+export type UserMessageStatus = 'sending' | 'sent';
+
+export type AssistantStatus = 'idle' | 'waiting' | 'thinking' | 'tool_calling' | 'completed';
+
 export interface ToolCall {
   tool_call_id: string;
   name: string;
@@ -27,6 +31,7 @@ export interface Message {
   name?: string;
   usage?: TokenUsage;
   status: MessageStatus;
+  userStatus?: UserMessageStatus;
 }
 
 export interface TokenUsage {
@@ -66,6 +71,7 @@ export interface ClientMessage {
   type: 'message';
   session_id: string;
   content: string;
+  workspace_path?: string;
 }
 
 export interface ClientConfig {

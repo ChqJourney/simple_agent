@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUIStore, useWorkspaceStore } from '../stores';
 import { WorkspaceList } from '../components/Welcome/WorkspaceList';
@@ -10,6 +10,10 @@ export const WelcomePage: React.FC = () => {
   const setPageLoading = useUIStore((state) => state.setPageLoading);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+
+  useEffect(() => {
+    setPageLoading(false);
+  }, [setPageLoading]);
 
   const handleCreateWorkspace = async () => {
     if (isCreating) return;

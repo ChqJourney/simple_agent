@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../../stores/chatStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useSession } from '../../hooks/useSession';
 import { MessageList } from './MessageList';
@@ -11,13 +12,16 @@ const emptySession = {
   streamingContent: '',
   reasoningContent: '',
   isStreaming: false,
+  assistantStatus: 'idle' as const,
+  currentToolName: undefined as string | undefined,
 };
 
 export const ChatContainer = () => {
   const { currentSessionId, createSession } = useSession();
   const { sendMessage, isConnected, confirmTool } = useWebSocket();
+  const { currentWorkspace } = useWorkspaceStore();
   
-  const { messages, streamingContent, reasoningContent, isStreaming } = useChatStore(
+  const { messages, streamingContent, reasoningContent, isStreaming, assistantStatus, currentToolName } = useChatStore(
     useShallow((state) => {
       if (!currentSessionId) return emptySession;
       const session = state.sessions[currentSessionId];
@@ -26,6 +30,8 @@ export const ChatContainer = () => {
         streamingContent: session.currentStreamingContent,
         reasoningContent: session.currentReasoningContent,
         isStreaming: session.isStreaming,
+        assistantStatus: session.assistantStatus,
+        currentToolName: session.currentToolName,
       } : emptySession;
     })
   );
@@ -44,8 +50,8 @@ export const ChatContainer = () => {
     }
     
     useChatStore.getState().addUserMessage(sessionId, content);
-    sendMessage(sessionId, content);
-  }, [currentSessionId, createSession, sendMessage]);
+    sendMessage(sessionId, content, currentWorkspace?.path);
+  }, [currentSessionId, createSession, sendMessage, currentWorkspace?.path]);
 
   const handleConfirmTool = useCallback((approved: boolean) => {
     if (pendingToolCall) {
@@ -69,6 +75,8 @@ export const ChatContainer = () => {
         currentStreamingContent={streamingContent}
         currentReasoningContent={reasoningContent}
         isStreaming={isStreaming}
+        assistantStatus={assistantStatus}
+        currentToolName={currentToolName}
       />
       
       {pendingToolCall && (

@@ -24,26 +24,41 @@ export const WorkspacePage: React.FC = () => {
       if (workspace) {
         setCurrentWorkspace(workspace);
       } else {
+        setPageLoading(false);
         navigate('/');
       }
     }
-  }, [workspaceId, workspaces, setCurrentWorkspace, navigate]);
+  }, [workspaceId, workspaces, setCurrentWorkspace, setPageLoading, navigate]);
 
   useEffect(() => {
-    if (currentWorkspace?.path) {
-      loadSessionsFromDisk(currentWorkspace.path);
-    }
-  }, [currentWorkspace?.path, loadSessionsFromDisk]);
+    let cancelled = false;
+
+    const loadWorkspaceData = async () => {
+      if (!currentWorkspace?.path) {
+        return;
+      }
+
+      try {
+        await loadSessionsFromDisk(currentWorkspace.path);
+      } finally {
+        if (!cancelled) {
+          setPageLoading(false);
+        }
+      }
+    };
+
+    void loadWorkspaceData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentWorkspace?.path, loadSessionsFromDisk, setPageLoading]);
 
   useEffect(() => {
     if (isConnected && currentWorkspace?.path) {
       sendWorkspace(currentWorkspace.path);
     }
   }, [isConnected, currentWorkspace?.path, sendWorkspace]);
-
-  useEffect(() => {
-    setPageLoading(false);
-  }, [setPageLoading]);
 
   useEffect(() => {
     if (IS_DEV && !backendReady) {
@@ -58,7 +73,7 @@ export const WorkspacePage: React.FC = () => {
         }
       };
 
-      checkBackend();
+      void checkBackend();
       const interval = setInterval(checkBackend, 2000);
       return () => clearInterval(interval);
     }

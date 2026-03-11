@@ -4,7 +4,7 @@ export type MessageStatus = 'streaming' | 'completed' | 'error';
 
 export type UserMessageStatus = 'sending' | 'sent';
 
-export type AssistantStatus = 'idle' | 'waiting' | 'thinking' | 'tool_calling' | 'completed';
+export type AssistantStatus = 'idle' | 'waiting' | 'thinking' | 'streaming' | 'tool_calling' | 'completed';
 
 export interface ToolCall {
   tool_call_id: string;

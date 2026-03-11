@@ -1,12 +1,12 @@
 import { useCallback } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useChatStore } from '../stores/chatStore';
 import { v4 as uuidv4 } from 'uuid';
 import { loadSessionHistory } from '../utils/storage';
 
 interface UseSessionReturn {
   currentSessionId: string | null;
-  currentWorkspacePath: string | null;
   createSession: () => string;
   switchSession: (sessionId: string) => Promise<void>;
   clearCurrentSession: () => void;
@@ -15,17 +15,22 @@ interface UseSessionReturn {
 export function useSession(): UseSessionReturn {
   const { 
     currentSessionId, 
-    currentWorkspacePath,
     setCurrentSession,
     addSession,
     sessions,
   } = useSessionStore();
+  const { currentWorkspace } = useWorkspaceStore();
   const { clearSession, loadSession: loadChatSession } = useChatStore();
 
   const createSession = useCallback((): string => {
     const sessionId = uuidv4();
     const now = new Date().toISOString();
-    const workspacePath = currentWorkspacePath || '.';
+    const workspacePath = currentWorkspace?.path;
+
+    if (!workspacePath) {
+      console.error('useSession: no workspace path available');
+      return sessionId;
+    }
 
     addSession({
       session_id: sessionId,
@@ -35,7 +40,7 @@ export function useSession(): UseSessionReturn {
     });
 
     return sessionId;
-  }, [currentWorkspacePath, addSession]);
+  }, [currentWorkspace?.path, addSession]);
 
   const switchSession = useCallback(async (sessionId: string) => {
     setCurrentSession(sessionId);
@@ -56,7 +61,6 @@ export function useSession(): UseSessionReturn {
 
   return {
     currentSessionId,
-    currentWorkspacePath,
     createSession,
     switchSession,
     clearCurrentSession,

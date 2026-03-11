@@ -29,11 +29,11 @@ export const WelcomePage: React.FC = () => {
         const existing = workspaces.find((w) => w.path === selected);
         if (existing) {
           setCurrentWorkspace(existing);
-          setTimeout(() => setPageLoading(true), 300);
+          setPageLoading(true);
           navigate(`/workspace/${existing.id}`);
         } else {
           const workspace = await addWorkspace(selected);
-          setTimeout(() => setPageLoading(true), 300);
+          setPageLoading(true);
           navigate(`/workspace/${workspace.id}`);
         }
       }
@@ -48,7 +48,7 @@ export const WelcomePage: React.FC = () => {
     const workspace = workspaces.find((w) => w.id === workspaceId);
     if (workspace) {
       setCurrentWorkspace(workspace);
-      setTimeout(() => setPageLoading(true), 300);
+      setPageLoading(true);
       navigate(`/workspace/${workspaceId}`);
     }
   };

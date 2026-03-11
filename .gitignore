@@ -30,5 +30,5 @@ nul
 package-lock.json
 .vscode
 __pycache__
-
+.agent
 *.exe

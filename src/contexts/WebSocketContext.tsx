@@ -2,11 +2,11 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { wsService } from '../services/websocket';
 import { useChatStore } from '../stores/chatStore';
 import { useConfigStore } from '../stores/configStore';
-import { ServerWebSocketMessage, ClientWebSocketMessage, ToolCall } from '../types';
+import { ServerWebSocketMessage, ClientWebSocketMessage, ClientMessage, ToolCall } from '../types';
 
 interface WebSocketContextValue {
   isConnected: boolean;
-  sendMessage: (sessionId: string, content: string) => void;
+  sendMessage: (sessionId: string, content: string, workspacePath?: string) => void;
   sendConfig: () => void;
   confirmTool: (toolCallId: string, approved: boolean) => void;
   interrupt: (sessionId: string) => void;
@@ -25,6 +25,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       
       switch (data.type) {
         case 'started':
+          store.markUserMessageSent(data.session_id);
           store.startStreaming(data.session_id);
           break;
         case 'token':
@@ -106,8 +107,12 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     wsService.send(message);
   }, []);
 
-  const sendMessage = useCallback((sessionId: string, content: string) => {
-    send({ type: 'message', session_id: sessionId, content });
+  const sendMessage = useCallback((sessionId: string, content: string, workspacePath?: string) => {
+    const message: ClientWebSocketMessage = { type: 'message', session_id: sessionId, content };
+    if (workspacePath) {
+      (message as ClientMessage).workspace_path = workspacePath;
+    }
+    send(message);
   }, [send]);
 
   const sendConfig = useCallback(() => {
@@ -143,3 +148,4 @@ export function useWebSocket() {
   }
   return context;
 }
+

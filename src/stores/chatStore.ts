@@ -20,6 +20,7 @@ interface ChatState {
   setCompleted: (sessionId: string, usage?: TokenUsage) => void;
   setError: (sessionId: string, error: string, details?: string) => void;
   addUserMessage: (sessionId: string, content: string) => void;
+  markUserMessageSent: (sessionId: string) => void;
   startStreaming: (sessionId: string) => void;
   clearSession: (sessionId: string) => void;
   loadSession: (sessionId: string, messages: Message[]) => void;
@@ -45,6 +46,7 @@ export const useChatStore = create<ChatState>((set) => ({
         [sessionId]: {
           ...session,
           isStreaming: true,
+          assistantStatus: 'streaming',
           currentStreamingContent: session.currentStreamingContent + token,
         },
       },
@@ -247,7 +249,40 @@ export const useChatStore = create<ChatState>((set) => ({
       role: 'user',
       content,
       status: 'completed',
+      userStatus: 'sending',
     });
+
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          messages: newMessages,
+        },
+      },
+    };
+  }),
+
+  markUserMessageSent: (sessionId) => set((state) => {
+    const session = state.sessions[sessionId];
+    if (!session) return state;
+
+    const reversedIndex = [...session.messages]
+      .reverse()
+      .findIndex((message) => message.role === 'user' && message.userStatus === 'sending');
+
+    if (reversedIndex === -1) {
+      return state;
+    }
+
+    const messageIndex = session.messages.length - 1 - reversedIndex;
+    const newMessages = [...session.messages];
+    const targetMessage = newMessages[messageIndex];
+
+    newMessages[messageIndex] = {
+      ...targetMessage,
+      userStatus: 'sent',
+    };
 
     return {
       sessions: {
@@ -296,3 +331,9 @@ export const useChatStore = create<ChatState>((set) => ({
     },
   })),
 }));
+
+
+
+
+
+

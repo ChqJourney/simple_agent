@@ -175,6 +175,7 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
 async def handle_user_message(data: Dict[str, Any], send_callback: SendCallback) -> None:
     session_id = data.get("session_id")
     content = data.get("content")
+    workspace_path = data.get("workspace_path")
     
     if not session_id:
         await send_callback({
@@ -192,7 +193,7 @@ async def handle_user_message(data: Dict[str, Any], send_callback: SendCallback)
     
     async with state_lock:
         llm = current_llm
-        workspace = current_workspace
+        workspace = workspace_path if workspace_path else current_workspace
     
     if not llm:
         await send_callback({

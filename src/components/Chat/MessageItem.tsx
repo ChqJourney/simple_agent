@@ -16,8 +16,8 @@ interface MessageItemProps {
   currentToolName?: string;
 }
 
-export const MessageItem = memo<MessageItemProps>(({ 
-  message, 
+export const MessageItem = memo<MessageItemProps>(({
+  message,
   isStreaming = false,
   streamingContent = '',
   assistantStatus,
@@ -32,15 +32,22 @@ export const MessageItem = memo<MessageItemProps>(({
     return <ReasoningBlock content={message.content || ''} />;
   }
 
+  const hasBodyContent = Boolean(
+    (isAssistant && isStreaming ? streamingContent : message.content) ||
+      (message.tool_calls && message.tool_calls.length > 0)
+  );
+
   return (
-    <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-      isUser 
-        ? 'ml-auto bg-blue-50 dark:bg-blue-950' 
-        : isTool 
-        ? 'bg-orange-50 dark:bg-orange-950 rounded-xl text-sm'
-        : 'bg-gray-50 dark:bg-gray-800'
-    }`}>
-      <div className="flex justify-between items-center mb-2">
+    <div
+      className={`max-w-[85%] ${
+        isUser
+          ? 'ml-auto text-right'
+          : isTool
+            ? 'rounded-xl px-4 py-3 bg-orange-50 dark:bg-orange-950 text-sm'
+            : ''
+      }`}
+    >
+      <div className={`flex items-center mb-2 ${isUser ? 'justify-end gap-2' : 'justify-between'}`}>
         <span className="font-semibold text-xs text-gray-600 dark:text-gray-400">
           {isUser ? 'You' : isTool ? 'Tool' : 'Assistant'}
         </span>
@@ -50,30 +57,34 @@ export const MessageItem = memo<MessageItemProps>(({
           </span>
         )}
       </div>
-      
-      <div className="prose prose-sm dark:prose-invert max-w-none text-gray-900 dark:text-gray-100 leading-relaxed">
-        {isAssistant && isStreaming && streamingContent ? (
-          <StreamingMessage content={streamingContent} isStreaming={true} />
-        ) : (
-          <ReactMarkdown components={markdownComponents}>
-            {message.content || ''}
-          </ReactMarkdown>
-        )}
-        
-        {message.tool_calls && message.tool_calls.length > 0 && (
-          <div className="mt-3 space-y-2">
-            {message.tool_calls.map((toolCall) => (
-              <ToolCallDisplay key={toolCall.tool_call_id} toolCall={toolCall} />
-            ))}
-          </div>
-        )}
-      </div>
-      
+
+      {hasBodyContent && (
+        <div className="prose prose-sm dark:prose-invert max-w-none text-gray-900 dark:text-gray-100 leading-relaxed">
+          {isAssistant && isStreaming ? (
+            streamingContent ? (
+              <StreamingMessage content={streamingContent} isStreaming={true} />
+            ) : null
+          ) : (
+            <ReactMarkdown components={markdownComponents}>
+              {message.content || ''}
+            </ReactMarkdown>
+          )}
+
+          {message.tool_calls && message.tool_calls.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {message.tool_calls.map((toolCall) => (
+                <ToolCallDisplay key={toolCall.tool_call_id} toolCall={toolCall} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {isUser && message.userStatus && (
         <UserStatusIndicator status={message.userStatus} />
       )}
-      
-      {isAssistant && isStreaming && assistantStatus && (
+
+      {isAssistant && assistantStatus && (isStreaming || assistantStatus === 'completed') && (
         <AssistantStatusIndicator status={assistantStatus} toolName={currentToolName} />
       )}
     </div>

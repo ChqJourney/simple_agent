@@ -27,6 +27,11 @@ export const MessageList = memo<MessageListProps>(({
     }
   }, [messages, currentStreamingContent, currentReasoningContent]);
 
+  const lastAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant');
+  const completedAssistantMessageId = !isStreaming && assistantStatus === 'completed'
+    ? lastAssistantMessage?.id
+    : undefined;
+
   return (
     <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-4">
       {messages.length === 0 && !isStreaming && (
@@ -34,15 +39,17 @@ export const MessageList = memo<MessageListProps>(({
           <p>Start a conversation</p>
         </div>
       )}
-      
+
       {messages.map((message) => (
-        <MessageItem 
-          key={message.id} 
+        <MessageItem
+          key={message.id}
           message={message}
+          assistantStatus={message.id === completedAssistantMessageId ? 'completed' : undefined}
+          currentToolName={message.id === completedAssistantMessageId ? currentToolName : undefined}
         />
       ))}
-      
-      {isStreaming && currentStreamingContent && (
+
+      {isStreaming && (
         <MessageItem
           message={{
             id: 'streaming',

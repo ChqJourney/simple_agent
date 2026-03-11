@@ -1,11 +1,13 @@
 import { create } from 'zustand';
-import { Message, TokenUsage, ToolCall } from '../types';
+import { AssistantStatus, Message, TokenUsage, ToolCall } from '../types';
 
 interface SessionState {
   messages: Message[];
   currentStreamingContent: string;
   currentReasoningContent: string;
   isStreaming: boolean;
+  assistantStatus: AssistantStatus;
+  currentToolName?: string;
 }
 
 interface ChatState {
@@ -28,6 +30,8 @@ const createEmptySession = (): SessionState => ({
   currentStreamingContent: '',
   currentReasoningContent: '',
   isStreaming: false,
+  assistantStatus: 'idle',
+  currentToolName: undefined,
 });
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -55,6 +59,7 @@ export const useChatStore = create<ChatState>((set) => ({
         [sessionId]: {
           ...session,
           isStreaming: true,
+          assistantStatus: 'thinking',
           currentReasoningContent: session.currentReasoningContent + token,
         },
       },
@@ -120,6 +125,8 @@ export const useChatStore = create<ChatState>((set) => ({
           ...session,
           messages: newMessages,
           currentStreamingContent: '',
+          assistantStatus: 'tool_calling',
+          currentToolName: toolCall.name,
         },
       },
     };
@@ -197,6 +204,8 @@ export const useChatStore = create<ChatState>((set) => ({
           currentStreamingContent: '',
           currentReasoningContent: '',
           isStreaming: false,
+          assistantStatus: 'completed',
+          currentToolName: undefined,
         },
       },
     };
@@ -259,6 +268,8 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: true,
           currentStreamingContent: '',
           currentReasoningContent: '',
+          assistantStatus: 'waiting',
+          currentToolName: undefined,
         },
       },
     };
@@ -277,6 +288,8 @@ export const useChatStore = create<ChatState>((set) => ({
         currentStreamingContent: '',
         currentReasoningContent: '',
         isStreaming: false,
+        assistantStatus: 'idle',
+        currentToolName: undefined,
       },
     },
   })),

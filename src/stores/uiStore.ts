@@ -8,11 +8,13 @@ interface UIState {
   rightPanelCollapsed: boolean;
   rightPanelTab: RightPanelTab;
   theme: 'light' | 'dark' | 'system';
+  isPageLoading: boolean;
   
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  setPageLoading: (loading: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -32,6 +34,9 @@ export const useUIStore = create<UIState>()(
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
 
       setTheme: (theme) => set({ theme }),
+
+      isPageLoading: false,
+      setPageLoading: (loading) => set({ isPageLoading: loading }),
     }),
     {
       name: 'ui-storage',

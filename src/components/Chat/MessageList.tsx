@@ -1,5 +1,5 @@
 import { memo, useRef, useEffect } from 'react';
-import { Message } from '../../types';
+import { Message, AssistantStatus } from '../../types';
 import { MessageItem } from './MessageItem';
 
 interface MessageListProps {
@@ -7,6 +7,8 @@ interface MessageListProps {
   currentStreamingContent?: string;
   currentReasoningContent?: string;
   isStreaming?: boolean;
+  assistantStatus?: AssistantStatus;
+  currentToolName?: string;
 }
 
 export const MessageList = memo<MessageListProps>(({
@@ -14,6 +16,8 @@ export const MessageList = memo<MessageListProps>(({
   currentStreamingContent = '',
   currentReasoningContent = '',
   isStreaming = false,
+  assistantStatus,
+  currentToolName,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -48,6 +52,8 @@ export const MessageList = memo<MessageListProps>(({
           }}
           isStreaming={true}
           streamingContent={currentStreamingContent}
+          assistantStatus={assistantStatus}
+          currentToolName={currentToolName}
         />
       )}
     </div>

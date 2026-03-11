@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWorkspaceStore } from '../stores';
+import { useUIStore, useWorkspaceStore } from '../stores';
 import { WorkspaceList } from '../components/Welcome/WorkspaceList';
 import { WorkspaceDrawer } from '../components/Welcome/WorkspaceDrawer';
 
 export const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
   const { workspaces, addWorkspace, setCurrentWorkspace } = useWorkspaceStore();
+  const setPageLoading = useUIStore((state) => state.setPageLoading);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -24,9 +25,11 @@ export const WelcomePage: React.FC = () => {
         const existing = workspaces.find((w) => w.path === selected);
         if (existing) {
           setCurrentWorkspace(existing);
+          setTimeout(() => setPageLoading(true), 300);
           navigate(`/workspace/${existing.id}`);
         } else {
           const workspace = await addWorkspace(selected);
+          setTimeout(() => setPageLoading(true), 300);
           navigate(`/workspace/${workspace.id}`);
         }
       }
@@ -41,6 +44,7 @@ export const WelcomePage: React.FC = () => {
     const workspace = workspaces.find((w) => w.id === workspaceId);
     if (workspace) {
       setCurrentWorkspace(workspace);
+      setTimeout(() => setPageLoading(true), 300);
       navigate(`/workspace/${workspaceId}`);
     }
   };

@@ -40,6 +40,12 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'ui-storage',
+      partialize: (state) => ({
+        leftPanelCollapsed: state.leftPanelCollapsed,
+        rightPanelCollapsed: state.rightPanelCollapsed,
+        rightPanelTab: state.rightPanelTab,
+        theme: state.theme,
+      }),
     }
   )
 );

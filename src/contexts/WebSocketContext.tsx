@@ -2,13 +2,21 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { wsService } from '../services/websocket';
 import { useChatStore } from '../stores/chatStore';
 import { useConfigStore } from '../stores/configStore';
-import { ServerWebSocketMessage, ClientWebSocketMessage, ClientMessage, ToolCall } from '../types';
+import { useSessionStore } from '../stores/sessionStore';
+import {
+  ServerWebSocketMessage,
+  ClientWebSocketMessage,
+  ClientMessage,
+  ToolCall,
+  ToolDecision,
+  ToolDecisionScope,
+} from '../types';
 
 interface WebSocketContextValue {
   isConnected: boolean;
   sendMessage: (sessionId: string, content: string, workspacePath?: string) => void;
   sendConfig: () => void;
-  confirmTool: (toolCallId: string, approved: boolean) => void;
+  confirmTool: (toolCallId: string, decision: ToolDecision, scope?: ToolDecisionScope) => void;
   interrupt: (sessionId: string) => void;
   sendWorkspace: (workspacePath: string) => void;
 }
@@ -22,7 +30,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleMessage = (data: ServerWebSocketMessage) => {
       const store = useChatStore.getState();
-      
+
       switch (data.type) {
         case 'started':
           store.markUserMessageSent(data.session_id);
@@ -52,20 +60,50 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             name: data.name,
             arguments: data.arguments,
           };
-          store.setToolCall(data.session_id, toolCall);
+          store.setPendingToolConfirm(data.session_id, toolCall);
           break;
         }
+        case 'tool_decision':
+          store.addToolDecision(
+            data.session_id,
+            data.tool_call_id,
+            data.name,
+            data.decision,
+            data.scope,
+            data.reason
+          );
+          if (data.decision !== 'reject') {
+            store.clearPendingToolConfirm(data.session_id, data.tool_call_id);
+          }
+          break;
         case 'tool_result':
-          store.setToolResult(data.session_id, data.tool_call_id, data.success, data.output);
+          store.setToolResult(
+            data.session_id,
+            data.tool_call_id,
+            data.success,
+            data.output,
+            data.error,
+            data.tool_name
+          );
           break;
         case 'completed':
           store.setCompleted(data.session_id, data.usage);
           break;
-        case 'error':
-          store.setError(data.session_id, data.error, data.details);
+        case 'max_rounds_reached':
+          store.setError(data.session_id, data.error || 'Agent reached max tool-call rounds');
           break;
+        case 'error': {
+          const fallbackSessionId = useSessionStore.getState().currentSessionId || undefined;
+          const targetSessionId = data.session_id || fallbackSessionId;
+          if (targetSessionId) {
+            store.setError(targetSessionId, data.error, data.details);
+          } else {
+            console.error('Unhandled backend error without session_id:', data.error, data.details);
+          }
+          break;
+        }
         case 'retry':
-          console.log(`Retry attempt ${data.attempt}/${data.max_retries}: ${data.error}`);
+          store.setError(data.session_id, `Retry ${data.attempt}/${data.max_retries}`, data.error);
           break;
         case 'interrupted':
           store.setCompleted(data.session_id);
@@ -122,8 +160,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [send]);
 
-  const confirmTool = useCallback((toolCallId: string, approved: boolean) => {
-    send({ type: 'tool_confirm', tool_call_id: toolCallId, approved });
+  const confirmTool = useCallback((toolCallId: string, decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
+    send({
+      type: 'tool_confirm',
+      tool_call_id: toolCallId,
+      decision,
+      scope,
+      approved: decision !== 'reject',
+    });
   }, [send]);
 
   const interrupt = useCallback((sessionId: string) => {

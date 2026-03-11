@@ -1,11 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../../stores/chatStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useSession } from '../../hooks/useSession';
+import { ToolDecision, ToolDecisionScope } from '../../types';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
+import { ToolConfirmModal } from '../Tools';
 
 const emptySession = {
   messages: [] as never[],
@@ -14,14 +16,23 @@ const emptySession = {
   isStreaming: false,
   assistantStatus: 'idle' as const,
   currentToolName: undefined as string | undefined,
+  pendingToolConfirm: undefined as { tool_call_id: string; name: string; arguments: Record<string, unknown> } | undefined,
 };
 
 export const ChatContainer = () => {
   const { currentSessionId, createSession } = useSession();
   const { sendMessage, isConnected, confirmTool } = useWebSocket();
   const { currentWorkspace } = useWorkspaceStore();
-  
-  const { messages, streamingContent, reasoningContent, isStreaming, assistantStatus, currentToolName } = useChatStore(
+
+  const {
+    messages,
+    streamingContent,
+    reasoningContent,
+    isStreaming,
+    assistantStatus,
+    currentToolName,
+    pendingToolConfirm,
+  } = useChatStore(
     useShallow((state) => {
       if (!currentSessionId) return emptySession;
       const session = state.sessions[currentSessionId];
@@ -32,33 +43,27 @@ export const ChatContainer = () => {
         isStreaming: session.isStreaming,
         assistantStatus: session.assistantStatus,
         currentToolName: session.currentToolName,
+        pendingToolConfirm: session.pendingToolConfirm,
       } : emptySession;
     })
   );
-  
-  const [pendingToolCall, setPendingToolCall] = useState<{
-    toolCallId: string;
-    name: string;
-    args: Record<string, unknown>;
-  } | null>(null);
 
   const handleSend = useCallback((content: string) => {
     let sessionId = currentSessionId;
-    
+
     if (!sessionId) {
       sessionId = createSession();
     }
-    
+
     useChatStore.getState().addUserMessage(sessionId, content);
     sendMessage(sessionId, content, currentWorkspace?.path);
   }, [currentSessionId, createSession, sendMessage, currentWorkspace?.path]);
 
-  const handleConfirmTool = useCallback((approved: boolean) => {
-    if (pendingToolCall) {
-      confirmTool(pendingToolCall.toolCallId, approved);
-      setPendingToolCall(null);
-    }
-  }, [pendingToolCall, confirmTool]);
+  const handleToolDecision = useCallback((decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
+    if (!currentSessionId || !pendingToolConfirm) return;
+    confirmTool(pendingToolConfirm.tool_call_id, decision, scope);
+    useChatStore.getState().clearPendingToolConfirm(currentSessionId, pendingToolConfirm.tool_call_id);
+  }, [confirmTool, currentSessionId, pendingToolConfirm]);
 
   return (
     <div className="flex flex-col h-full">
@@ -69,7 +74,7 @@ export const ChatContainer = () => {
           <span className="text-red-600 dark:text-red-400">Disconnected</span>
         )}
       </div>
-      
+
       <MessageList
         messages={messages}
         currentStreamingContent={streamingContent}
@@ -78,36 +83,18 @@ export const ChatContainer = () => {
         assistantStatus={assistantStatus}
         currentToolName={currentToolName}
       />
-      
-      {pendingToolCall && (
-        <div className="p-4 bg-yellow-50 dark:bg-yellow-950 border-t border-yellow-200 dark:border-yellow-800">
-          <p className="mb-2 text-yellow-900 dark:text-yellow-100">
-            Tool call: <strong>{pendingToolCall.name}</strong>
-          </p>
-          <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded mb-2 overflow-auto text-gray-900 dark:text-gray-100">
-            {JSON.stringify(pendingToolCall.args, null, 2)}
-          </pre>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleConfirmTool(true)}
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
-            >
-              Approve
-            </button>
-            <button
-              onClick={() => handleConfirmTool(false)}
-              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
-            >
-              Reject
-            </button>
-          </div>
-        </div>
-      )}
-      
+
       <MessageInput
         onSend={handleSend}
         disabled={!isConnected || isStreaming}
       />
+
+      {pendingToolConfirm && (
+        <ToolConfirmModal
+          toolCall={pendingToolConfirm}
+          onDecision={handleToolDecision}
+        />
+      )}
     </div>
   );
 };

@@ -22,18 +22,26 @@ export const SettingsPage: React.FC = () => {
 
     try {
       const baseUrl = config.base_url || getDefaultBaseUrl(config.provider);
-      const response = await fetch(`${baseUrl}/models`, {
+      const response = await fetch('http://127.0.0.1:8765/test-config', {
+        method: 'POST',
         headers: {
-          'Authorization': `Bearer ${config.api_key}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          provider: config.provider,
+          model: config.model,
+          api_key: config.api_key,
+          base_url: baseUrl,
+        }),
       });
 
-      if (response.ok) {
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.ok && payload.ok) {
         setTestStatus('success');
       } else {
-        const error = await response.text();
         setTestStatus('error');
-        setTestError(error);
+        setTestError(payload.error || 'Connection test failed');
       }
     } catch (error) {
       setTestStatus('error');
@@ -93,8 +101,8 @@ export const SettingsPage: React.FC = () => {
                   <span className="text-green-500 text-sm">Connected</span>
                 )}
                 {testStatus === 'error' && (
-                  <span className="text-red-500 text-sm" title={testError || ''}>
-                    Failed
+                  <span className="text-red-500 text-sm">
+                    Failed{testError ? `: ${testError}` : ''}
                   </span>
                 )}
               </div>
@@ -136,3 +144,5 @@ export const SettingsPage: React.FC = () => {
     </div>
   );
 };
+
+

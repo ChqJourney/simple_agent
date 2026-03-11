@@ -78,6 +78,30 @@ class OllamaLLM(BaseLLM):
 
     def _convert_chunk_to_openai(self, chunk: Dict) -> Dict:
         message = chunk.get("message", {})
+
+        delta: Dict[str, Any] = {
+            "role": message.get("role"),
+            "content": message.get("content", "")
+        }
+
+        raw_tool_calls = message.get("tool_calls") or []
+        if raw_tool_calls:
+            converted_tool_calls = []
+            for index, tool_call in enumerate(raw_tool_calls):
+                function = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+                converted_tool_calls.append({
+                    "index": index,
+                    "id": tool_call.get("id", "") if isinstance(tool_call, dict) else "",
+                    "type": "function",
+                    "function": {
+                        "name": function.get("name", ""),
+                        "arguments": json.dumps(function.get("arguments", {}), ensure_ascii=False)
+                        if not isinstance(function.get("arguments"), str)
+                        else function.get("arguments", ""),
+                    }
+                })
+            delta["tool_calls"] = converted_tool_calls
+
         return {
             "id": f"ollama-{chunk.get('created_at', '')}",
             "object": "chat.completion.chunk",
@@ -85,10 +109,7 @@ class OllamaLLM(BaseLLM):
             "model": self.model,
             "choices": [{
                 "index": 0,
-                "delta": {
-                    "role": message.get("role"),
-                    "content": message.get("content", "")
-                },
+                "delta": delta,
                 "finish_reason": "stop" if chunk.get("done") else None
             }]
         }

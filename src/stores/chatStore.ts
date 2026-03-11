@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AssistantStatus, Message, TokenUsage, ToolCall } from '../types';
+import { AssistantStatus, Message, TokenUsage, ToolCall, ToolDecision, ToolDecisionScope } from '../types';
 
 interface SessionState {
   messages: Message[];
@@ -8,6 +8,7 @@ interface SessionState {
   isStreaming: boolean;
   assistantStatus: AssistantStatus;
   currentToolName?: string;
+  pendingToolConfirm?: ToolCall;
 }
 
 interface ChatState {
@@ -16,7 +17,24 @@ interface ChatState {
   addReasoningToken: (sessionId: string, token: string) => void;
   setReasoningComplete: (sessionId: string) => void;
   setToolCall: (sessionId: string, toolCall: ToolCall) => void;
-  setToolResult: (sessionId: string, toolCallId: string, success: boolean, output: unknown) => void;
+  setPendingToolConfirm: (sessionId: string, toolCall: ToolCall) => void;
+  clearPendingToolConfirm: (sessionId: string, toolCallId?: string) => void;
+  addToolDecision: (
+    sessionId: string,
+    toolCallId: string,
+    toolName: string,
+    decision: ToolDecision,
+    scope: ToolDecisionScope,
+    reason?: string
+  ) => void;
+  setToolResult: (
+    sessionId: string,
+    toolCallId: string,
+    success: boolean,
+    output: unknown,
+    error?: string,
+    toolName?: string
+  ) => void;
   setCompleted: (sessionId: string, usage?: TokenUsage) => void;
   setError: (sessionId: string, error: string, details?: string) => void;
   addUserMessage: (sessionId: string, content: string) => void;
@@ -33,6 +51,7 @@ const createEmptySession = (): SessionState => ({
   isStreaming: false,
   assistantStatus: 'idle',
   currentToolName: undefined,
+  pendingToolConfirm: undefined,
 });
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -134,25 +153,104 @@ export const useChatStore = create<ChatState>((set) => ({
     };
   }),
 
-  setToolResult: (sessionId, toolCallId, _success, output) => set((state) => {
-    const session = state.sessions[sessionId];
-    if (!session) return state;
+  setPendingToolConfirm: (sessionId, toolCall) => set((state) => {
+    const session = state.sessions[sessionId] || createEmptySession();
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          pendingToolConfirm: toolCall,
+        },
+      },
+    };
+  }),
 
-    const newMessages = [...session.messages];
-    newMessages.push({
-      id: crypto.randomUUID(),
-      role: 'tool',
-      content: typeof output === 'string' ? output : JSON.stringify(output),
-      tool_call_id: toolCallId,
-      status: 'completed',
-    });
+  clearPendingToolConfirm: (sessionId, toolCallId) => set((state) => {
+    const session = state.sessions[sessionId];
+    if (!session?.pendingToolConfirm) return state;
+
+    if (toolCallId && session.pendingToolConfirm.tool_call_id !== toolCallId) {
+      return state;
+    }
 
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...session,
-          messages: newMessages,
+          pendingToolConfirm: undefined,
+        },
+      },
+    };
+  }),
+
+  addToolDecision: (sessionId, toolCallId, toolName, decision, scope, reason) => set((state) => {
+    const session = state.sessions[sessionId] || createEmptySession();
+    const decisionText =
+      decision === 'approve_always'
+        ? `Tool ${toolName} approved always (${scope})`
+        : decision === 'approve_once'
+          ? `Tool ${toolName} approved once`
+          : `Tool ${toolName} rejected`;
+
+    const details = reason && reason !== 'user_action' ? ` [${reason}]` : '';
+
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          messages: [
+            ...session.messages,
+            {
+              id: crypto.randomUUID(),
+              role: 'tool',
+              tool_call_id: toolCallId,
+              name: 'tool_decision',
+              content: `${decisionText}${details}`,
+              status: 'completed',
+            },
+          ],
+        },
+      },
+    };
+  }),
+
+  setToolResult: (sessionId, toolCallId, success, output, error, toolName) => set((state) => {
+    const session = state.sessions[sessionId];
+    if (!session) return state;
+
+    const renderedOutput = (() => {
+      if (success) {
+        if (typeof output === 'string') return output;
+        return JSON.stringify(output, null, 2);
+      }
+      if (error) return `Error: ${error}`;
+      if (typeof output === 'string' && output) return `Error: ${output}`;
+      return 'Error: Tool execution failed';
+    })();
+
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          pendingToolConfirm:
+            session.pendingToolConfirm?.tool_call_id === toolCallId
+              ? undefined
+              : session.pendingToolConfirm,
+          messages: [
+            ...session.messages,
+            {
+              id: crypto.randomUUID(),
+              role: 'tool',
+              content: renderedOutput,
+              tool_call_id: toolCallId,
+              name: toolName,
+              status: success ? 'completed' : 'error',
+            },
+          ],
         },
       },
     };
@@ -162,13 +260,32 @@ export const useChatStore = create<ChatState>((set) => ({
     const session = state.sessions[sessionId];
     if (!session) return state;
 
-    const newMessages = [...session.messages];
-    
+    const newMessages: Message[] = session.messages.map((message): Message => {
+      if (
+        message.role === 'assistant' &&
+        message.status === 'streaming' &&
+        message.tool_calls &&
+        message.tool_calls.length > 0
+      ) {
+        return {
+          ...message,
+          status: 'completed',
+        };
+      }
+      return message;
+    });
+
     if (session.currentStreamingContent) {
-      const existingAssistantIndex = newMessages.findIndex(
-        m => m.role === 'assistant' && m.status === 'streaming'
+      const reversedIndex = [...newMessages].reverse().findIndex(
+        (m) =>
+          m.role === 'assistant' &&
+          m.status === 'streaming' &&
+          (!m.tool_calls || m.tool_calls.length === 0)
       );
-      
+      const existingAssistantIndex = reversedIndex >= 0
+        ? newMessages.length - 1 - reversedIndex
+        : -1;
+
       if (existingAssistantIndex >= 0) {
         newMessages[existingAssistantIndex] = {
           ...newMessages[existingAssistantIndex],
@@ -208,34 +325,35 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: false,
           assistantStatus: 'completed',
           currentToolName: undefined,
+          pendingToolConfirm: undefined,
         },
       },
     };
   }),
 
   setError: (sessionId, error, details) => set((state) => {
-    const session = state.sessions[sessionId];
-    if (!session) return state;
-
-    const newMessages = [...session.messages];
-    newMessages.push({
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: `Error: ${error}${details ? `\n${details}` : ''}`,
-      status: 'error',
-    });
+    const session = state.sessions[sessionId] || createEmptySession();
 
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...session,
-          messages: newMessages,
+          messages: [
+            ...session.messages,
+            {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: `Error: ${error}${details ? `\n${details}` : ''}`,
+              status: 'error',
+            },
+          ],
           currentStreamingContent: '',
           currentReasoningContent: '',
           isStreaming: false,
           assistantStatus: 'idle',
           currentToolName: undefined,
+          pendingToolConfirm: undefined,
         },
       },
     };
@@ -327,13 +445,10 @@ export const useChatStore = create<ChatState>((set) => ({
         isStreaming: false,
         assistantStatus: 'idle',
         currentToolName: undefined,
+        pendingToolConfirm: undefined,
       },
     },
   })),
 }));
-
-
-
-
 
 

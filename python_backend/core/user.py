@@ -4,7 +4,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Set
 
 from pydantic import BaseModel, Field
 
@@ -81,6 +81,9 @@ class Session:
     def get_messages_for_llm(self) -> List[Dict[str, Any]]:
         result = []
         for msg in self.messages:
+            if msg.role == "tool" and msg.name == "tool_decision":
+                continue
+
             llm_msg: Dict[str, Any] = {"role": msg.role}
             if msg.content is not None:
                 llm_msg["content"] = msg.content
@@ -111,7 +114,10 @@ class UserManager:
 
     def __init__(self):
         self.sessions: Dict[str, Session] = {}
-        self.tool_confirmations: Dict[str, asyncio.Future[bool]] = {}
+        self.tool_confirmations: Dict[str, asyncio.Future[Dict[str, str]]] = {}
+        self.pending_tool_context: Dict[str, Dict[str, str]] = {}
+        self.session_tool_policies: Dict[str, Set[str]] = {}
+        self.workspace_tool_policies: Dict[str, Set[str]] = {}
         self.ws_callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
         self._lock = asyncio.Lock()
 
@@ -152,15 +158,21 @@ class UserManager:
         session_id: str,
         tool_call_id: str,
         tool_name: str,
+        workspace_path: str,
         arguments: Dict[str, Any]
-    ) -> bool:
+    ) -> Dict[str, str]:
         async with self._lock:
             if tool_call_id in self.tool_confirmations:
                 logger.warning(f"Tool confirmation already pending for {tool_call_id}")
-                return False
+                return {"decision": "reject", "scope": "session", "reason": "duplicate_pending"}
 
-            future: asyncio.Future[bool] = asyncio.Future()
+            future: asyncio.Future[Dict[str, str]] = asyncio.Future()
             self.tool_confirmations[tool_call_id] = future
+            self.pending_tool_context[tool_call_id] = {
+                "session_id": session_id,
+                "workspace_path": workspace_path,
+                "tool_name": tool_name,
+            }
 
         await self.send_to_frontend({
             "type": "tool_confirm_request",
@@ -177,22 +189,52 @@ class UserManager:
             logger.warning(f"Tool confirmation timeout for {tool_call_id}")
             async with self._lock:
                 self.tool_confirmations.pop(tool_call_id, None)
-            return False
+                self.pending_tool_context.pop(tool_call_id, None)
+            return {"decision": "reject", "scope": "session", "reason": "timeout"}
         except Exception as e:
             logger.error(f"Error waiting for tool confirmation: {e}")
             async with self._lock:
                 self.tool_confirmations.pop(tool_call_id, None)
-            return False
+                self.pending_tool_context.pop(tool_call_id, None)
+            return {"decision": "reject", "scope": "session", "reason": "internal_error"}
 
-    async def handle_tool_confirmation(self, tool_call_id: str, approved: bool) -> bool:
+    async def handle_tool_confirmation(
+        self,
+        tool_call_id: str,
+        approved: Optional[bool] = None,
+        decision: Optional[Literal["approve_once", "approve_always", "reject"]] = None,
+        scope: Literal["session", "workspace"] = "session"
+    ) -> bool:
         async with self._lock:
             if tool_call_id not in self.tool_confirmations:
                 logger.warning(f"No pending confirmation for {tool_call_id}")
                 return False
 
             future = self.tool_confirmations.pop(tool_call_id)
+            context = self.pending_tool_context.pop(tool_call_id, {})
+
+            normalized_decision = decision
+            if normalized_decision is None:
+                normalized_decision = "approve_once" if approved else "reject"
+
+            if normalized_decision == "approve_always":
+                tool_name = context.get("tool_name")
+                if tool_name:
+                    if scope == "workspace":
+                        workspace_path = context.get("workspace_path")
+                        if workspace_path:
+                            self.workspace_tool_policies.setdefault(workspace_path, set()).add(tool_name)
+                    else:
+                        session_id = context.get("session_id")
+                        if session_id:
+                            self.session_tool_policies.setdefault(session_id, set()).add(tool_name)
+
             if not future.done():
-                future.set_result(approved)
+                future.set_result({
+                    "decision": normalized_decision,
+                    "scope": scope,
+                    "reason": "user_action",
+                })
                 return True
             return False
 
@@ -202,10 +244,18 @@ class UserManager:
                 return False
 
             future = self.tool_confirmations.pop(tool_call_id)
+            self.pending_tool_context.pop(tool_call_id, None)
             if not future.done():
                 future.cancel()
                 return True
             return False
+
+    def is_tool_auto_approved(self, session_id: str, workspace_path: str, tool_name: str) -> bool:
+        if tool_name in self.session_tool_policies.get(session_id, set()):
+            return True
+        if tool_name in self.workspace_tool_policies.get(workspace_path, set()):
+            return True
+        return False
 
     async def clear_all_confirmations(self) -> None:
         async with self._lock:
@@ -213,3 +263,4 @@ class UserManager:
                 if not future.done():
                     future.cancel()
             self.tool_confirmations.clear()
+            self.pending_tool_context.clear()

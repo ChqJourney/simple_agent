@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.user import Message, Session, UserManager
 from llms.base import BaseLLM
@@ -40,7 +40,7 @@ class Agent:
         })
 
         try:
-            for round_num in range(self.max_tool_rounds):
+            for _ in range(self.max_tool_rounds):
                 if self._interrupt_event.is_set():
                     await self.user_manager.send_to_frontend({
                         "type": "interrupted",
@@ -78,7 +78,8 @@ class Agent:
 
             await self.user_manager.send_to_frontend({
                 "type": "max_rounds_reached",
-                "session_id": session.session_id
+                "session_id": session.session_id,
+                "error": f"Tool call rounds exceeded limit ({self.max_tool_rounds})"
             })
 
         except Exception as e:
@@ -123,6 +124,30 @@ class Agent:
             raise last_error
         return None
 
+    @staticmethod
+    def _get_chunk_choices(chunk: Any) -> List[Any]:
+        if isinstance(chunk, dict):
+            return chunk.get("choices", [])
+        return getattr(chunk, "choices", []) or []
+
+    @staticmethod
+    def _get_choice_field(choice: Any, field: str) -> Any:
+        if isinstance(choice, dict):
+            return choice.get(field)
+        return getattr(choice, field, None)
+
+    @staticmethod
+    def _get_delta_field(delta: Any, field: str) -> Any:
+        if isinstance(delta, dict):
+            return delta.get(field)
+        return getattr(delta, field, None)
+
+    @staticmethod
+    def _get_tool_call_delta_field(tool_call_delta: Any, field: str) -> Any:
+        if isinstance(tool_call_delta, dict):
+            return tool_call_delta.get(field)
+        return getattr(tool_call_delta, field, None)
+
     async def _stream_llm_response(
         self,
         messages: List[Dict],
@@ -132,36 +157,45 @@ class Agent:
         content_chunks: List[str] = []
         reasoning_chunks: List[str] = []
         tool_calls_data: Dict[int, Dict[str, Any]] = {}
-        finish_reason: Optional[str] = None
 
         async for chunk in self.llm.stream(messages, tools):
             if self._interrupt_event.is_set():
                 return Message(role="assistant", content="")
 
-            if not chunk.choices:
+            choices = self._get_chunk_choices(chunk)
+            if not choices:
                 continue
 
-            delta = chunk.choices[0].delta
+            choice = choices[0]
+            delta = self._get_choice_field(choice, "delta")
+            if not delta:
+                continue
 
-            if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
-                reasoning_chunks.append(delta.reasoning_content)
+            reasoning_content = self._get_delta_field(delta, "reasoning_content")
+            if reasoning_content:
+                reasoning_chunks.append(reasoning_content)
                 await self.user_manager.send_to_frontend({
                     "type": "reasoning_token",
                     "session_id": session.session_id,
-                    "content": delta.reasoning_content
+                    "content": reasoning_content
                 })
 
-            if delta.content:
-                content_chunks.append(delta.content)
+            content = self._get_delta_field(delta, "content")
+            if content:
+                content_chunks.append(content)
                 await self.user_manager.send_to_frontend({
                     "type": "token",
                     "session_id": session.session_id,
-                    "content": delta.content
+                    "content": content
                 })
 
-            if delta.tool_calls:
-                for tool_call_delta in delta.tool_calls:
-                    idx = tool_call_delta.index
+            delta_tool_calls = self._get_delta_field(delta, "tool_calls")
+            if delta_tool_calls:
+                for tool_call_delta in delta_tool_calls:
+                    idx = self._get_tool_call_delta_field(tool_call_delta, "index")
+                    if idx is None:
+                        idx = 0
+
                     if idx not in tool_calls_data:
                         tool_calls_data[idx] = {
                             "id": "",
@@ -169,16 +203,19 @@ class Agent:
                             "function": {"name": "", "arguments": ""}
                         }
 
-                    if tool_call_delta.id:
-                        tool_calls_data[idx]["id"] = tool_call_delta.id
-                    if tool_call_delta.function:
-                        if tool_call_delta.function.name:
-                            tool_calls_data[idx]["function"]["name"] = tool_call_delta.function.name
-                        if tool_call_delta.function.arguments:
-                            tool_calls_data[idx]["function"]["arguments"] += tool_call_delta.function.arguments
+                    tool_call_id = self._get_tool_call_delta_field(tool_call_delta, "id")
+                    if tool_call_id:
+                        tool_calls_data[idx]["id"] = tool_call_id
 
-            if chunk.choices[0].finish_reason:
-                finish_reason = chunk.choices[0].finish_reason
+                    function_delta = self._get_tool_call_delta_field(tool_call_delta, "function")
+                    if function_delta:
+                        function_name = self._get_delta_field(function_delta, "name")
+                        if function_name:
+                            tool_calls_data[idx]["function"]["name"] = function_name
+
+                        function_args = self._get_delta_field(function_delta, "arguments")
+                        if function_args:
+                            tool_calls_data[idx]["function"]["arguments"] += function_args
 
         if reasoning_chunks:
             await self.user_manager.send_to_frontend({
@@ -207,6 +244,7 @@ class Agent:
                     args = json.loads(tc["function"]["arguments"]) if tc["function"]["arguments"] else {}
                 except json.JSONDecodeError:
                     args = {}
+
                 await self.user_manager.send_to_frontend({
                     "type": "tool_call",
                     "session_id": session.session_id,
@@ -228,6 +266,7 @@ class Agent:
         session: Session
     ) -> List[ToolResult]:
         tasks: List[asyncio.Task[ToolResult]] = []
+        scheduled_calls: List[Tuple[str, str]] = []
         tool_results: List[ToolResult] = []
 
         for tool_call in tool_calls:
@@ -263,6 +302,7 @@ class Agent:
                 ))
                 continue
 
+            scheduled_calls.append((tool_call_id, function_name))
             tasks.append(asyncio.create_task(
                 self._execute_single_tool(tool_call_id, tool, arguments, session)
             ))
@@ -271,11 +311,11 @@ class Agent:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for i, result in enumerate(results):
+                call_id, call_name = scheduled_calls[i]
                 if isinstance(result, Exception):
-                    tc = tool_calls[i]
                     tool_results.append(ToolResult(
-                        tool_call_id=tc["id"],
-                        tool_name=tc["function"]["name"],
+                        tool_call_id=call_id,
+                        tool_name=call_name,
                         success=False,
                         output=None,
                         error=str(result)
@@ -293,31 +333,76 @@ class Agent:
         session: Session
     ) -> ToolResult:
         if tool.require_confirmation:
-            approved = await self.user_manager.request_tool_confirmation(
-                session_id=session.session_id,
-                tool_call_id=tool_call_id,
-                tool_name=tool.name,
-                arguments=arguments
-            )
+            if self.user_manager.is_tool_auto_approved(session.session_id, session.workspace_path, tool.name):
+                decision_data = {
+                    "decision": "approve_always",
+                    "scope": "workspace",
+                    "reason": "policy",
+                }
+            else:
+                decision_data = await self.user_manager.request_tool_confirmation(
+                    session_id=session.session_id,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool.name,
+                    workspace_path=session.workspace_path,
+                    arguments=arguments
+                )
 
-            if not approved:
-                return ToolResult(
+            decision = decision_data.get("decision", "reject")
+            scope = decision_data.get("scope", "session")
+            reason = decision_data.get("reason", "user_action")
+
+            await self.user_manager.send_to_frontend({
+                "type": "tool_decision",
+                "session_id": session.session_id,
+                "tool_call_id": tool_call_id,
+                "name": tool.name,
+                "decision": decision,
+                "scope": scope,
+                "reason": reason
+            })
+
+            session.add_message(Message(
+                role="tool",
+                tool_call_id=tool_call_id,
+                name="tool_decision",
+                content=f"decision={decision}; scope={scope}; reason={reason}"
+            ))
+
+            if decision == "reject":
+                reject_result = ToolResult(
                     tool_call_id=tool_call_id,
                     tool_name=tool.name,
                     success=False,
                     output=None,
                     error="Tool execution was not approved by user"
                 )
+                await self.user_manager.send_to_frontend({
+                    "type": "tool_result",
+                    "session_id": session.session_id,
+                    "tool_call_id": tool_call_id,
+                    "tool_name": tool.name,
+                    "success": False,
+                    "output": None,
+                    "error": reject_result.error
+                })
+                return reject_result
 
         try:
-            result = await tool.execute(**arguments)
+            result = await tool.execute(
+                tool_call_id=tool_call_id,
+                workspace_path=session.workspace_path,
+                **arguments
+            )
 
             await self.user_manager.send_to_frontend({
                 "type": "tool_result",
                 "session_id": session.session_id,
                 "tool_call_id": tool_call_id,
+                "tool_name": tool.name,
                 "success": result.success,
-                "output": result.output
+                "output": result.output,
+                "error": result.error
             })
 
             return result
@@ -335,9 +420,12 @@ class Agent:
                 "type": "tool_result",
                 "session_id": session.session_id,
                 "tool_call_id": tool_call_id,
+                "tool_name": tool.name,
                 "success": False,
                 "output": None,
                 "error": str(e)
             })
 
             return error_result
+
+

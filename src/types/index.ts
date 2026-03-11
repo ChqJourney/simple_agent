@@ -6,6 +6,9 @@ export type UserMessageStatus = 'sending' | 'sent';
 
 export type AssistantStatus = 'idle' | 'waiting' | 'thinking' | 'streaming' | 'tool_calling' | 'completed';
 
+export type ToolDecision = 'approve_once' | 'approve_always' | 'reject';
+export type ToolDecisionScope = 'session' | 'workspace';
+
 export interface ToolCall {
   tool_call_id: string;
   name: string;
@@ -86,7 +89,9 @@ export interface ClientConfig {
 export interface ClientToolConfirm {
   type: 'tool_confirm';
   tool_call_id: string;
-  approved: boolean;
+  approved?: boolean;
+  decision?: ToolDecision;
+  scope?: ToolDecisionScope;
 }
 
 export interface ClientInterrupt {
@@ -134,12 +139,24 @@ export interface ServerToolConfirmRequest {
   arguments: Record<string, unknown>;
 }
 
+export interface ServerToolDecision {
+  type: 'tool_decision';
+  session_id: string;
+  tool_call_id: string;
+  name: string;
+  decision: ToolDecision;
+  scope: ToolDecisionScope;
+  reason?: string;
+}
+
 export interface ServerToolResult {
   type: 'tool_result';
   session_id: string;
   tool_call_id: string;
+  tool_name?: string;
   success: boolean;
   output: unknown;
+  error?: string;
 }
 
 export interface ServerRetry {
@@ -152,7 +169,7 @@ export interface ServerRetry {
 
 export interface ServerError {
   type: 'error';
-  session_id: string;
+  session_id?: string;
   error: string;
   details?: string;
 }
@@ -161,6 +178,12 @@ export interface ServerCompleted {
   type: 'completed';
   session_id: string;
   usage?: TokenUsage;
+}
+
+export interface ServerMaxRoundsReached {
+  type: 'max_rounds_reached';
+  session_id: string;
+  error?: string;
 }
 
 export interface ServerStarted {
@@ -190,10 +213,12 @@ export type ServerWebSocketMessage =
   | ServerReasoningComplete
   | ServerToolCall
   | ServerToolConfirmRequest
+  | ServerToolDecision
   | ServerToolResult
   | ServerRetry
   | ServerError
   | ServerCompleted
+  | ServerMaxRoundsReached
   | ServerStarted
   | ServerInterrupted
   | ServerConfigUpdated

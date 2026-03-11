@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { WelcomePage, WorkspacePage, SettingsPage } from './pages';
 import { WebSocketProvider } from './contexts/WebSocketContext';
+import { LoadingOverlay } from './components/common';
 import "./index.css";
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
           <Route path="/workspace/:workspaceId" element={<WorkspacePage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
+        <LoadingOverlay />
       </WebSocketProvider>
     </BrowserRouter>
   );

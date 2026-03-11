@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useWorkspaceStore, useUIStore } from '../stores';
+import { useWorkspaceStore, useUIStore, useSessionStore } from '../stores';
 import { TopBar, LeftPanel, RightPanel } from '../components/Workspace';
 import { ChatContainer } from '../components/Chat';
 import { useWebSocket } from '../contexts/WebSocketContext';
@@ -11,8 +11,9 @@ export const WorkspacePage: React.FC = () => {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const navigate = useNavigate();
   const { workspaces, setCurrentWorkspace, currentWorkspace } = useWorkspaceStore();
-  const { leftPanelCollapsed, rightPanelCollapsed } = useUIStore();
+  const { leftPanelCollapsed, rightPanelCollapsed, setPageLoading } = useUIStore();
   const { isConnected, sendWorkspace } = useWebSocket();
+  const { loadSessionsFromDisk } = useSessionStore();
   const [backendReady, setBackendReady] = useState(!IS_DEV);
   const prevWorkspaceIdRef = useRef<string | null>(null);
 
@@ -29,10 +30,22 @@ export const WorkspacePage: React.FC = () => {
   }, [workspaceId, workspaces, setCurrentWorkspace, navigate]);
 
   useEffect(() => {
+    if (currentWorkspace?.path) {
+      loadSessionsFromDisk(currentWorkspace.path);
+    }
+  }, [currentWorkspace?.path, loadSessionsFromDisk]);
+
+  useEffect(() => {
     if (isConnected && currentWorkspace?.path) {
       sendWorkspace(currentWorkspace.path);
     }
   }, [isConnected, currentWorkspace?.path, sendWorkspace]);
+
+  useEffect(() => {
+    if (currentWorkspace) {
+      setPageLoading(false);
+    }
+  }, [currentWorkspace, setPageLoading]);
 
   useEffect(() => {
     if (IS_DEV && !backendReady) {

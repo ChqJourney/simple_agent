@@ -1,21 +1,27 @@
 import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Message } from '../../types';
+import { Message, AssistantStatus } from '../../types';
 import { StreamingMessage } from './StreamingMessage';
 import { markdownComponents } from '../../utils/markdown';
 import { ReasoningBlock } from '../Reasoning/ReasoningBlock';
 import { ToolCallDisplay } from '../Tools/ToolCallDisplay';
+import { UserStatusIndicator } from './UserStatusIndicator';
+import { AssistantStatusIndicator } from './AssistantStatusIndicator';
 
 interface MessageItemProps {
   message: Message;
   isStreaming?: boolean;
   streamingContent?: string;
+  assistantStatus?: AssistantStatus;
+  currentToolName?: string;
 }
 
 export const MessageItem = memo<MessageItemProps>(({ 
   message, 
   isStreaming = false,
   streamingContent = '',
+  assistantStatus,
+  currentToolName,
 }) => {
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
@@ -62,6 +68,14 @@ export const MessageItem = memo<MessageItemProps>(({
           </div>
         )}
       </div>
+      
+      {isUser && message.userStatus && (
+        <UserStatusIndicator status={message.userStatus} />
+      )}
+      
+      {isAssistant && isStreaming && assistantStatus && (
+        <AssistantStatusIndicator status={assistantStatus} toolName={currentToolName} />
+      )}
     </div>
   );
 });

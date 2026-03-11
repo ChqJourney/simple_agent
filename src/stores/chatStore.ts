@@ -232,6 +232,8 @@ export const useChatStore = create<ChatState>((set) => ({
           currentStreamingContent: '',
           currentReasoningContent: '',
           isStreaming: false,
+          assistantStatus: 'idle',
+          currentToolName: undefined,
         },
       },
     };

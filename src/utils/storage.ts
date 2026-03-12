@@ -85,14 +85,24 @@ export async function loadSessionHistory(
 
       try {
         const data = JSON.parse(trimmed);
+        if (data.role === 'assistant' && data.reasoning_content) {
+          messages.push({
+            id: crypto.randomUUID(),
+            role: 'reasoning',
+            content: data.reasoning_content,
+            status: 'completed',
+          });
+        }
+
         const message: Message = {
           id: crypto.randomUUID(),
           role: data.role,
           content: data.content ?? null,
-          reasoning_content: data.reasoning_content,
           tool_calls: data.tool_calls,
           tool_call_id: data.tool_call_id,
           name: data.name,
+          profile_name: data.profile_name,
+          model_label: data.model_label,
           status: 'completed',
         };
         messages.push(message);

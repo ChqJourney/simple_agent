@@ -33,6 +33,8 @@ export interface Message {
   tool_call_id?: string;
   name?: string;
   usage?: TokenUsage;
+  profile_name?: string;
+  model_label?: string;
   status: MessageStatus;
   userStatus?: UserMessageStatus;
 }
@@ -45,6 +47,7 @@ export interface TokenUsage {
 }
 
 export type ProviderType = 'openai' | 'qwen' | 'ollama';
+export type InputType = 'text' | 'image';
 
 export interface ProviderConfig {
   provider: ProviderType;
@@ -52,6 +55,7 @@ export interface ProviderConfig {
   api_key: string;
   base_url: string;
   enable_reasoning: boolean;
+  input_type?: InputType;
 }
 
 export interface Workspace {
@@ -84,6 +88,7 @@ export interface ClientConfig {
   api_key: string;
   base_url: string;
   enable_reasoning: boolean;
+  input_type?: InputType;
 }
 
 export interface ClientToolConfirm {
@@ -225,5 +230,4 @@ export type ServerWebSocketMessage =
   | ServerWorkspaceUpdated;
 
 export type WebSocketMessage = ClientWebSocketMessage | ServerWebSocketMessage;
-
 

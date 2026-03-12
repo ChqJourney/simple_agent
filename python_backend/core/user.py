@@ -21,6 +21,8 @@ class Message(BaseModel):
     tool_call_id: Optional[str] = None
     name: Optional[str] = None
     reasoning_content: Optional[str] = None
+    profile_name: Optional[str] = None
+    model_label: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -96,8 +98,6 @@ class Session:
                 llm_msg["tool_call_id"] = msg.tool_call_id
             if msg.name is not None:
                 llm_msg["name"] = msg.name
-            if msg.reasoning_content is not None:
-                llm_msg["reasoning_content"] = msg.reasoning_content
             result.append(llm_msg)
         return result
 

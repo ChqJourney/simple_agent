@@ -49,6 +49,17 @@ export const MessageList = memo<MessageListProps>(({
         />
       ))}
 
+      {isStreaming && currentReasoningContent && (
+        <MessageItem
+          message={{
+            id: 'streaming-reasoning',
+            role: 'reasoning',
+            content: currentReasoningContent,
+            status: 'streaming',
+          }}
+        />
+      )}
+
       {isStreaming && (
         <MessageItem
           message={{

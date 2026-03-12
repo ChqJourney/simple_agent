@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from core.agent import Agent
 from core.user import Session, UserManager
 from llms.base import BaseLLM
+from llms.capabilities import coerce_reasoning_enabled
 from llms.openai import OpenAILLM
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM, normalize_ollama_base_url
 from llms.qwen import QwenLLM
@@ -70,18 +71,24 @@ def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
     model = str(data.get("model") or default_model).strip()
     api_key = str(data.get("api_key") or "").strip()
     base_url = str(data.get("base_url") or "").strip() or _default_base_url(provider)
-    enable_reasoning = bool(data.get("enable_reasoning", False))
 
     if provider == "ollama":
         base_url = normalize_ollama_base_url(base_url)
 
-    return {
+    normalized = coerce_reasoning_enabled({
         "provider": provider,
         "model": model,
         "api_key": api_key,
         "base_url": base_url,
-        "enable_reasoning": enable_reasoning,
-    }
+        "enable_reasoning": bool(data.get("enable_reasoning", False)),
+        "input_type": data.get("input_type") or "text",
+    })
+
+    normalized["provider"] = provider
+    normalized["model"] = model
+    normalized["api_key"] = api_key
+    normalized["base_url"] = base_url
+    return normalized
 
 
 def create_llm(config: Dict[str, Any]) -> BaseLLM:

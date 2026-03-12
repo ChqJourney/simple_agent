@@ -1,68 +1,45 @@
-from typing import AsyncIterator, Dict, Any, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
+
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
-from .base import BaseLLM
 
-__all__ = ["OpenAILLM"]
+from .base import BaseLLM
+from .capabilities import get_openai_reasoning_effort
+
+__all__ = ['OpenAILLM']
 
 
 class OpenAILLM(BaseLLM):
-    """OpenAI provider implementation for LLM interactions.
-
-    This class provides async methods for streaming and non-streaming
-    completions using the OpenAI API.
-    """
-
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
+        self.enable_reasoning = bool(config.get('enable_reasoning', False))
         self.client = AsyncOpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
         )
 
-    async def stream(  # type: ignore[override]
-        self, messages: List[Dict], tools: Optional[List[Dict]] = None
-    ) -> AsyncIterator[ChatCompletionChunk]:
-        """Stream chat completions from OpenAI API.
-
-        Args:
-            messages: List of message dictionaries for the conversation.
-            tools: Optional list of tool schemas to make available.
-
-        Yields:
-            ChatCompletionChunk objects from the streaming response.
-        """
+    def _build_request_kwargs(
+        self,
+        messages: List[Dict],
+        tools: Optional[List[Dict]],
+        stream: bool,
+    ) -> Dict[str, Any]:
         tool_schemas = self._build_tool_schemas(tools) if tools else None
+        kwargs: Dict[str, Any] = {
+            'model': self.model,
+            'messages': messages,
+            'tools': tool_schemas,
+            'stream': stream,
+        }
+        reasoning_effort = get_openai_reasoning_effort(self.model, self.enable_reasoning)
+        if reasoning_effort:
+            kwargs['reasoning_effort'] = reasoning_effort
+        return kwargs
 
-        stream = await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,  # type: ignore[arg-type]
-            tools=tool_schemas,  # type: ignore[arg-type]
-            stream=True
-        )
-
+    async def stream(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> AsyncIterator[ChatCompletionChunk]:
+        stream = await self.client.chat.completions.create(**self._build_request_kwargs(messages, tools, True))
         async for chunk in stream:
             yield chunk
 
-    async def complete(  # type: ignore[override]
-        self, messages: List[Dict], tools: Optional[List[Dict]] = None
-    ) -> ChatCompletion:
-        """Get a complete chat completion from OpenAI API.
-
-        Args:
-            messages: List of message dictionaries for the conversation.
-            tools: Optional list of tool schemas to make available.
-
-        Returns:
-            ChatCompletion object containing the full response.
-        """
-        tool_schemas = self._build_tool_schemas(tools) if tools else None
-
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,  # type: ignore[arg-type]
-            tools=tool_schemas,  # type: ignore[arg-type]
-            stream=False
-        )
-
-        return response
+    async def complete(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> ChatCompletion:
+        return await self.client.chat.completions.create(**self._build_request_kwargs(messages, tools, False))

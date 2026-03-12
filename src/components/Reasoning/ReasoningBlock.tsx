@@ -15,12 +15,10 @@ export const ReasoningBlock: React.FC<ReasoningBlockProps> = ({ content }) => {
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
       >
-        <span className={`transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
-          ▶
-        </span>
+        <span className="inline-block w-3 text-left">{isExpanded ? 'v' : '>'}</span>
         <span className="font-medium">Reasoning</span>
       </button>
-      
+
       {isExpanded && (
         <div className="mt-2 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
           {content}

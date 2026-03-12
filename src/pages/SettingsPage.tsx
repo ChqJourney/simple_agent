@@ -75,7 +75,8 @@ export const SettingsPage: React.FC = () => {
       model: draftConfig.model,
       api_key: draftConfig.api_key || '',
       base_url: draftConfig.base_url || '',
-      enable_reasoning: draftConfig.enable_reasoning || false,
+      enable_reasoning: draftConfig.enable_reasoning ?? false,
+      input_type: draftConfig.input_type || 'text',
     });
 
     setConfig(normalizedConfig);

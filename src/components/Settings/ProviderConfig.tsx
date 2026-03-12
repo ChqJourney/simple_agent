@@ -1,5 +1,6 @@
 import React from 'react';
 import { ProviderType, ProviderConfig } from '../../types';
+import { supportsReasoning } from '../../utils/modelCapabilities';
 
 interface ProviderConfigProps {
   config: Partial<ProviderConfig>;
@@ -8,14 +9,14 @@ interface ProviderConfigProps {
 
 const PROVIDERS: { value: ProviderType; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
-  { value: 'qwen', label: 'Qwen (通义千问)' },
-  { value: 'ollama', label: 'Ollama (本地)' },
+  { value: 'qwen', label: 'Qwen (Tongyi Qianwen)' },
+  { value: 'ollama', label: 'Ollama (Local)' },
 ];
 
 const MODELS: Record<ProviderType, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
   qwen: ['qwen3-max-2026-01-23', 'qwen3.5-plus', 'qwen3-coder-next'],
-  ollama: ['llama3.1', 'llama3.2', 'qwen2.5', 'mistral', 'codellama'],
+  ollama: ['llama3.1', 'llama3.2', 'qwen3:8b', 'mistral', 'codellama'],
 };
 
 export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onChange }) => {
@@ -23,7 +24,28 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
     onChange({ ...config, [key]: value });
   };
 
-return (
+  const handleProviderChange = (provider: ProviderType) => {
+    onChange({
+      ...config,
+      provider,
+      model: '',
+      enable_reasoning: false,
+    });
+  };
+
+  const handleModelChange = (model: string) => {
+    const provider = config.provider;
+    const reasoningEnabled = provider ? supportsReasoning(provider, model) : false;
+    onChange({
+      ...config,
+      model,
+      enable_reasoning: reasoningEnabled,
+    });
+  };
+
+  const showReasoningToggle = Boolean(config.provider && config.model && supportsReasoning(config.provider, config.model));
+
+  return (
     <div className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -31,7 +53,7 @@ return (
         </label>
         <select
           value={config.provider || ''}
-          onChange={(e) => handleChange('provider', e.target.value as ProviderType)}
+          onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
         >
           <option value="">Select a provider</option>
@@ -51,7 +73,7 @@ return (
             </label>
             <select
               value={config.model || ''}
-              onChange={(e) => handleChange('model', e.target.value)}
+              onChange={(e) => handleModelChange(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             >
               <option value="">Select a model</option>
@@ -91,18 +113,20 @@ return (
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="enable_reasoning"
-              checked={config.enable_reasoning || false}
-              onChange={(e) => handleChange('enable_reasoning', e.target.checked)}
-              className="rounded border-gray-300 dark:border-gray-600"
-            />
-            <label htmlFor="enable_reasoning" className="text-sm text-gray-700 dark:text-gray-300">
-              Enable reasoning (for o1 models)
-            </label>
-          </div>
+          {showReasoningToggle && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="enable_reasoning"
+                checked={config.enable_reasoning ?? true}
+                onChange={(e) => handleChange('enable_reasoning', e.target.checked)}
+                className="rounded border-gray-300 dark:border-gray-600"
+              />
+              <label htmlFor="enable_reasoning" className="text-sm text-gray-700 dark:text-gray-300">
+                Enable reasoning
+              </label>
+            </div>
+          )}
         </>
       )}
     </div>

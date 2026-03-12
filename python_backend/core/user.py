@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Set
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,8 @@ ConnectionId = str
 
 
 class Message(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     role: str
     content: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None

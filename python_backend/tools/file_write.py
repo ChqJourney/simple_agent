@@ -114,9 +114,6 @@ class FileWriteTool(BaseTool):
 
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            if content and not content.endswith("\n"):
-                content = content + "\n"
-
             file_path.write_text(content, encoding="utf-8")
 
             logger.info("Successfully wrote to file: %s", file_path)

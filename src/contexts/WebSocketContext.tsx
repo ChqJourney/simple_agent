@@ -109,7 +109,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           console.info('Retrying agent run:', data.session_id, data.attempt, data.max_retries, data.error);
           break;
         case 'interrupted':
-          store.setCompleted(data.session_id);
+          store.setInterrupted(data.session_id);
           break;
         case 'config_updated':
           console.log('Config updated:', data.provider, data.model);

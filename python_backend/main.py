@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Set
 
@@ -45,14 +46,23 @@ tool_registry.register(FileWriteTool())
 
 user_manager = UserManager()
 state_lock = asyncio.Lock()
-active_agents: Dict[str, Agent] = {}
-current_llm: Optional[BaseLLM] = None
-current_config: Optional[Dict[str, Any]] = None
-current_workspace: str = str(Path.cwd())
-pending_tasks: Set[asyncio.Task] = set()
-active_session_tasks: Dict[str, asyncio.Task] = {}
-task_connections: Dict[asyncio.Task, str] = {}
-task_sessions: Dict[asyncio.Task, str] = {}
+
+
+@dataclass
+class BackendRuntimeState:
+    active_agents: Dict[str, Agent] = field(default_factory=dict)
+    current_llm: Optional[BaseLLM] = None
+    current_config: Optional[Dict[str, Any]] = None
+    default_workspace: str = field(default_factory=lambda: str(Path.cwd()))
+    connection_workspaces: Dict[str, str] = field(default_factory=dict)
+    pending_tasks: Set[asyncio.Task] = field(default_factory=set)
+    active_session_tasks: Dict[str, object] = field(default_factory=dict)
+    task_connections: Dict[asyncio.Task, str] = field(default_factory=dict)
+    task_sessions: Dict[asyncio.Task, str] = field(default_factory=dict)
+
+
+runtime_state = BackendRuntimeState()
+SESSION_TASK_RESERVED = object()
 
 DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
@@ -105,64 +115,69 @@ def create_llm(config: Dict[str, Any]) -> BaseLLM:
 
 
 def _forget_task(task: asyncio.Task) -> None:
-    pending_tasks.discard(task)
-    connection_id = task_connections.pop(task, None)
-    session_id = task_sessions.pop(task, None)
+    runtime_state.pending_tasks.discard(task)
+    connection_id = runtime_state.task_connections.pop(task, None)
+    session_id = runtime_state.task_sessions.pop(task, None)
 
     if connection_id:
         logger.debug("Task released for connection %s", connection_id)
 
-    if session_id and active_session_tasks.get(session_id) is task:
-        active_session_tasks.pop(session_id, None)
+    if session_id and runtime_state.active_session_tasks.get(session_id) is task:
+        runtime_state.active_session_tasks.pop(session_id, None)
 
 
 async def cleanup_connection_tasks(connection_id: str) -> None:
-    tasks_to_cancel = [
-        task for task, task_connection_id in list(task_connections.items())
-        if task_connection_id == connection_id
-    ]
+    async with state_lock:
+        task_contexts = [
+            (task, runtime_state.task_sessions.get(task))
+            for task, task_connection_id in list(runtime_state.task_connections.items())
+            if task_connection_id == connection_id
+        ]
+        runtime_state.connection_workspaces.pop(connection_id, None)
 
-    for task in tasks_to_cancel:
-        session_id = task_sessions.get(task)
+    for task, session_id in task_contexts:
         if session_id:
-            agent = active_agents.get(session_id)
+            agent = runtime_state.active_agents.get(session_id)
             if agent:
                 agent.interrupt()
         task.cancel()
 
-    if tasks_to_cancel:
-        await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+    if task_contexts:
+        await asyncio.gather(*(task for task, _ in task_contexts), return_exceptions=True)
 
 
 async def cleanup_all_tasks() -> None:
-    tasks_to_cancel = list(pending_tasks)
+    async with state_lock:
+        task_contexts = [
+            (task, runtime_state.task_sessions.get(task))
+            for task in list(runtime_state.pending_tasks)
+        ]
 
-    for task in tasks_to_cancel:
-        session_id = task_sessions.get(task)
+    for task, session_id in task_contexts:
         if session_id:
-            agent = active_agents.get(session_id)
+            agent = runtime_state.active_agents.get(session_id)
             if agent:
                 agent.interrupt()
         task.cancel()
 
-    if tasks_to_cancel:
-        await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+    if task_contexts:
+        await asyncio.gather(*(task for task, _ in task_contexts), return_exceptions=True)
 
 
 async def get_or_create_agent(session_id: str) -> Optional[Agent]:
     async with state_lock:
-        if not current_llm:
+        if not runtime_state.current_llm:
             return None
 
-        if session_id not in active_agents:
+        if session_id not in runtime_state.active_agents:
             agent = Agent(
-                llm=current_llm,
+                llm=runtime_state.current_llm,
                 tool_registry=tool_registry,
                 user_manager=user_manager
             )
-            active_agents[session_id] = agent
+            runtime_state.active_agents[session_id] = agent
 
-        return active_agents.get(session_id)
+        return runtime_state.active_agents.get(session_id)
 
 
 @app.websocket("/ws")
@@ -221,7 +236,7 @@ async def handle_message(
     elif message_type == "interrupt":
         await handle_interrupt(data)
     elif message_type == "set_workspace":
-        await handle_set_workspace(data, send_callback)
+        await handle_set_workspace(data, send_callback, connection_id)
     else:
         await send_callback({
             "type": "error",
@@ -239,18 +254,21 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
         new_llm = create_llm(config)
 
         async with state_lock:
-            global current_llm, current_config
-            current_config = config
-            current_llm = new_llm
-            active_agents.clear()
+            runtime_state.current_config = config
+            runtime_state.current_llm = new_llm
+            runtime_state.active_agents.clear()
 
         await send_callback({
             "type": "config_updated",
-            "provider": current_config["provider"],
-            "model": current_config["model"]
+            "provider": runtime_state.current_config["provider"],
+            "model": runtime_state.current_config["model"]
         })
 
-        logger.info(f"Configuration updated: provider={current_config['provider']}, model={current_config['model']}")
+        logger.info(
+            "Configuration updated: provider=%s, model=%s",
+            runtime_state.current_config["provider"],
+            runtime_state.current_config["model"],
+        )
 
     except Exception as e:
         logger.exception(f"Failed to configure LLM: {e}")
@@ -284,18 +302,36 @@ async def handle_user_message(
         })
         return
 
-    existing_task = active_session_tasks.get(session_id)
-    if existing_task and not existing_task.done():
+    async with state_lock:
+        llm = runtime_state.current_llm
+        workspace = (
+            workspace_path
+            if workspace_path
+            else runtime_state.connection_workspaces.get(connection_id, runtime_state.default_workspace)
+        )
+        existing_task = runtime_state.active_session_tasks.get(session_id)
+
+        if existing_task is not None and (
+            existing_task is SESSION_TASK_RESERVED
+            or not existing_task.done()
+        ):
+            llm = None
+            workspace = None
+            session_reserved = False
+            duplicate_run = True
+        else:
+            duplicate_run = False
+            session_reserved = llm is not None
+            if session_reserved:
+                runtime_state.active_session_tasks[session_id] = SESSION_TASK_RESERVED
+
+    if duplicate_run:
         await send_callback({
             "type": "error",
             "session_id": session_id,
             "error": f"Session {session_id} already has an active run"
         })
         return
-
-    async with state_lock:
-        llm = current_llm
-        workspace = workspace_path if workspace_path else current_workspace
 
     if not llm:
         await send_callback({
@@ -324,13 +360,18 @@ async def handle_user_message(
         agent.reset_interrupt()
 
         task = asyncio.create_task(run_agent_task(agent, content, session, send_callback))
-        pending_tasks.add(task)
-        active_session_tasks[session_id] = task
-        task_connections[task] = connection_id
-        task_sessions[task] = session_id
+        async with state_lock:
+            runtime_state.pending_tasks.add(task)
+            runtime_state.active_session_tasks[session_id] = task
+            runtime_state.task_connections[task] = connection_id
+            runtime_state.task_sessions[task] = session_id
         task.add_done_callback(_forget_task)
 
     except Exception as e:
+        if session_reserved:
+            async with state_lock:
+                if runtime_state.active_session_tasks.get(session_id) is SESSION_TASK_RESERVED:
+                    runtime_state.active_session_tasks.pop(session_id, None)
         logger.exception(f"Failed to handle user message: {e}")
         await send_callback({
             "type": "error",
@@ -394,14 +435,18 @@ async def handle_interrupt(data: Dict[str, Any]) -> None:
         return
 
     async with state_lock:
-        agent = active_agents.get(session_id)
+        agent = runtime_state.active_agents.get(session_id)
 
     if agent:
         agent.interrupt()
         logger.info(f"Agent interrupted for session: {session_id}")
 
 
-async def handle_set_workspace(data: Dict[str, Any], send_callback: SendCallback) -> None:
+async def handle_set_workspace(
+    data: Dict[str, Any],
+    send_callback: SendCallback,
+    connection_id: Optional[str] = None,
+) -> None:
     workspace_path = data.get("workspace_path")
 
     if not workspace_path:
@@ -429,8 +474,8 @@ async def handle_set_workspace(data: Dict[str, Any], send_callback: SendCallback
     resolved_workspace = str(workspace.resolve())
 
     async with state_lock:
-        global current_workspace
-        current_workspace = resolved_workspace
+        if connection_id:
+            runtime_state.connection_workspaces[connection_id] = resolved_workspace
 
     await send_callback({
         "type": "workspace_updated",
@@ -443,7 +488,7 @@ async def handle_set_workspace(data: Dict[str, Any], send_callback: SendCallback
 @app.get("/")
 async def root():
     async with state_lock:
-        config = current_config
+        config = runtime_state.current_config
     return {
         "message": "AI Agent Backend",
         "status": "running",

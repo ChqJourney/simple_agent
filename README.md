@@ -11,6 +11,7 @@
 ## 当前能力
 
 - 流式聊天响应
+- 中止生成并保留已输出的 assistant 内容
 - Reasoning 内容展示
 - Tool call 与工具确认
 - 多工作区 / 多会话
@@ -119,6 +120,8 @@ Tauri (Rust)
 - 文件树改为“根目录 loading + 子目录局部 loading”
 - 主题切换会真实应用到 DOM，而不只是写入 store
 - workspace 状态源收敛为单一 `workspaceStore`
+- 聊天输入区在流式响应期间显示 `Stop generating`
+- 点击中止后保留已输出的 assistant 内容，而不是直接清空
 
 相关文件：
 
@@ -127,8 +130,31 @@ Tauri (Rust)
 - `src/index.css`
 - `src/stores/configStore.ts`
 - `src/hooks/useConfig.ts`
+- `src/components/Chat/ChatContainer.tsx`
+- `src/components/Chat/MessageInput.tsx`
+- `src/stores/chatStore.ts`
+- `src/contexts/WebSocketContext.tsx`
 
-### 6. 前端打包体积优化
+### 6. 后端状态收口与中断一致性
+
+- 运行态收敛为单一 `runtime_state`，统一管理任务、session run 槽位和 connection workspace
+- 同一 `session_id` 的运行占位改为原子化，避免并发请求同时启动
+- 流式中断改为显式 `interrupted` 路径，不再伪造空 assistant 消息或错误完成态
+- `file_write` 改为按原样写入，不再自动补末尾换行
+- `Message.model_label` 的 Pydantic protected namespace warning 已消除
+
+相关文件：
+
+- `python_backend/main.py`
+- `python_backend/core/agent.py`
+- `python_backend/core/user.py`
+- `python_backend/tools/file_write.py`
+- `python_backend/tests/test_session_execution.py`
+- `python_backend/tests/test_reasoning_streaming.py`
+- `python_backend/tests/test_file_write_tool.py`
+- `python_backend/tests/test_user_model_warnings.py`
+
+### 7. 前端打包体积优化
 
 - `react-markdown` 和 React 基础依赖拆分 chunk
 - 代码高亮组件改为按需懒加载
@@ -220,6 +246,9 @@ pyinstaller --onefile --name python_backend main.py
 python -m unittest python_backend.tests.test_connection_routing -v
 python -m unittest python_backend.tests.test_session_execution -v
 python -m unittest python_backend.tests.test_config_normalization -v
+python -m unittest python_backend.tests.test_reasoning_streaming -v
+python -m unittest python_backend.tests.test_file_write_tool -v
+python -m unittest python_backend.tests.test_user_model_warnings -v
 ```
 
 Rust：
@@ -240,4 +269,3 @@ npm run build
 - Tauri `plugin-fs` 权限由 `src-tauri/capabilities/default.json` 控制
 - 如果修改了 capability，通常需要重启桌面应用后生效
 - 会话历史保存在工作区下的 `.agent/sessions/*.jsonl`
-

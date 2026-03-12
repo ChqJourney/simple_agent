@@ -21,7 +21,7 @@ const emptySession = {
 
 export const ChatContainer = () => {
   const { currentSessionId, createSession } = useSession();
-  const { sendMessage, isConnected, confirmTool } = useWebSocket();
+  const { sendMessage, isConnected, confirmTool, interrupt } = useWebSocket();
   const { currentWorkspace } = useWorkspaceStore();
 
   const {
@@ -65,6 +65,11 @@ export const ChatContainer = () => {
     useChatStore.getState().clearPendingToolConfirm(currentSessionId, pendingToolConfirm.tool_call_id);
   }, [confirmTool, currentSessionId, pendingToolConfirm]);
 
+  const handleInterrupt = useCallback(() => {
+    if (!currentSessionId || !isStreaming) return;
+    interrupt(currentSessionId);
+  }, [currentSessionId, interrupt, isStreaming]);
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-2 text-sm text-center">
@@ -86,7 +91,9 @@ export const ChatContainer = () => {
 
       <MessageInput
         onSend={handleSend}
-        disabled={!isConnected || isStreaming}
+        onInterrupt={handleInterrupt}
+        isStreaming={isStreaming}
+        disabled={!isConnected}
       />
 
       {pendingToolConfirm && (

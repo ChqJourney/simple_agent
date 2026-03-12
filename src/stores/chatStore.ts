@@ -36,6 +36,7 @@ interface ChatState {
     toolName?: string
   ) => void;
   setCompleted: (sessionId: string, usage?: TokenUsage) => void;
+  setInterrupted: (sessionId: string) => void;
   setError: (sessionId: string, error: string, details?: string) => void;
   addUserMessage: (sessionId: string, content: string) => void;
   markUserMessageSent: (sessionId: string) => void;
@@ -324,6 +325,56 @@ export const useChatStore = create<ChatState>((set) => ({
           currentReasoningContent: '',
           isStreaming: false,
           assistantStatus: 'completed',
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+        },
+      },
+    };
+  }),
+
+  setInterrupted: (sessionId) => set((state) => {
+    const session = state.sessions[sessionId];
+    if (!session) return state;
+
+    const newMessages = [...session.messages];
+
+    if (session.currentStreamingContent) {
+      const reversedIndex = [...newMessages].reverse().findIndex(
+        (message) =>
+          message.role === 'assistant' &&
+          message.status === 'streaming' &&
+          (!message.tool_calls || message.tool_calls.length === 0)
+      );
+      const existingAssistantIndex = reversedIndex >= 0
+        ? newMessages.length - 1 - reversedIndex
+        : -1;
+
+      if (existingAssistantIndex >= 0) {
+        newMessages[existingAssistantIndex] = {
+          ...newMessages[existingAssistantIndex],
+          content: session.currentStreamingContent,
+          status: 'completed',
+        };
+      } else {
+        newMessages.push({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: session.currentStreamingContent,
+          status: 'completed',
+        });
+      }
+    }
+
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          messages: newMessages,
+          currentStreamingContent: '',
+          currentReasoningContent: '',
+          isStreaming: false,
+          assistantStatus: 'idle',
           currentToolName: undefined,
           pendingToolConfirm: undefined,
         },

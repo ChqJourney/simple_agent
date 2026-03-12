@@ -10,6 +10,10 @@ from tools.base import BaseTool, ToolRegistry, ToolResult
 logger = logging.getLogger(__name__)
 
 
+class RunInterrupted(Exception):
+    pass
+
+
 class Agent:
     def __init__(
         self,
@@ -42,11 +46,7 @@ class Agent:
         try:
             for _ in range(self.max_tool_rounds):
                 if self._interrupt_event.is_set():
-                    await self.user_manager.send_to_frontend({
-                        "type": "interrupted",
-                        "session_id": session.session_id
-                    })
-                    return
+                    raise RunInterrupted()
 
                 messages = session.get_messages_for_llm()
                 tools = list(self.tool_registry.tools.values())
@@ -82,6 +82,11 @@ class Agent:
                 "error": f"Tool call rounds exceeded limit ({self.max_tool_rounds})"
             })
 
+        except RunInterrupted:
+            await self.user_manager.send_to_frontend({
+                "type": "interrupted",
+                "session_id": session.session_id
+            })
         except Exception as e:
             logger.exception(f"Agent run failed: {e}")
             await self.user_manager.send_to_frontend({
@@ -100,10 +105,12 @@ class Agent:
 
         for attempt in range(self.max_retries):
             if self._interrupt_event.is_set():
-                return None
+                raise RunInterrupted()
 
             try:
                 return await self._stream_llm_response(messages, tools, session)
+            except RunInterrupted:
+                raise
             except Exception as e:
                 last_error = e
                 logger.warning(f"LLM call failed (attempt {attempt + 1}/{self.max_retries}): {e}")
@@ -160,7 +167,7 @@ class Agent:
 
         async for chunk in self.llm.stream(messages, tools):
             if self._interrupt_event.is_set():
-                return Message(role="assistant", content="")
+                raise RunInterrupted()
 
             choices = self._get_chunk_choices(chunk)
             if not choices:

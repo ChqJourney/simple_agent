@@ -15,9 +15,7 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
         captured_configs = []
         messages = []
         original_create_llm = backend_main.create_llm
-        original_current_llm = backend_main.current_llm
-        original_current_config = backend_main.current_config
-        original_active_agents = backend_main.active_agents
+        original_runtime_state = backend_main.runtime_state
 
         try:
             def fake_create_llm(config):
@@ -28,9 +26,7 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 messages.append(message)
 
             backend_main.create_llm = fake_create_llm
-            backend_main.current_llm = None
-            backend_main.current_config = None
-            backend_main.active_agents = {}
+            backend_main.runtime_state = backend_main.BackendRuntimeState()
 
             await backend_main.handle_config(
                 {
@@ -50,7 +46,7 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 'https://api.openai.com/v1',
-                backend_main.current_config['base_url'],
+                backend_main.runtime_state.current_config['base_url'],
             )
             self.assertIn(
                 {
@@ -62,16 +58,12 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
             )
         finally:
             backend_main.create_llm = original_create_llm
-            backend_main.current_llm = original_current_llm
-            backend_main.current_config = original_current_config
-            backend_main.active_agents = original_active_agents
+            backend_main.runtime_state = original_runtime_state
 
     async def test_handle_config_normalizes_ollama_v1_suffix(self) -> None:
         captured_configs = []
         original_create_llm = backend_main.create_llm
-        original_current_llm = backend_main.current_llm
-        original_current_config = backend_main.current_config
-        original_active_agents = backend_main.active_agents
+        original_runtime_state = backend_main.runtime_state
 
         try:
             def fake_create_llm(config):
@@ -82,9 +74,7 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 return None
 
             backend_main.create_llm = fake_create_llm
-            backend_main.current_llm = None
-            backend_main.current_config = None
-            backend_main.active_agents = {}
+            backend_main.runtime_state = backend_main.BackendRuntimeState()
 
             await backend_main.handle_config(
                 {
@@ -104,20 +94,16 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 'http://127.0.0.1:11434',
-                backend_main.current_config['base_url'],
+                backend_main.runtime_state.current_config['base_url'],
             )
         finally:
             backend_main.create_llm = original_create_llm
-            backend_main.current_llm = original_current_llm
-            backend_main.current_config = original_current_config
-            backend_main.active_agents = original_active_agents
+            backend_main.runtime_state = original_runtime_state
 
     async def test_handle_config_coerces_unsupported_reasoning_off_and_defaults_input_type(self) -> None:
         captured_configs = []
         original_create_llm = backend_main.create_llm
-        original_current_llm = backend_main.current_llm
-        original_current_config = backend_main.current_config
-        original_active_agents = backend_main.active_agents
+        original_runtime_state = backend_main.runtime_state
 
         try:
             def fake_create_llm(config):
@@ -128,9 +114,7 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 return None
 
             backend_main.create_llm = fake_create_llm
-            backend_main.current_llm = None
-            backend_main.current_config = None
-            backend_main.active_agents = {}
+            backend_main.runtime_state = backend_main.BackendRuntimeState()
 
             await backend_main.handle_config(
                 {
@@ -147,9 +131,7 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual('text', captured_configs[0]['input_type'])
         finally:
             backend_main.create_llm = original_create_llm
-            backend_main.current_llm = original_current_llm
-            backend_main.current_config = original_current_config
-            backend_main.active_agents = original_active_agents
+            backend_main.runtime_state = original_runtime_state
 
     def test_ollama_llm_normalizes_blank_and_v1_base_urls(self) -> None:
         blank = OllamaLLM({'model': 'qwen3:8b', 'base_url': '   '})

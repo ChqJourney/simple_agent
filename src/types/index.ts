@@ -23,6 +23,23 @@ export interface ToolResult {
   error: string | null;
 }
 
+export interface ToolDecisionMessageMeta {
+  kind: 'decision';
+  toolName: string;
+  decision: ToolDecision;
+  scope: ToolDecisionScope;
+  reason?: string;
+}
+
+export interface ToolResultMessageMeta {
+  kind: 'result';
+  toolName: string;
+  success: boolean;
+  details: string;
+}
+
+export type ToolMessageMeta = ToolDecisionMessageMeta | ToolResultMessageMeta;
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -35,6 +52,7 @@ export interface Message {
   usage?: TokenUsage;
   profile_name?: string;
   model_label?: string;
+  toolMessage?: ToolMessageMeta;
   status: MessageStatus;
   userStatus?: UserMessageStatus;
 }

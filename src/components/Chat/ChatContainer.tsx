@@ -71,15 +71,7 @@ export const ChatContainer = () => {
   }, [currentSessionId, interrupt, isStreaming]);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-2 text-sm text-center">
-        {isConnected ? (
-          <span className="text-green-600 dark:text-green-400">Connected</span>
-        ) : (
-          <span className="text-red-600 dark:text-red-400">Disconnected</span>
-        )}
-      </div>
-
+    <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_45%)] dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_35%)]">
       <MessageList
         messages={messages}
         currentStreamingContent={streamingContent}

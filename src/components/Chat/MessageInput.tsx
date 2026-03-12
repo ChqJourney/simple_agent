@@ -46,8 +46,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-      <div className="flex gap-2">
+    <form onSubmit={handleSubmit} className="px-4 pb-4 pt-2 md:px-6 md:pb-6">
+      <div className="flex items-end gap-3 rounded-[1.75rem] bg-white/90 p-3 shadow-lg shadow-gray-200/60 backdrop-blur dark:bg-gray-900/90 dark:shadow-black/20">
         <textarea
           ref={textareaRef}
           value={content}
@@ -55,25 +55,33 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={isInputDisabled}
-          rows={1}
-          className="flex-1 resize-none rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed transition-colors"
+          rows={3}
+          className="min-h-[5.25rem] max-h-52 flex-1 resize-none rounded-[1.35rem] bg-gray-100 px-4 py-3 text-gray-900 outline-none transition-colors placeholder:text-gray-500 focus:bg-gray-50 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-70"
         />
         {isStreaming ? (
           <button
             type="button"
             onClick={onInterrupt}
             disabled={disabled}
-            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors font-medium whitespace-nowrap"
+            aria-label="Stop generating"
+            title="Stop generating"
+            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500 text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"
           >
-            Stop generating
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <rect x="5" y="5" width="10" height="10" rx="1.5" />
+            </svg>
           </button>
         ) : (
           <button
             type="submit"
             disabled={disabled || !content.trim()}
-            className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors font-medium"
+            aria-label="Send message"
+            title="Send message"
+            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"
           >
-            Send
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M3 10.5L16.5 3.5L13.5 16.5L9.75 11.25L3 10.5Z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
         )}
       </div>

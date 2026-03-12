@@ -1,4 +1,10 @@
-import { Message } from '../types';
+import { Message, ToolCall } from '../types';
+import {
+  createToolDecisionSummary,
+  createToolResultSummary,
+  inferPersistedToolResult,
+  parseToolDecisionContent,
+} from './toolMessages';
 
 let cachedIsTauri: boolean | null = null;
 
@@ -64,6 +70,138 @@ export function generateSessionName(firstMessage: string): string {
   return truncateText(cleaned, maxLen);
 }
 
+function normalizePersistedToolCall(
+  rawToolCall: unknown,
+  toolNamesById: Map<string, string>
+): ToolCall | null {
+  if (!rawToolCall || typeof rawToolCall !== 'object') {
+    return null;
+  }
+
+  const candidate = rawToolCall as {
+    id?: unknown;
+    tool_call_id?: unknown;
+    name?: unknown;
+    arguments?: unknown;
+    function?: {
+      name?: unknown;
+      arguments?: unknown;
+    };
+  };
+
+  const toolCallId =
+    typeof candidate.tool_call_id === 'string'
+      ? candidate.tool_call_id
+      : typeof candidate.id === 'string'
+        ? candidate.id
+        : null;
+  const toolName =
+    typeof candidate.name === 'string'
+      ? candidate.name
+      : typeof candidate.function?.name === 'string'
+        ? candidate.function.name
+        : null;
+  const rawArguments =
+    candidate.arguments !== undefined
+      ? candidate.arguments
+      : candidate.function?.arguments;
+
+  if (!toolCallId || !toolName) {
+    return null;
+  }
+
+  let parsedArguments: Record<string, unknown> = {};
+  if (typeof rawArguments === 'string') {
+    try {
+      const parsed = JSON.parse(rawArguments);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        parsedArguments = parsed as Record<string, unknown>;
+      }
+    } catch {
+      parsedArguments = {};
+    }
+  } else if (rawArguments && typeof rawArguments === 'object' && !Array.isArray(rawArguments)) {
+    parsedArguments = rawArguments as Record<string, unknown>;
+  }
+
+  toolNamesById.set(toolCallId, toolName);
+
+  return {
+    tool_call_id: toolCallId,
+    name: toolName,
+    arguments: parsedArguments,
+  };
+}
+
+export function deserializeSessionHistoryEntry(
+  data: Record<string, unknown>,
+  toolNamesById: Map<string, string> = new Map()
+): Message[] {
+  const messages: Message[] = [];
+
+  if (data.role === 'assistant' && typeof data.reasoning_content === 'string' && data.reasoning_content) {
+    messages.push({
+      id: crypto.randomUUID(),
+      role: 'reasoning',
+      content: data.reasoning_content,
+      status: 'completed',
+    });
+  }
+
+  const normalizedToolCalls = Array.isArray(data.tool_calls)
+    ? data.tool_calls
+      .map((toolCall) => normalizePersistedToolCall(toolCall, toolNamesById))
+      .filter((toolCall): toolCall is ToolCall => toolCall !== null)
+    : undefined;
+
+  const toolCallId = typeof data.tool_call_id === 'string' ? data.tool_call_id : undefined;
+  const rawName = typeof data.name === 'string' ? data.name : undefined;
+  const resolvedToolName = (toolCallId && toolNamesById.get(toolCallId)) || rawName || 'tool';
+  const content = typeof data.content === 'string' ? data.content : data.content == null ? null : String(data.content);
+
+  const message: Message = {
+    id: crypto.randomUUID(),
+    role: (data.role as Message['role']) || 'assistant',
+    content,
+    tool_calls: normalizedToolCalls,
+    tool_call_id: toolCallId,
+    name: rawName,
+    profile_name: typeof data.profile_name === 'string' ? data.profile_name : undefined,
+    model_label: typeof data.model_label === 'string' ? data.model_label : undefined,
+    status: 'completed',
+  };
+
+  if (message.role === 'tool' && rawName === 'tool_decision' && content) {
+    const parsedDecision = parseToolDecisionContent(content);
+    if (parsedDecision) {
+      message.name = resolvedToolName;
+      message.content = createToolDecisionSummary(resolvedToolName, parsedDecision.decision);
+      message.toolMessage = {
+        kind: 'decision',
+        toolName: resolvedToolName,
+        decision: parsedDecision.decision,
+        scope: parsedDecision.scope,
+        reason: parsedDecision.reason,
+      };
+      message.status = parsedDecision.decision === 'reject' ? 'error' : 'completed';
+    }
+  } else if (message.role === 'tool' && toolCallId) {
+    const inferredResult = inferPersistedToolResult(content);
+    message.name = resolvedToolName;
+    message.content = createToolResultSummary(resolvedToolName, inferredResult.success);
+    message.toolMessage = {
+      kind: 'result',
+      toolName: resolvedToolName,
+      success: inferredResult.success,
+      details: inferredResult.details,
+    };
+    message.status = inferredResult.success ? 'completed' : 'error';
+  }
+
+  messages.push(message);
+  return messages;
+}
+
 export async function loadSessionHistory(
   workspacePath: string,
   sessionId: string
@@ -78,6 +216,7 @@ export async function loadSessionHistory(
 
     const content = await tauriReadTextFile(sessionPath);
     const messages: Message[] = [];
+    const toolNamesById = new Map<string, string>();
 
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
@@ -85,27 +224,7 @@ export async function loadSessionHistory(
 
       try {
         const data = JSON.parse(trimmed);
-        if (data.role === 'assistant' && data.reasoning_content) {
-          messages.push({
-            id: crypto.randomUUID(),
-            role: 'reasoning',
-            content: data.reasoning_content,
-            status: 'completed',
-          });
-        }
-
-        const message: Message = {
-          id: crypto.randomUUID(),
-          role: data.role,
-          content: data.content ?? null,
-          tool_calls: data.tool_calls,
-          tool_call_id: data.tool_call_id,
-          name: data.name,
-          profile_name: data.profile_name,
-          model_label: data.model_label,
-          status: 'completed',
-        };
-        messages.push(message);
+        messages.push(...deserializeSessionHistoryEntry(data, toolNamesById));
       } catch {
         continue;
       }

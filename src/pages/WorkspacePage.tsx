@@ -88,17 +88,17 @@ export const WorkspacePage: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-gray-900">
+    <div className="flex h-screen flex-col bg-gray-100 dark:bg-gray-950">
       <TopBar />
 
       <div className="flex flex-1 overflow-hidden">
         {!leftPanelCollapsed && (
-          <div className="w-64 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          <div className="w-64 bg-white/70 dark:bg-gray-900/60">
             <LeftPanel />
           </div>
         )}
 
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 overflow-hidden">
           {IS_DEV && !backendReady ? (
             <div className="flex-1 flex items-center justify-center p-4 bg-yellow-50 dark:bg-yellow-950 text-yellow-900 dark:text-yellow-200 text-center text-sm">
               <div>
@@ -115,7 +115,7 @@ export const WorkspacePage: React.FC = () => {
         </main>
 
         {!rightPanelCollapsed && (
-          <div className="w-72 border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          <div className="w-72 bg-white/70 dark:bg-gray-900/60">
             <RightPanel />
           </div>
         )}

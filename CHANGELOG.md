@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added shared frontend config normalization utility `src/utils/config.ts`
 - Added lazy-loaded code highlighting component `src/components/common/CodeBlock.tsx`
 - Added chat composer `Stop generating` action during streaming responses
+- Added frontend regression script `scripts/chat-ui-regression-check.tsx`
 
 ### Changed
 
@@ -32,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Applied theme changes to the DOM instead of only persisting them in UI state
 - Refactored file tree loading to use root-level loading plus per-directory loading
 - Preserved partially streamed assistant output when users interrupt generation
+- Refreshed the chat UI with square panel toggle icons, taller composer, and icon-only send/stop actions
+- Reworked reasoning, tool request, tool decision, and tool result transcript blocks into collapsible text disclosures
+- Removed prominent workspace/chat divider lines in favor of spacing and softer panel surfaces
 - Split frontend build output into smaller chunks and moved code highlighting to lazy loading
 
 ### Fixed

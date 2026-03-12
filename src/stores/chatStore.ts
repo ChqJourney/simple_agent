@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { AssistantStatus, Message, TokenUsage, ToolCall, ToolDecision, ToolDecisionScope } from '../types';
+import {
+  createToolDecisionSummary,
+  createToolResultSummary,
+  renderToolResultDetails,
+} from '../utils/toolMessages';
 
 interface SessionState {
   messages: Message[];
@@ -188,14 +193,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
   addToolDecision: (sessionId, toolCallId, toolName, decision, scope, reason) => set((state) => {
     const session = state.sessions[sessionId] || createEmptySession();
-    const decisionText =
-      decision === 'approve_always'
-        ? `Tool ${toolName} approved always (${scope})`
-        : decision === 'approve_once'
-          ? `Tool ${toolName} approved once`
-          : `Tool ${toolName} rejected`;
-
-    const details = reason && reason !== 'user_action' ? ` [${reason}]` : '';
+    const decisionText = createToolDecisionSummary(toolName, decision);
 
     return {
       sessions: {
@@ -208,9 +206,16 @@ export const useChatStore = create<ChatState>((set) => ({
               id: crypto.randomUUID(),
               role: 'tool',
               tool_call_id: toolCallId,
-              name: 'tool_decision',
-              content: `${decisionText}${details}`,
-              status: 'completed',
+              name: toolName,
+              content: decisionText,
+              toolMessage: {
+                kind: 'decision',
+                toolName,
+                decision,
+                scope,
+                reason,
+              },
+              status: decision === 'reject' ? 'error' : 'completed',
             },
           ],
         },
@@ -222,15 +227,8 @@ export const useChatStore = create<ChatState>((set) => ({
     const session = state.sessions[sessionId];
     if (!session) return state;
 
-    const renderedOutput = (() => {
-      if (success) {
-        if (typeof output === 'string') return output;
-        return JSON.stringify(output, null, 2);
-      }
-      if (error) return `Error: ${error}`;
-      if (typeof output === 'string' && output) return `Error: ${output}`;
-      return 'Error: Tool execution failed';
-    })();
+    const resolvedToolName = toolName || 'tool';
+    const renderedOutput = renderToolResultDetails(success, output, error);
 
     return {
       sessions: {
@@ -246,9 +244,15 @@ export const useChatStore = create<ChatState>((set) => ({
             {
               id: crypto.randomUUID(),
               role: 'tool',
-              content: renderedOutput,
+              content: createToolResultSummary(resolvedToolName, success),
               tool_call_id: toolCallId,
-              name: toolName,
+              name: resolvedToolName,
+              toolMessage: {
+                kind: 'result',
+                toolName: resolvedToolName,
+                success,
+                details: renderedOutput,
+              },
               status: success ? 'completed' : 'error',
             },
           ],
@@ -501,5 +505,3 @@ export const useChatStore = create<ChatState>((set) => ({
     },
   })),
 }));
-
-

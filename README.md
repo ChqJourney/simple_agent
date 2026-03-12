@@ -14,6 +14,7 @@
 - 中止生成并保留已输出的 assistant 内容
 - Reasoning 内容展示
 - Tool call 与工具确认
+- Tool 请求 / 确认结果 / 执行结果文字摘要
 - 多工作区 / 多会话
 - 会话磁盘持久化
 - OpenAI / Qwen / Ollama Provider
@@ -122,6 +123,11 @@ Tauri (Rust)
 - workspace 状态源收敛为单一 `workspaceStore`
 - 聊天输入区在流式响应期间显示 `Stop generating`
 - 点击中止后保留已输出的 assistant 内容，而不是直接清空
+- 顶栏左右 panel toggle 改为方块 panel 图标
+- `Assistant` 标识会显示在 `Thinking` block 上方
+- Tool request / decision / result 改为可展开的文字摘要，不再使用卡片底色
+- 输入区增高到约 3 行，并将发送 / 中止按钮改为图标按钮
+- Workspace 主界面移除明显分割线，改为留白与圆角分区
 
 相关文件：
 
@@ -132,6 +138,12 @@ Tauri (Rust)
 - `src/hooks/useConfig.ts`
 - `src/components/Chat/ChatContainer.tsx`
 - `src/components/Chat/MessageInput.tsx`
+- `src/components/Chat/MessageItem.tsx`
+- `src/components/Chat/MessageList.tsx`
+- `src/components/Reasoning/ReasoningBlock.tsx`
+- `src/components/Tools/ToolCallDisplay.tsx`
+- `src/components/Tools/ToolCard.tsx`
+- `src/components/Workspace/TopBar.tsx`
 - `src/stores/chatStore.ts`
 - `src/contexts/WebSocketContext.tsx`
 
@@ -222,6 +234,7 @@ npm run tauri dev
 ### 前端构建
 
 ```bash
+npx tsx scripts/chat-ui-regression-check.tsx
 npm run build
 ```
 

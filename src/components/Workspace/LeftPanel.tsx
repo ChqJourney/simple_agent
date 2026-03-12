@@ -16,7 +16,7 @@ export const LeftPanel: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-4">
         <h3 className="font-medium text-gray-900 dark:text-white mb-2">
           Workspace
         </h3>
@@ -38,7 +38,7 @@ export const LeftPanel: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden px-2 pb-2">
         <SessionList workspacePath={currentWorkspace.path} />
       </div>
     </div>

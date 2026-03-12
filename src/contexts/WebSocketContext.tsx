@@ -14,7 +14,10 @@ import {
 } from '../types';
 import { normalizeProviderConfig } from '../utils/config';
 
+type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+
 interface WebSocketContextValue {
+  connectionStatus: ConnectionStatus;
   isConnected: boolean;
   sendMessage: (sessionId: string, content: string, workspacePath?: string) => void;
   sendConfig: (configOverride?: ProviderConfig) => void;
@@ -26,9 +29,10 @@ interface WebSocketContextValue {
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
-  const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const lastSentConfigKeyRef = useRef<string | null>(null);
   const config = useConfigStore((state) => state.config);
+  const isConnected = connectionStatus === 'connected';
 
   useEffect(() => {
     const handleMessage = (data: ServerWebSocketMessage) => {
@@ -124,10 +128,10 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
     wsService.onMessage(handleMessage);
     const cleanup = wsService.connect(
-      () => setIsConnected(true),
+      () => setConnectionStatus('connected'),
       () => {
         lastSentConfigKeyRef.current = null;
-        setIsConnected(false);
+        setConnectionStatus('disconnected');
       }
     );
 
@@ -138,7 +142,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const send = useCallback((message: ClientWebSocketMessage) => {
-    wsService.send(message);
+    return wsService.send(message);
   }, []);
 
   const sendConfig = useCallback((configOverride?: ProviderConfig) => {
@@ -148,8 +152,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }
 
     const runtimeConfig = normalizeProviderConfig(sourceConfig);
-    send({ type: 'config', ...runtimeConfig });
-    lastSentConfigKeyRef.current = JSON.stringify(runtimeConfig);
+    if (send({ type: 'config', ...runtimeConfig })) {
+      lastSentConfigKeyRef.current = JSON.stringify(runtimeConfig);
+    }
   }, [config, send]);
 
   useEffect(() => {
@@ -160,8 +165,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     const runtimeConfig = normalizeProviderConfig(config);
     const nextConfigKey = JSON.stringify(runtimeConfig);
     if (nextConfigKey !== lastSentConfigKeyRef.current) {
-      send({ type: 'config', ...runtimeConfig });
-      lastSentConfigKeyRef.current = nextConfigKey;
+      if (send({ type: 'config', ...runtimeConfig })) {
+        lastSentConfigKeyRef.current = nextConfigKey;
+      }
     }
   }, [config, isConnected, send]);
 
@@ -192,7 +198,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, [send]);
 
   return (
-    <WebSocketContext.Provider value={{ isConnected, sendMessage, sendConfig, confirmTool, interrupt, sendWorkspace }}>
+    <WebSocketContext.Provider value={{ connectionStatus, isConnected, sendMessage, sendConfig, confirmTool, interrupt, sendWorkspace }}>
       {children}
     </WebSocketContext.Provider>
   );

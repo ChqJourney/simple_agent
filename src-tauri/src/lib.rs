@@ -1,9 +1,40 @@
-use std::sync::Mutex;
+use std::{path::Path, sync::Mutex};
 use tauri::Manager;
+
+mod workspace_paths;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn prepare_workspace_path(
+    app: tauri::AppHandle,
+    selected_path: String,
+    existing_paths: Vec<String>,
+) -> Result<workspace_paths::WorkspacePrepareOutcome, String> {
+    let outcome = workspace_paths::prepare_workspace_path(Path::new(&selected_path), &existing_paths)
+        .map_err(|error| error.to_string())?;
+
+    let canonical_path = match &outcome {
+        workspace_paths::WorkspacePrepareOutcome::Existing { canonical_path, .. }
+        | workspace_paths::WorkspacePrepareOutcome::Created { canonical_path } => canonical_path,
+    };
+
+    workspace_paths::authorize_workspace_path(&app, Path::new(canonical_path))
+        .map_err(|error| error.to_string())?;
+
+    Ok(outcome)
+}
+
+#[tauri::command]
+fn authorize_workspace_path(
+    app: tauri::AppHandle,
+    selected_path: String,
+) -> Result<workspace_paths::AuthorizedWorkspacePath, String> {
+    workspace_paths::authorize_workspace_path(&app, Path::new(&selected_path))
+        .map_err(|error| error.to_string())
 }
 
 pub struct PythonSidecar(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
@@ -16,7 +47,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(PythonSidecar(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            prepare_workspace_path,
+            authorize_workspace_path
+        ])
         .setup(|_app| {
             #[cfg(debug_assertions)]
             {

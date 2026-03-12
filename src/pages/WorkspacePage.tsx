@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWorkspaceStore, useUIStore, useSessionStore } from '../stores';
 import { TopBar, LeftPanel, RightPanel } from '../components/Workspace';
@@ -7,14 +8,19 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 
 const IS_DEV = import.meta.env.DEV;
 
+interface AuthorizedWorkspacePath {
+  canonical_path: string;
+}
+
 export const WorkspacePage: React.FC = () => {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const navigate = useNavigate();
-  const { workspaces, setCurrentWorkspace, currentWorkspace } = useWorkspaceStore();
+  const { workspaces, setCurrentWorkspace, currentWorkspace, syncWorkspacePath } = useWorkspaceStore();
   const { leftPanelCollapsed, rightPanelCollapsed, setPageLoading } = useUIStore();
   const { isConnected, sendWorkspace } = useWebSocket();
-  const { loadSessionsFromDisk } = useSessionStore();
+  const { loadSessionsFromDisk, setCurrentSession } = useSessionStore();
   const [backendReady, setBackendReady] = useState(!IS_DEV);
+  const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(null);
   const prevWorkspaceIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -34,12 +40,30 @@ export const WorkspacePage: React.FC = () => {
     let cancelled = false;
 
     const loadWorkspaceData = async () => {
-      if (!currentWorkspace?.path) {
+      if (!currentWorkspace?.id || !currentWorkspace.path) {
         return;
       }
 
       try {
-        await loadSessionsFromDisk(currentWorkspace.path);
+        setWorkspaceAccessError(null);
+        const authorizedWorkspace = await invoke<AuthorizedWorkspacePath>('authorize_workspace_path', {
+          selectedPath: currentWorkspace.path,
+        });
+        const authorizedPath = authorizedWorkspace.canonical_path;
+
+        if (authorizedPath !== currentWorkspace.path) {
+          syncWorkspacePath(currentWorkspace.id, authorizedPath);
+        }
+
+        setCurrentSession(null);
+        await loadSessionsFromDisk(authorizedPath);
+      } catch (error) {
+        console.error('Failed to prepare workspace:', error);
+        if (!cancelled) {
+          setWorkspaceAccessError(
+            error instanceof Error ? error.message : 'Failed to access the selected workspace.'
+          );
+        }
       } finally {
         if (!cancelled) {
           setPageLoading(false);
@@ -52,7 +76,14 @@ export const WorkspacePage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentWorkspace?.path, loadSessionsFromDisk, setPageLoading]);
+  }, [
+    currentWorkspace?.id,
+    currentWorkspace?.path,
+    loadSessionsFromDisk,
+    setCurrentSession,
+    setPageLoading,
+    syncWorkspacePath,
+  ]);
 
   useEffect(() => {
     if (isConnected && currentWorkspace?.path) {
@@ -99,7 +130,13 @@ export const WorkspacePage: React.FC = () => {
         )}
 
         <main className="flex-1 overflow-hidden">
-          {IS_DEV && !backendReady ? (
+          {workspaceAccessError ? (
+            <div className="flex h-full items-center justify-center p-4 text-center text-sm text-red-700 dark:text-red-200">
+              <div className="max-w-md rounded-lg border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900 dark:bg-red-950">
+                {workspaceAccessError}
+              </div>
+            </div>
+          ) : IS_DEV && !backendReady ? (
             <div className="flex-1 flex items-center justify-center p-4 bg-yellow-50 dark:bg-yellow-950 text-yellow-900 dark:text-yellow-200 text-center text-sm">
               <div>
                 Waiting for Python backend at http://127.0.0.1:8765...

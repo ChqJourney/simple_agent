@@ -1,15 +1,32 @@
 import React, { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useNavigate } from 'react-router-dom';
 import { useUIStore, useWorkspaceStore } from '../stores';
 import { WorkspaceList } from '../components/Welcome/WorkspaceList';
 import { WorkspaceDrawer } from '../components/Welcome/WorkspaceDrawer';
 
+interface WorkspacePrepareExistingResult {
+  status: 'existing';
+  canonical_path: string;
+  existing_index: number;
+}
+
+interface WorkspacePrepareCreatedResult {
+  status: 'created';
+  canonical_path: string;
+}
+
+type WorkspacePrepareResult =
+  | WorkspacePrepareExistingResult
+  | WorkspacePrepareCreatedResult;
+
 export const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { workspaces, addWorkspace, setCurrentWorkspace } = useWorkspaceStore();
+  const { workspaces, addWorkspace, setCurrentWorkspace, syncWorkspacePath } = useWorkspaceStore();
   const setPageLoading = useUIStore((state) => state.setPageLoading);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     setPageLoading(false);
@@ -18,6 +35,7 @@ export const WelcomePage: React.FC = () => {
   const handleCreateWorkspace = async () => {
     if (isCreating) return;
     setIsCreating(true);
+    setCreateError(null);
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
@@ -26,19 +44,37 @@ export const WelcomePage: React.FC = () => {
         title: 'Select Workspace Folder',
       });
       if (selected && typeof selected === 'string') {
-        const existing = workspaces.find((w) => w.path === selected);
-        if (existing) {
-          setCurrentWorkspace(existing);
+        const prepared = await invoke<WorkspacePrepareResult>('prepare_workspace_path', {
+          selectedPath: selected,
+          existingPaths: workspaces.map((workspace) => workspace.path),
+        });
+
+        if (prepared.status === 'existing') {
+          const existingWorkspace =
+            workspaces[prepared.existing_index] ??
+            workspaces.find((workspace) => workspace.path === prepared.canonical_path);
+
+          if (!existingWorkspace) {
+            throw new Error('Selected workspace already exists, but could not be resolved locally.');
+          }
+
+          const syncedWorkspace =
+            existingWorkspace.path === prepared.canonical_path
+              ? existingWorkspace
+              : syncWorkspacePath(existingWorkspace.id, prepared.canonical_path) ?? existingWorkspace;
+
+          setCurrentWorkspace(syncedWorkspace);
           setPageLoading(true);
-          navigate(`/workspace/${existing.id}`);
+          navigate(`/workspace/${syncedWorkspace.id}`);
         } else {
-          const workspace = await addWorkspace(selected);
+          const workspace = await addWorkspace(prepared.canonical_path);
           setPageLoading(true);
           navigate(`/workspace/${workspace.id}`);
         }
       }
     } catch (error) {
       console.error('Failed to create workspace:', error);
+      setCreateError(error instanceof Error ? error.message : 'Failed to create workspace.');
     } finally {
       setIsCreating(false);
     }
@@ -90,6 +126,12 @@ export const WelcomePage: React.FC = () => {
             Your AI Assistant
           </p>
         </div>
+
+        {createError && (
+          <div className="mb-4 max-w-md rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            {createError}
+          </div>
+        )}
 
         <button
           onClick={handleCreateWorkspace}

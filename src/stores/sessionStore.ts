@@ -13,9 +13,7 @@ interface SessionMeta {
 interface SessionState {
   sessions: SessionMeta[];
   currentSessionId: string | null;
-  currentWorkspacePath: string | null;
 
-  setWorkspace: (path: string) => void;
   setCurrentSession: (sessionId: string | null) => void;
   addSession: (session: SessionMeta) => void;
   updateSession: (sessionId: string, updates: Partial<SessionMeta>) => void;
@@ -30,12 +28,6 @@ export const useSessionStore = create<SessionState>()(
     (set, get) => ({
       sessions: [],
       currentSessionId: null,
-      currentWorkspacePath: null,
-
-      setWorkspace: (path) => set({
-        currentWorkspacePath: path,
-        currentSessionId: null,
-      }),
 
       setCurrentSession: (sessionId) => set({
         currentSessionId: sessionId,
@@ -134,9 +126,24 @@ export const useSessionStore = create<SessionState>()(
           const existingIds = new Set(fixedSessions.map(s => s.session_id));
 
           const newSessions = diskSessions.filter(s => !existingIds.has(s.session_id));
+          const mergedSessions = [...fixedSessions, ...newSessions];
+          const workspaceSessions = mergedSessions.filter(s => s.workspace_path === workspacePath);
+          const hasCurrentWorkspaceSession = workspaceSessions.some(
+            s => s.session_id === state.currentSessionId
+          );
+          const nextCurrentSessionId = hasCurrentWorkspaceSession
+            ? state.currentSessionId
+            : (workspaceSessions[0]?.session_id ?? null);
 
-          if (newSessions.length > 0 || JSON.stringify(fixedSessions) !== JSON.stringify(state.sessions)) {
-            set({ sessions: [...fixedSessions, ...newSessions] });
+          if (
+            newSessions.length > 0 ||
+            JSON.stringify(fixedSessions) !== JSON.stringify(state.sessions) ||
+            nextCurrentSessionId !== state.currentSessionId
+          ) {
+            set({
+              sessions: mergedSessions,
+              currentSessionId: nextCurrentSessionId,
+            });
           }
 
           get().ensureSession(workspacePath);

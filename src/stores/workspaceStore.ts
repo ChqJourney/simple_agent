@@ -12,15 +12,15 @@ export interface Workspace {
 interface WorkspaceState {
   workspaces: Workspace[];
   currentWorkspace: Workspace | null;
-  
-  loadWorkspaces: () => void;
   addWorkspace: (path: string) => Promise<Workspace>;
+  syncWorkspacePath: (id: string, path: string) => Workspace | null;
   removeWorkspace: (id: string) => void;
   setCurrentWorkspace: (workspace: Workspace | null) => void;
   updateLastOpened: (id: string) => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
+const getWorkspaceName = (path: string) => path.split(/[/\\]/).filter(Boolean).pop() || path;
 
 export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
@@ -28,15 +28,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       workspaces: [],
       currentWorkspace: null,
 
-      loadWorkspaces: () => {
-        // Workspaces are loaded from persist
-      },
-
       addWorkspace: async (path: string) => {
-        const name = path.split(/[/\\]/).pop() || path;
         const newWorkspace: Workspace = {
           id: generateId(),
-          name,
+          name: getWorkspaceName(path),
           path,
           lastOpened: new Date().toISOString(),
           createdAt: new Date().toISOString(),
@@ -46,6 +41,40 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           currentWorkspace: newWorkspace,
         }));
         return newWorkspace;
+      },
+
+      syncWorkspacePath: (id, path) => {
+        const nextName = getWorkspaceName(path);
+        let updatedWorkspace: Workspace | null = null;
+
+        set((state) => {
+          const workspaces = state.workspaces.map((workspace) => {
+            if (workspace.id !== id) {
+              return workspace;
+            }
+
+            updatedWorkspace =
+              workspace.path === path && workspace.name === nextName
+                ? workspace
+                : {
+                    ...workspace,
+                    name: nextName,
+                    path,
+                  };
+
+            return updatedWorkspace;
+          });
+
+          return {
+            workspaces,
+            currentWorkspace:
+              state.currentWorkspace?.id === id
+                ? updatedWorkspace ?? state.currentWorkspace
+                : state.currentWorkspace,
+          };
+        });
+
+        return updatedWorkspace;
       },
 
       removeWorkspace: (id: string) => {

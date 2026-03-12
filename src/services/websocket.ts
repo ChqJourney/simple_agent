@@ -135,12 +135,14 @@ class WebSocketService {
     this.isConnecting = false;
   }
 
-  send(message: ClientWebSocketMessage): void {
+  send(message: ClientWebSocketMessage): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
-    } else {
-      console.error('WebSocket is not connected');
+      return true;
     }
+
+    console.error('WebSocket is not connected');
+    return false;
   }
 
   onMessage(handler: MessageHandler): void {

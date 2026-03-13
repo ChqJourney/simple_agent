@@ -32,6 +32,11 @@ class OllamaLLM(BaseLLM):
             'messages': messages,
             'stream': stream,
         }
+        max_output_tokens = self._get_max_output_tokens()
+        if max_output_tokens is not None:
+            payload['options'] = {
+                'num_predict': max_output_tokens,
+            }
         if tools:
             payload['tools'] = self._convert_tools_to_ollama(tools)
         if supports_reasoning('ollama', self.model):
@@ -41,6 +46,7 @@ class OllamaLLM(BaseLLM):
     async def stream(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> AsyncIterator[Dict]:
         url = f'{self.base_url}/api/chat'
         payload = self._build_payload(messages, tools, True)
+        self.reset_latest_usage()
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as response:
@@ -48,16 +54,28 @@ class OllamaLLM(BaseLLM):
                 async for line in response.content:
                     if line:
                         data = json.loads(line)
+                        if data.get('done'):
+                            self._set_latest_usage({
+                                'prompt_tokens': data.get('prompt_eval_count', 0),
+                                'completion_tokens': data.get('eval_count', 0),
+                                'total_tokens': data.get('prompt_eval_count', 0) + data.get('eval_count', 0),
+                            })
                         yield self._convert_chunk_to_openai(data)
 
     async def complete(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict:
         url = f'{self.base_url}/api/chat'
         payload = self._build_payload(messages, tools, False)
+        self.reset_latest_usage()
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as response:
                 response.raise_for_status()
                 data = await response.json()
+                self._set_latest_usage({
+                    'prompt_tokens': data.get('prompt_eval_count', 0),
+                    'completion_tokens': data.get('eval_count', 0),
+                    'total_tokens': data.get('prompt_eval_count', 0) + data.get('eval_count', 0),
+                })
                 return self._convert_response_to_openai(data)
 
     def _convert_tools_to_ollama(self, tools: List[Any]) -> List[Dict]:

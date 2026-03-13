@@ -1,12 +1,16 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUIStore, useWorkspaceStore } from '../../stores';
-import { WSStatusIndicator, ModelDisplay } from '../common';
+import { useChatStore, useSessionStore, useUIStore, useWorkspaceStore } from '../../stores';
+import { WSStatusIndicator, ModelDisplay, TokenUsageWidget } from '../common';
 
 export const TopBar: React.FC = () => {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { leftPanelCollapsed, rightPanelCollapsed, toggleLeftPanel, toggleRightPanel } = useUIStore();
+  const latestUsage = useChatStore((state) =>
+    currentSessionId ? state.sessions[currentSessionId]?.latestUsage : undefined
+  );
 
   return (
     <header className="h-12 flex items-center justify-between px-4 bg-white/85 backdrop-blur dark:bg-gray-900/85">
@@ -38,6 +42,7 @@ export const TopBar: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-3">
+        <TokenUsageWidget usage={latestUsage} />
         <WSStatusIndicator />
         <ModelDisplay />
       </div>

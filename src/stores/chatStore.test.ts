@@ -56,4 +56,42 @@ describe("chatStore run events", () => {
     useChatStore.getState().markPendingQuestionIdle("session-a", "question-1");
     expect(useChatStore.getState().sessions["session-a"]?.pendingQuestion?.status).toBe("idle");
   });
+
+  it("stores latest usage snapshots on completion", () => {
+    useChatStore.getState().startStreaming("session-a");
+    useChatStore.getState().addToken("session-a", "hello world");
+    useChatStore.getState().setCompleted("session-a", {
+      prompt_tokens: 4096,
+      completion_tokens: 256,
+      total_tokens: 4352,
+      context_length: 128000,
+    });
+
+    expect(useChatStore.getState().sessions["session-a"]?.latestUsage).toEqual({
+      prompt_tokens: 4096,
+      completion_tokens: 256,
+      total_tokens: 4352,
+      context_length: 128000,
+    });
+  });
+
+  it("derives latest usage snapshots when loading persisted messages", () => {
+    useChatStore.getState().loadSession("session-a", [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "done",
+        status: "completed",
+        usage: {
+          prompt_tokens: 2048,
+          completion_tokens: 128,
+          total_tokens: 2176,
+          context_length: 64000,
+        },
+      },
+    ]);
+
+    expect(useChatStore.getState().sessions["session-a"]?.latestUsage?.prompt_tokens).toBe(2048);
+    expect(useChatStore.getState().sessions["session-a"]?.latestUsage?.context_length).toBe(64000);
+  });
 });

@@ -31,15 +31,27 @@ class OpenAILLM(BaseLLM):
             'tools': tool_schemas,
             'stream': stream,
         }
+        if stream:
+            kwargs['stream_options'] = {'include_usage': True}
+        max_output_tokens = self._get_max_output_tokens()
+        if max_output_tokens is not None:
+            kwargs['max_tokens'] = max_output_tokens
         reasoning_effort = get_openai_reasoning_effort(self.model, self.enable_reasoning)
         if reasoning_effort:
             kwargs['reasoning_effort'] = reasoning_effort
         return kwargs
 
     async def stream(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> AsyncIterator[ChatCompletionChunk]:
+        self.reset_latest_usage()
         stream = await self.client.chat.completions.create(**self._build_request_kwargs(messages, tools, True))
         async for chunk in stream:
+            if getattr(chunk, 'usage', None) is not None:
+                self._set_latest_usage(chunk.usage)
             yield chunk
 
     async def complete(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> ChatCompletion:
-        return await self.client.chat.completions.create(**self._build_request_kwargs(messages, tools, False))
+        self.reset_latest_usage()
+        response = await self.client.chat.completions.create(**self._build_request_kwargs(messages, tools, False))
+        if getattr(response, 'usage', None) is not None:
+            self._set_latest_usage(response.usage)
+        return response

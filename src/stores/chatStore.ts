@@ -9,6 +9,7 @@ import {
 interface SessionState {
   messages: Message[];
   runEvents: RunEventRecord[];
+  latestUsage?: TokenUsage;
   currentStreamingContent: string;
   currentReasoningContent: string;
   isStreaming: boolean;
@@ -60,6 +61,7 @@ interface ChatState {
 const createEmptySession = (): SessionState => ({
   messages: [],
   runEvents: [],
+  latestUsage: undefined,
   currentStreamingContent: '',
   currentReasoningContent: '',
   isStreaming: false,
@@ -430,6 +432,7 @@ export const useChatStore = create<ChatState>((set) => ({
         [sessionId]: {
           ...session,
           messages: newMessages,
+          latestUsage: usage ?? session.latestUsage,
           currentStreamingContent: '',
           currentReasoningContent: '',
           isStreaming: false,
@@ -601,21 +604,26 @@ export const useChatStore = create<ChatState>((set) => ({
     return { sessions: rest };
   }),
 
-  loadSession: (sessionId, messages) => set((state) => ({
-    sessions: {
-      ...state.sessions,
-      [sessionId]: {
-        ...(state.sessions[sessionId] || createEmptySession()),
-        messages,
-        runEvents: state.sessions[sessionId]?.runEvents || [],
-        currentStreamingContent: '',
-        currentReasoningContent: '',
-        isStreaming: false,
-        assistantStatus: 'idle',
-        currentToolName: undefined,
-        pendingToolConfirm: undefined,
-        pendingQuestion: undefined,
+  loadSession: (sessionId, messages) => set((state) => {
+    const latestUsage = [...messages].reverse().find((message) => message.role === 'assistant' && message.usage)?.usage;
+
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...(state.sessions[sessionId] || createEmptySession()),
+          messages,
+          latestUsage,
+          runEvents: state.sessions[sessionId]?.runEvents || [],
+          currentStreamingContent: '',
+          currentReasoningContent: '',
+          isStreaming: false,
+          assistantStatus: 'idle',
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
+        },
       },
-    },
-  })),
+    };
+  }),
 }));

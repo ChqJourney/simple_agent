@@ -23,4 +23,19 @@ describe("normalizeProviderConfig", () => {
     expect(normalized.context_providers?.retrieval?.workspace?.max_hits).toBe(3);
     expect(normalized.context_providers?.retrieval?.workspace?.extensions).toEqual([".md", ".txt", ".json"]);
   });
+
+  it("normalizes deepseek config with the provider default base url", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "deepseek",
+      model: "deepseek-chat",
+      api_key: "deepseek-key",
+      base_url: " ",
+      enable_reasoning: false,
+    });
+
+    expect(normalized.provider).toBe("deepseek");
+    expect(normalized.base_url).toBe("https://api.deepseek.com");
+    expect(normalized.profiles?.primary.provider).toBe("deepseek");
+    expect(normalized.profiles?.primary.base_url).toBe("https://api.deepseek.com");
+  });
 });

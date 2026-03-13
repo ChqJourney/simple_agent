@@ -27,14 +27,16 @@ class Agent:
         user_manager: UserManager,
         skill_provider: Optional[SkillProvider] = None,
         retrieval_provider: Optional[RetrievalProvider] = None,
+        max_tool_rounds: int = 10,
+        max_retries: int = 3,
     ):
         self.llm = llm
         self.tool_registry = tool_registry
         self.user_manager = user_manager
         self.skill_provider = skill_provider
         self.retrieval_provider = retrieval_provider
-        self.max_tool_rounds = 10
-        self.max_retries = 3
+        self.max_tool_rounds = max_tool_rounds
+        self.max_retries = max_retries
         self._interrupt_event = asyncio.Event()
 
     def interrupt(self) -> None:
@@ -102,6 +104,11 @@ class Agent:
                 session.add_message(assistant_message)
 
                 if not assistant_message.tool_calls:
+                    latest_usage = None
+                    if callable(getattr(self.llm, "get_latest_usage", None)):
+                        latest_usage = self.llm.get_latest_usage()
+                    if latest_usage:
+                        assistant_message.usage = latest_usage
                     await self._emit_run_event(
                         session,
                         run_id,
@@ -110,7 +117,8 @@ class Agent:
                     )
                     await self.user_manager.send_to_frontend({
                         "type": "completed",
-                        "session_id": session.session_id
+                        "session_id": session.session_id,
+                        "usage": latest_usage,
                     })
                     return
 

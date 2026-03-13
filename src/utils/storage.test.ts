@@ -26,4 +26,25 @@ describe("storage", () => {
       }),
     ]);
   });
+
+  it("preserves assistant usage metadata when deserializing session history", () => {
+    const messages = deserializeSessionHistoryEntry({
+      role: "assistant",
+      content: "Done",
+      usage: {
+        prompt_tokens: 4096,
+        completion_tokens: 256,
+        total_tokens: 4352,
+        context_length: 128000,
+      },
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].usage).toEqual({
+      prompt_tokens: 4096,
+      completion_tokens: 256,
+      total_tokens: 4352,
+      context_length: 128000,
+    });
+  });
 });

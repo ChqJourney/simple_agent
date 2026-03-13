@@ -80,6 +80,7 @@ export interface TokenUsage {
   completion_tokens: number;
   reasoning_tokens?: number;
   total_tokens: number;
+  context_length?: number;
 }
 
 export interface RunEventRecord {
@@ -91,7 +92,7 @@ export interface RunEventRecord {
   timestamp: string;
 }
 
-export type ProviderType = 'openai' | 'qwen' | 'ollama';
+export type ProviderType = 'openai' | 'deepseek' | 'qwen' | 'ollama';
 export type InputType = 'text' | 'image';
 
 export interface ModelProfile {
@@ -334,6 +335,12 @@ export interface ServerSessionTitleUpdated {
   title: string;
 }
 
+export interface ServerSessionLockUpdated {
+  type: 'session_lock_updated';
+  session_id: string;
+  locked_model: LockedModelRef;
+}
+
 export interface ServerRunEvent {
   type: 'run_event';
   session_id: string;
@@ -358,6 +365,7 @@ export type ServerWebSocketMessage =
   | ServerConfigUpdated
   | ServerWorkspaceUpdated
   | ServerSessionTitleUpdated
+  | ServerSessionLockUpdated
   | ServerRunEvent;
 
 export type WebSocketMessage = ClientWebSocketMessage | ServerWebSocketMessage;

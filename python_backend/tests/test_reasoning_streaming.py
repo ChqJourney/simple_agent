@@ -53,6 +53,28 @@ class SlowStreamingLLM(BaseLLM):
         return {}
 
 
+class UsageReportingLLM(BaseLLM):
+    def __init__(self):
+        super().__init__({
+            'model': 'usage-test-model',
+            'runtime': {'context_length': 128000},
+        })
+
+    async def stream(self, messages, tools=None):
+        self.latest_usage = {
+            'prompt_tokens': 4096,
+            'completion_tokens': 256,
+            'total_tokens': 4352,
+            'context_length': 128000,
+        }
+        yield {
+            'choices': [{'delta': {'content': 'usage aware answer'}}]
+        }
+
+    async def complete(self, messages, tools=None):
+        return {}
+
+
 class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
     async def test_agent_emits_reasoning_events_and_persists_reasoning_content(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
@@ -104,6 +126,30 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('interrupted', event_types)
         self.assertNotIn('completed', event_types)
         self.assertEqual('user', session.messages[-1].role)
+
+        temp_dir.cleanup()
+
+    async def test_agent_completed_event_includes_latest_usage_snapshot(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-1')
+        await user_manager.bind_session_to_connection('session-1', 'conn-1')
+
+        agent = Agent(UsageReportingLLM(), ToolRegistry(), user_manager)
+        await agent.run('hello', session)
+
+        completed = [m for m in sent_messages if m.get('type') == 'completed']
+
+        self.assertEqual(1, len(completed))
+        self.assertEqual(4096, completed[0]['usage']['prompt_tokens'])
+        self.assertEqual(128000, completed[0]['usage']['context_length'])
+        self.assertEqual(4096, session.messages[-1].usage['prompt_tokens'])
 
         temp_dir.cleanup()
 

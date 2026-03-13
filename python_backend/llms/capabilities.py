@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 TEXT_ONLY_INPUT_TYPES = ['text']
 IMAGE_AND_TEXT_INPUT_TYPES = ['text', 'image']
@@ -15,6 +15,9 @@ OPENAI_REASONING_PREFIXES = (
 QWEN_REASONING_PREFIXES = (
     'qwen3',
     'qwq',
+)
+DEEPSEEK_REASONING_PREFIXES = (
+    'deepseek-reasoner',
 )
 OLLAMA_REASONING_PREFIXES = (
     'qwen3',
@@ -31,6 +34,20 @@ QWEN_VISION_PREFIXES = (
     'qvq',
 )
 OLLAMA_VISION_PREFIXES = tuple()
+DEFAULT_CONTEXT_LENGTH_PREFIXES = {
+    'openai': {
+        'gpt-4o': 128000,
+        'gpt-4-turbo': 128000,
+        'o1': 128000,
+        'o3': 128000,
+        'o4': 128000,
+        'gpt-5': 128000,
+    },
+    'deepseek': {
+        'deepseek-chat': 128000,
+        'deepseek-reasoner': 128000,
+    },
+}
 
 
 def _normalize_provider(provider: str) -> str:
@@ -51,6 +68,8 @@ def supports_reasoning(provider: str, model: str) -> bool:
 
     if normalized_provider == 'openai':
         return _matches_prefix(normalized_model, OPENAI_REASONING_PREFIXES)
+    if normalized_provider == 'deepseek':
+        return _matches_prefix(normalized_model, DEEPSEEK_REASONING_PREFIXES)
     if normalized_provider == 'qwen':
         return _matches_prefix(normalized_model, QWEN_REASONING_PREFIXES)
     if normalized_provider == 'ollama':
@@ -64,6 +83,8 @@ def get_supported_input_types(provider: str, model: str) -> List[str]:
 
     if normalized_provider == 'openai' and _matches_prefix(normalized_model, OPENAI_VISION_PREFIXES):
         return IMAGE_AND_TEXT_INPUT_TYPES.copy()
+    if normalized_provider == 'deepseek':
+        return TEXT_ONLY_INPUT_TYPES.copy()
     if normalized_provider == 'qwen' and _matches_prefix(normalized_model, QWEN_VISION_PREFIXES):
         return IMAGE_AND_TEXT_INPUT_TYPES.copy()
     if normalized_provider == 'ollama' and _matches_prefix(normalized_model, OLLAMA_VISION_PREFIXES):
@@ -80,6 +101,17 @@ def coerce_reasoning_enabled(config: Dict[str, Any]) -> Dict[str, Any]:
     if normalized['input_type'] not in get_supported_input_types(provider, model):
         normalized['input_type'] = 'text'
     return normalized
+
+
+def get_default_context_length(provider: str, model: str) -> Optional[int]:
+    normalized_provider = _normalize_provider(provider)
+    normalized_model = _normalize_model(model)
+
+    provider_defaults = DEFAULT_CONTEXT_LENGTH_PREFIXES.get(normalized_provider, {})
+    for prefix, context_length in provider_defaults.items():
+        if normalized_model.startswith(prefix):
+            return context_length
+    return None
 
 
 def get_openai_reasoning_effort(model: str, enabled: bool) -> str | None:

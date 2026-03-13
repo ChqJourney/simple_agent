@@ -45,6 +45,21 @@ class RuntimeContractTests(unittest.TestCase):
             normalized["context_providers"],
         )
 
+    def test_normalize_runtime_config_supports_deepseek(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "deepseek",
+                "model": "deepseek-chat",
+                "api_key": "test-key",
+                "base_url": "   ",
+                "enable_reasoning": False,
+            }
+        )
+
+        self.assertEqual("deepseek", normalized["provider"])
+        self.assertEqual("deepseek", normalized["profiles"]["primary"]["provider"])
+        self.assertEqual("https://api.deepseek.com", normalized["profiles"]["primary"]["base_url"])
+
     def test_run_event_serializes_stable_fields(self) -> None:
         event = RunEvent(
             event_type="run_started",

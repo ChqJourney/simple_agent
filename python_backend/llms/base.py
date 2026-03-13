@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Dict, Any, List, Optional
+from .capabilities import get_default_context_length
 
 
 class BaseLLM(ABC):
@@ -24,6 +25,7 @@ class BaseLLM(ABC):
         self.model = config["model"]
         self.api_key = config.get("api_key")
         self.base_url = config.get("base_url")
+        self.latest_usage: Optional[Dict[str, Any]] = None
 
     @abstractmethod
     async def stream(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> AsyncIterator[Dict]:
@@ -54,3 +56,114 @@ class BaseLLM(ABC):
             schemas.append(schema)
 
         return schemas
+
+    def _get_max_output_tokens(self) -> Optional[int]:
+        value = self.config.get("max_output_tokens")
+        if value in (None, ""):
+            runtime = self.config.get("runtime")
+            if isinstance(runtime, dict):
+                value = runtime.get("max_output_tokens")
+
+        if value in (None, ""):
+            return None
+
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def reset_latest_usage(self) -> None:
+        self.latest_usage = None
+
+    def get_latest_usage(self) -> Optional[Dict[str, Any]]:
+        if not isinstance(self.latest_usage, dict):
+            return None
+        return dict(self.latest_usage)
+
+    def _get_context_length(self) -> Optional[int]:
+        value = self.config.get("context_length")
+        if value in (None, ""):
+            runtime = self.config.get("runtime")
+            if isinstance(runtime, dict):
+                value = runtime.get("context_length")
+
+        if value in (None, ""):
+            return None
+
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed is not None and parsed > 0:
+            return parsed
+        return get_default_context_length(str(self.config.get("provider") or ""), self.model)
+
+    @staticmethod
+    def _coerce_usage_field(raw_usage: Any, field: str) -> Optional[int]:
+        if isinstance(raw_usage, dict):
+            value = raw_usage.get(field)
+        else:
+            value = getattr(raw_usage, field, None)
+
+        if value in (None, ""):
+            return None
+
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _coerce_reasoning_tokens(raw_usage: Any) -> Optional[int]:
+        details = None
+        if isinstance(raw_usage, dict):
+            details = raw_usage.get("completion_tokens_details")
+            if details is None:
+                details = raw_usage.get("output_tokens_details")
+        else:
+            details = getattr(raw_usage, "completion_tokens_details", None)
+            if details is None:
+                details = getattr(raw_usage, "output_tokens_details", None)
+
+        if isinstance(details, dict):
+            value = details.get("reasoning_tokens")
+        else:
+            value = getattr(details, "reasoning_tokens", None)
+
+        if value in (None, ""):
+            value = raw_usage.get("reasoning_tokens") if isinstance(raw_usage, dict) else getattr(raw_usage, "reasoning_tokens", None)
+
+        if value in (None, ""):
+            return None
+
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _set_latest_usage(self, raw_usage: Any) -> Optional[Dict[str, Any]]:
+        prompt_tokens = self._coerce_usage_field(raw_usage, "prompt_tokens")
+        completion_tokens = self._coerce_usage_field(raw_usage, "completion_tokens")
+        total_tokens = self._coerce_usage_field(raw_usage, "total_tokens")
+
+        if prompt_tokens is None and completion_tokens is None and total_tokens is None:
+            return None
+
+        if total_tokens is None and prompt_tokens is not None and completion_tokens is not None:
+            total_tokens = prompt_tokens + completion_tokens
+
+        normalized: Dict[str, Any] = {
+            "prompt_tokens": prompt_tokens or 0,
+            "completion_tokens": completion_tokens or 0,
+            "total_tokens": total_tokens or 0,
+        }
+        reasoning_tokens = self._coerce_reasoning_tokens(raw_usage)
+        if reasoning_tokens is not None:
+            normalized["reasoning_tokens"] = reasoning_tokens
+
+        context_length = self._get_context_length()
+        if context_length is not None:
+            normalized["context_length"] = context_length
+
+        self.latest_usage = normalized
+        return normalized

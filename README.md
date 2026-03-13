@@ -29,7 +29,7 @@ Python Backend (FastAPI / WebSocket)
 Workspace
   -> .agent/sessions/*.jsonl
   -> .agent/sessions/*.meta.json
-  -> .agent/logs/*.json
+  -> .agent/logs/*.jsonl
 ```
 
 ### 前端
@@ -66,14 +66,30 @@ Workspace
 
 ### 模型与配置
 
-- OpenAI / Qwen / Ollama provider
+- OpenAI / DeepSeek / Qwen / Ollama provider
 - `primary` / `secondary` 多 profile 配置
-- session 级 locked model
-- runtime 限制配置：
-  - `context_length`
-  - `max_output_tokens`
-  - `max_tool_rounds`
-  - `max_retries`
+- session 级 locked model 元数据
+- runtime 配置结构已统一到 `runtime` 字段
+- 当前实际生效情况：
+  - `context_length` 已进入配置结构，并在设置页提供输入框
+  - `max_tool_rounds` / `max_retries` 已接入后端 `Agent` 的实际执行限制
+  - `max_output_tokens` 已接入 OpenAI / DeepSeek / Qwen / Ollama provider 的请求参数
+  - 普通用户消息始终使用 `primary` profile 作为 conversation model
+  - `secondary` profile 用于后台 helper task，例如 session title generation；未配置时回退到 `primary`
+  - `locked model` 仍会持久化到 session metadata，但不再在 workspace chat UI 顶部单独展示
+
+### Token Usage
+
+- provider 完成响应后会统一回传标准化 usage
+- 当前 usage 结构包含：
+  - `prompt_tokens`
+  - `completion_tokens`
+  - `total_tokens`
+  - 可选 `reasoning_tokens`
+  - 可选 `context_length`
+- workspace 顶部右上角会显示一个圆形 token usage widget
+- widget 使用“当前 session 最近一次完成请求”的 `prompt_tokens / context_length` 计算百分比
+- hover 会显示实际 token 数值，便于判断是否接近 context length limit
 
 ### 工具平台
 
@@ -93,8 +109,8 @@ Workspace
 
 - Local Skills
   - 默认扫描：
-    - `~/.agents/skills`
-    - `~/.codex/skills`
+    - `~/.agent/skills`
+    - `<workspace>/.agent/skills`
 - Workspace Retrieval
   - 当前为轻量关键词检索
   - 可配置 `max_hits` 与文件扩展名
@@ -159,6 +175,42 @@ Workspace
 }
 ```
 
+### DeepSeek 配置示例
+
+```json
+{
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "api_key": "YOUR_KEY",
+  "base_url": "https://api.deepseek.com",
+  "enable_reasoning": false,
+  "profiles": {
+    "primary": {
+      "profile_name": "primary",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "api_key": "YOUR_KEY",
+      "base_url": "https://api.deepseek.com",
+      "enable_reasoning": false
+    },
+    "secondary": {
+      "profile_name": "secondary",
+      "provider": "deepseek",
+      "model": "deepseek-reasoner",
+      "api_key": "YOUR_KEY",
+      "base_url": "https://api.deepseek.com",
+      "enable_reasoning": true
+    }
+  },
+  "runtime": {
+    "context_length": 128000,
+    "max_output_tokens": 4000,
+    "max_tool_rounds": 8,
+    "max_retries": 3
+  }
+}
+```
+
 ## Run Event 模型
 
 agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agent/logs/`。
@@ -168,11 +220,16 @@ agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agen
 - `run_started`
 - `skill_resolution_completed`
 - `retrieval_completed`
-- `tool_requested`
-- `tool_completed`
+- `tool_call_requested`
+- `tool_execution_started`
+- `tool_execution_completed`
+- `question_requested`
+- `question_answered`
 - `retry_scheduled`
 - `run_completed`
 - `run_interrupted`
+- `run_failed`
+- `run_max_rounds_reached`
 
 前端会把这些事件渲染为 run timeline。
 
@@ -186,12 +243,13 @@ agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agen
     <session-id>.jsonl
     <session-id>.meta.json
   logs/
-    <session-id>.json
+    <session-id>.jsonl
 ```
 
 - `*.jsonl` 保存消息历史
+- assistant 消息会在有数据时持久化 `usage`，用于重新加载后恢复 chat token 信息和 header widget
 - `*.meta.json` 保存 title、locked model 等会话元数据
-- `logs/*.json` 保存结构化 run event
+- `logs/*.jsonl` 保存结构化 run event
 
 ## 本地开发
 
@@ -291,3 +349,5 @@ tauri_agent/
 - 同一 session 内不允许切换已锁定模型
 - 当前图片多模态只支持图片，不支持音频/视频
 - 当前 retrieval 是轻量关键词检索，不是向量索引
+- session title 会在“session 还没有 title 且本次发送的是文本消息”时异步生成一次；纯图片消息不会触发
+- token usage widget 依赖 provider 返回 usage；如果上游不返回 usage，则 widget 会显示为空态

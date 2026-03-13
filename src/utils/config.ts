@@ -3,6 +3,7 @@ import { getSupportedInputTypes, supportsReasoning } from './modelCapabilities';
 
 export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
   openai: 'https://api.openai.com/v1',
+  deepseek: 'https://api.deepseek.com',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   ollama: 'http://127.0.0.1:11434',
 };

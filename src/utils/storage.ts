@@ -160,6 +160,30 @@ function normalizePersistedAttachment(rawAttachment: unknown): Attachment | null
   };
 }
 
+function normalizePersistedUsage(rawUsage: unknown): Message['usage'] {
+  if (!rawUsage || typeof rawUsage !== 'object') {
+    return undefined;
+  }
+
+  const candidate = rawUsage as Partial<Message['usage']>;
+
+  if (
+    typeof candidate.prompt_tokens !== 'number'
+    || typeof candidate.completion_tokens !== 'number'
+    || typeof candidate.total_tokens !== 'number'
+  ) {
+    return undefined;
+  }
+
+  return {
+    prompt_tokens: candidate.prompt_tokens,
+    completion_tokens: candidate.completion_tokens,
+    total_tokens: candidate.total_tokens,
+    reasoning_tokens: typeof candidate.reasoning_tokens === 'number' ? candidate.reasoning_tokens : undefined,
+    context_length: typeof candidate.context_length === 'number' ? candidate.context_length : undefined,
+  };
+}
+
 export function deserializeSessionHistoryEntry(
   data: Record<string, unknown>,
   toolNamesById: Map<string, string> = new Map()
@@ -198,6 +222,7 @@ export function deserializeSessionHistoryEntry(
     tool_calls: normalizedToolCalls,
     tool_call_id: toolCallId,
     name: rawName,
+    usage: normalizePersistedUsage(data.usage),
     profile_name: typeof data.profile_name === 'string' ? data.profile_name : undefined,
     model_label: typeof data.model_label === 'string' ? data.model_label : undefined,
     status: 'completed',

@@ -29,6 +29,7 @@ class Message(BaseModel):
     profile_name: Optional[str] = None
     model_label: Optional[str] = None
     attachments: Optional[List[Dict[str, Any]]] = None
+    usage: Optional[Dict[str, Any]] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

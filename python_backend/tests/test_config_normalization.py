@@ -7,6 +7,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import main as backend_main
+from llms.deepseek import DeepSeekLLM
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 
 
@@ -139,6 +140,18 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(OLLAMA_DEFAULT_BASE_URL, blank.base_url)
         self.assertEqual('http://localhost:11434', with_v1.base_url)
+
+    def test_create_llm_for_profile_supports_deepseek(self) -> None:
+        llm = backend_main.create_llm_for_profile(
+            {
+                'provider': 'deepseek',
+                'model': 'deepseek-chat',
+                'api_key': 'test-key',
+                'base_url': 'https://api.deepseek.com',
+            }
+        )
+
+        self.assertIsInstance(llm, DeepSeekLLM)
 
 
 if __name__ == '__main__':

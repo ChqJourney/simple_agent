@@ -3,6 +3,7 @@ import { ProviderType } from '../types';
 export type InputType = 'text' | 'image';
 
 const OPENAI_REASONING_PREFIXES = ['o1', 'o3', 'o4', 'gpt-5'];
+const DEEPSEEK_REASONING_PREFIXES = ['deepseek-reasoner'];
 const QWEN_REASONING_PREFIXES = ['qwen3', 'qwq'];
 const OLLAMA_REASONING_PREFIXES = ['qwen3', 'deepseek-r1', 'magistral', 'phi4-reasoning'];
 
@@ -25,6 +26,8 @@ export function supportsReasoning(provider: ProviderType, model: string): boolea
   switch (provider) {
     case 'openai':
       return matchesPrefix(normalizedModel, OPENAI_REASONING_PREFIXES);
+    case 'deepseek':
+      return matchesPrefix(normalizedModel, DEEPSEEK_REASONING_PREFIXES);
     case 'qwen':
       return matchesPrefix(normalizedModel, QWEN_REASONING_PREFIXES);
     case 'ollama':
@@ -43,6 +46,8 @@ export function getSupportedInputTypes(provider: ProviderType, model: string): I
   switch (provider) {
     case 'openai':
       return matchesPrefix(normalizedModel, OPENAI_VISION_PREFIXES) ? ['text', 'image'] : ['text'];
+    case 'deepseek':
+      return ['text'];
     case 'qwen':
       return matchesPrefix(normalizedModel, QWEN_VISION_PREFIXES) ? ['text', 'image'] : ['text'];
     case 'ollama':

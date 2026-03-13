@@ -1,10 +1,12 @@
 from typing import Any, Dict, Optional
 
+from llms.deepseek import DEEPSEEK_DEFAULT_BASE_URL
 from llms.capabilities import coerce_reasoning_enabled
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, normalize_ollama_base_url
 
 DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
+    "deepseek": DEEPSEEK_DEFAULT_BASE_URL,
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "ollama": OLLAMA_DEFAULT_BASE_URL,
 }

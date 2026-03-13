@@ -307,6 +307,61 @@ describe("WebSocketProvider", () => {
     });
   });
 
+  it("updates locked model metadata from backend session lock events", async () => {
+    useSessionStore.getState().addSession({
+      session_id: "session-a",
+      workspace_path: "/workspace-a",
+      created_at: "2026-03-12T10:00:00.000Z",
+      updated_at: "2026-03-12T10:00:00.000Z",
+    });
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "session_lock_updated",
+      session_id: "session-a",
+      locked_model: {
+        profile_name: "secondary",
+        provider: "openai",
+        model: "gpt-4o-mini",
+      },
+    });
+
+    await waitFor(() => {
+      expect(useSessionStore.getState().sessions[0]?.locked_model?.profile_name).toBe("secondary");
+      expect(useSessionStore.getState().sessions[0]?.locked_model?.model).toBe("gpt-4o-mini");
+    });
+  });
+
+  it("stores the latest usage snapshot when a run completes", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "completed",
+      session_id: "session-a",
+      usage: {
+        prompt_tokens: 4096,
+        completion_tokens: 256,
+        total_tokens: 4352,
+        context_length: 128000,
+      },
+    });
+
+    await waitFor(async () => {
+      const { useChatStore } = await import("../stores/chatStore");
+      expect(useChatStore.getState().sessions["session-a"]?.latestUsage?.prompt_tokens).toBe(4096);
+      expect(useChatStore.getState().sessions["session-a"]?.latestUsage?.context_length).toBe(128000);
+    });
+  });
+
   it("sends structured question responses", async () => {
     websocketMockState.sendSucceeded = true;
 

@@ -10,12 +10,14 @@ interface ProviderConfigProps {
 
 const PROVIDERS: { value: ProviderType; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
+  { value: 'deepseek', label: 'DeepSeek' },
   { value: 'qwen', label: 'Qwen (Tongyi Qianwen)' },
   { value: 'ollama', label: 'Ollama (Local)' },
 ];
 
 const MODELS: Record<ProviderType, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
   qwen: ['qwen3-max-2026-01-23', 'qwen3.5-plus', 'qwen3-coder-next'],
   ollama: ['llama3.1', 'llama3.2', 'qwen3:8b', 'mistral', 'codellama'],
 };
@@ -58,6 +60,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
           Provider
         </label>
         <select
+          aria-label={`${title || 'Model'} Provider`}
           value={config.provider || ''}
           onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
@@ -78,6 +81,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
               Model
             </label>
             <select
+              aria-label={`${title || 'Model'} Model`}
               value={config.model || ''}
               onChange={(e) => handleModelChange(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"

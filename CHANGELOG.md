@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added first-class `DeepSeek` provider support across backend runtime, config normalization, settings UI, and connection testing
+- Added normalized completion-usage capture across providers plus persisted assistant-message usage metadata
+- Added workspace header token-usage circular widget for latest `prompt_tokens / context_length`
 - Added backend regression test `python_backend.tests.test_connection_routing`
 - Added backend regression test `python_backend.tests.test_session_execution`
 - Added backend regression test `python_backend.tests.test_config_normalization`
@@ -20,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added chat composer `Stop generating` action during streaming responses
 - Added frontend regression script `scripts/chat-ui-regression-check.tsx`
 - Added runtime contracts for profile-based config, session metadata, and run events
-- Added structured run-event logging under workspace `.agent/logs/`
+- Added structured run-event logging under workspace `.agent/logs/*.jsonl`
 - Added observable run timeline in the chat UI
 - Added multi-profile model settings with session-level locked model metadata
 - Added execution tools for `shell_execute`, `python_execute`, `node_execute`, `todo_task`, and `ask_question`
@@ -31,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Changed completion websocket payloads to forward latest-request usage snapshots to the frontend
 - Reworked backend websocket routing from a single global callback to per-connection routing
 - Bound sessions to frontend connections so tool confirmations and streamed messages no longer cross windows
 - Restricted each `session_id` to a single active run and added task registry cleanup on disconnect / config switch
@@ -47,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed prominent workspace/chat divider lines in favor of spacing and softer panel surfaces
 - Split frontend build output into smaller chunks and moved code highlighting to lazy loading
 - Expanded config normalization to promote legacy single-model config into profile-based runtime config
-- Routed simple task execution through optional secondary profile selection while locking each session to its starting model
+- Added profile-routing helpers and session lock behavior groundwork; current message runs still resolve against the primary profile
 - Persisted session metadata separately from transcript history via `.meta.json`
 - Upgraded frontend session, chat, and workspace stores to consume structured runtime events and metadata updates
 - Made image drops use inline data URLs so browser-sourced images can reach the backend without filesystem paths
@@ -77,7 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 
-- Rewrote `README.md` to reflect the current platform architecture, feature set, persistence model, runtime config, and verification commands
+- Rewrote `README.md` to reflect the current platform architecture, feature set, persistence model, runtime config, provider matrix, token-usage widget, and verification commands
 
 ## [0.1.0] - 2025-03-10
 

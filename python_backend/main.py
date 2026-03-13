@@ -14,12 +14,18 @@ from fastapi.responses import JSONResponse
 from core.agent import Agent
 from core.user import Session, UserManager
 from llms.base import BaseLLM
+from llms.deepseek import DeepSeekLLM
 from llms.openai import OpenAILLM
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 from llms.qwen import QwenLLM
 from runtime.config import get_primary_profile_config, normalize_runtime_config
 from runtime.provider_registry import ContextProviderBundle, ContextProviderRegistry
-from runtime.router import lock_ref_from_profile, resolve_profile_for_task, session_lock_matches_profile
+from runtime.router import (
+    lock_ref_from_profile,
+    resolve_background_profile,
+    resolve_conversation_profile,
+    session_lock_matches_profile,
+)
 from runtime.session_titles import run_session_title_task
 from tools.base import ToolRegistry
 from tools.ask_question import AskQuestionTool
@@ -60,8 +66,7 @@ tool_registry.register(AskQuestionTool())
 user_manager = UserManager()
 context_provider_registry = ContextProviderRegistry(
     skill_search_roots=[
-        Path.home() / ".agents" / "skills",
-        Path.home() / ".codex" / "skills",
+        Path.home() / ".agent" / "skills",
     ]
 )
 state_lock = asyncio.Lock()
@@ -88,18 +93,30 @@ def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
     return normalize_runtime_config(data)
 
 
+def create_llm_for_profile(profile: Dict[str, Any], runtime_policy: Optional[Dict[str, Any]] = None) -> BaseLLM:
+    provider = profile.get("provider", "openai")
+    profile_config = {
+        **profile,
+        **(runtime_policy or {}),
+        "runtime": dict(runtime_policy or {}),
+    }
+
+    if provider == "openai":
+        return OpenAILLM(profile_config)
+    if provider == "deepseek":
+        return DeepSeekLLM(profile_config)
+    if provider == "qwen":
+        return QwenLLM(profile_config)
+    if provider == "ollama":
+        return OllamaLLM(profile_config)
+    raise ValueError(f"Unknown provider: {provider}")
+
+
 def create_llm(config: Dict[str, Any]) -> BaseLLM:
     normalized_config = _normalize_provider_config(config)
     active_profile = get_primary_profile_config(normalized_config)
-    provider = active_profile.get("provider", "openai")
-
-    if provider == "openai":
-        return OpenAILLM(active_profile)
-    if provider == "qwen":
-        return QwenLLM(active_profile)
-    if provider == "ollama":
-        return OllamaLLM(active_profile)
-    raise ValueError(f"Unknown provider: {provider}")
+    runtime_policy = normalized_config.get("runtime") if isinstance(normalized_config.get("runtime"), dict) else {}
+    return create_llm_for_profile(active_profile, runtime_policy)
 
 
 def _forget_task(task: asyncio.Task) -> None:
@@ -152,18 +169,34 @@ async def cleanup_all_tasks() -> None:
         await asyncio.gather(*(task for task, _ in task_contexts), return_exceptions=True)
 
 
-async def get_or_create_agent(session_id: str) -> Optional[Agent]:
+def _runtime_policy_value(runtime_policy: Dict[str, Any], key: str, default: int) -> int:
+    value = runtime_policy.get(key)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+async def get_or_create_agent(
+    session_id: str,
+    profile_config: Dict[str, Any],
+    runtime_policy: Optional[Dict[str, Any]] = None,
+) -> Optional[Agent]:
     async with state_lock:
-        if not runtime_state.current_llm:
+        if not runtime_state.current_config:
             return None
 
         if session_id not in runtime_state.active_agents:
+            effective_runtime_policy = runtime_policy if isinstance(runtime_policy, dict) else {}
             agent = Agent(
-                llm=runtime_state.current_llm,
+                llm=create_llm_for_profile(profile_config, effective_runtime_policy),
                 tool_registry=tool_registry,
                 user_manager=user_manager,
                 skill_provider=runtime_state.current_context_bundle.skill_provider,
                 retrieval_provider=runtime_state.current_context_bundle.retrieval_provider,
+                max_tool_rounds=_runtime_policy_value(effective_runtime_policy, "max_tool_rounds", 10),
+                max_retries=_runtime_policy_value(effective_runtime_policy, "max_retries", 3),
             )
             runtime_state.active_agents[session_id] = agent
 
@@ -300,7 +333,6 @@ async def handle_user_message(
 
     async with state_lock:
         current_config = runtime_state.current_config
-        llm = runtime_state.current_llm
         workspace = (
             workspace_path
             if workspace_path
@@ -318,7 +350,7 @@ async def handle_user_message(
             duplicate_run = True
         else:
             duplicate_run = False
-            session_reserved = llm is not None
+            session_reserved = current_config is not None
             if session_reserved:
                 runtime_state.active_session_tasks[session_id] = SESSION_TASK_RESERVED
 
@@ -330,7 +362,7 @@ async def handle_user_message(
         })
         return
 
-    if not llm:
+    if not current_config:
         await send_callback({
             "type": "error",
             "session_id": session_id,
@@ -343,11 +375,13 @@ async def handle_user_message(
         if not session:
             session = await user_manager.create_session(workspace, session_id)
 
-        if current_config:
-            active_profile = resolve_profile_for_task(current_config, task_kind="default")
-            active_lock_ref = lock_ref_from_profile(active_profile)
+        runtime_policy = current_config.get("runtime") if isinstance(current_config.get("runtime"), dict) else {}
 
-            if session.locked_model and not session_lock_matches_profile(session.locked_model, active_profile):
+        if current_config:
+            active_profile = resolve_conversation_profile(current_config)
+            active_lock_ref = lock_ref_from_profile(active_profile) if active_profile else None
+
+            if session.locked_model and (not active_profile or not session_lock_matches_profile(session.locked_model, active_profile)):
                 await send_callback({
                     "type": "error",
                     "session_id": session_id,
@@ -358,13 +392,26 @@ async def handle_user_message(
                 })
                 return
 
-            if session.locked_model is None:
+            if session.locked_model is None and active_lock_ref is not None:
                 session.locked_model = active_lock_ref
                 session.save_metadata()
+                await send_callback({
+                    "type": "session_lock_updated",
+                    "session_id": session_id,
+                    "locked_model": active_lock_ref.model_dump(mode="json"),
+                })
 
         await user_manager.bind_session_to_connection(session_id, connection_id)
 
-        agent = await get_or_create_agent(session_id)
+        if not active_profile:
+            await send_callback({
+                "type": "error",
+                "session_id": session_id,
+                "error": "Failed to resolve active model profile for this session.",
+            })
+            return
+
+        agent = await get_or_create_agent(session_id, active_profile, runtime_policy)
         if not agent:
             await send_callback({
                 "type": "error",
@@ -385,13 +432,15 @@ async def handle_user_message(
         should_generate_title = (
             bool(normalized_content.strip())
             and not session.title
-            and callable(getattr(llm, "complete", None))
         )
         title_task = None
         if should_generate_title:
-            title_task = asyncio.create_task(
-                run_session_title_task(session, llm, normalized_content, send_callback)
-            )
+            title_profile = resolve_background_profile(current_config)
+            title_llm = create_llm_for_profile(title_profile, runtime_policy)
+            if callable(getattr(title_llm, "complete", None)):
+                title_task = asyncio.create_task(
+                    run_session_title_task(session, title_llm, normalized_content, send_callback)
+                )
 
         async with state_lock:
             runtime_state.pending_tasks.add(task)
@@ -583,7 +632,7 @@ async def test_config(data: Dict[str, Any]):
     if not raw_provider:
         return JSONResponse(status_code=400, content={"ok": False, "error": "Missing provider"})
 
-    if raw_provider not in ("openai", "qwen", "ollama"):
+    if raw_provider not in ("openai", "deepseek", "qwen", "ollama"):
         return JSONResponse(status_code=400, content={"ok": False, "error": f"Unsupported provider: {raw_provider}"})
 
     config = _normalize_provider_config({**data, "provider": raw_provider})

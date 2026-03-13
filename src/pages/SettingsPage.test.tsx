@@ -54,6 +54,9 @@ describe("SettingsPage", () => {
         },
         runtime: {
           context_length: 64000,
+          max_output_tokens: 4000,
+          max_tool_rounds: 8,
+          max_retries: 3,
         },
         context_providers: {
           skills: {
@@ -83,10 +86,25 @@ describe("SettingsPage", () => {
 
     expect(screen.getByText("Primary Model")).toBeTruthy();
     expect(screen.getByText("Secondary Model")).toBeTruthy();
+    expect(
+      screen.getByText("Used for background helper tasks such as title generation. Falls back to the primary model when unset.")
+    ).toBeTruthy();
     expect(screen.getByLabelText("Context Length")).toBeTruthy();
+    expect(screen.getByLabelText("Max Output Tokens")).toBeTruthy();
+    expect(screen.getByLabelText("Max Tool Rounds")).toBeTruthy();
+    expect(screen.getByLabelText("Max Retries")).toBeTruthy();
     expect(screen.getByLabelText("Enable Local Skills")).toBeTruthy();
     expect(screen.getByLabelText("Enable Workspace Retrieval")).toBeTruthy();
     expect(screen.getByLabelText("Retrieval Max Hits")).toBeTruthy();
+  });
+
+  it("offers DeepSeek in the provider selector", () => {
+    render(<SettingsPage />);
+
+    const providerSelects = screen.getAllByRole("combobox") as HTMLSelectElement[];
+    const providerOptions = Array.from(providerSelects[0].options).map((option) => option.textContent);
+
+    expect(providerOptions).toContain("DeepSeek");
   });
 
   it("saves context provider settings through normalized config", () => {
@@ -96,6 +114,15 @@ describe("SettingsPage", () => {
     fireEvent.change(screen.getByLabelText("Retrieval Max Hits"), {
       target: { value: "5" },
     });
+    fireEvent.change(screen.getByLabelText("Max Output Tokens"), {
+      target: { value: "2048" },
+    });
+    fireEvent.change(screen.getByLabelText("Max Tool Rounds"), {
+      target: { value: "6" },
+    });
+    fireEvent.change(screen.getByLabelText("Max Retries"), {
+      target: { value: "4" },
+    });
     fireEvent.change(screen.getByLabelText("Retrieval File Types"), {
       target: { value: ".md, .py" },
     });
@@ -103,6 +130,12 @@ describe("SettingsPage", () => {
 
     expect(setConfigMock).toHaveBeenCalledWith(
       expect.objectContaining({
+        runtime: {
+          context_length: 64000,
+          max_output_tokens: 2048,
+          max_tool_rounds: 6,
+          max_retries: 4,
+        },
         context_providers: {
           skills: {
             local: {

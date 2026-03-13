@@ -112,6 +112,7 @@ class FileWriteTool(BaseTool):
                     error=f"Content too large: {content_size} bytes (max: {MAX_FILE_SIZE} bytes)",
                 )
 
+            existed_before_write = file_path.exists()
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
             file_path.write_text(content, encoding="utf-8")
@@ -122,7 +123,11 @@ class FileWriteTool(BaseTool):
                 tool_call_id=tool_call_id,
                 tool_name=self.name,
                 success=True,
-                output=f"Successfully wrote to {file_path}",
+                output={
+                    "event": "file_write",
+                    "path": str(file_path),
+                    "change": "updated" if existed_before_write else "created",
+                },
             )
 
         except Exception as e:

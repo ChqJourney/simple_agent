@@ -7,6 +7,7 @@ interface ToolCardProps {
   tone?: ToolCardTone;
   collapsible?: boolean;
   defaultExpanded?: boolean;
+  badges?: string[];
   children?: React.ReactNode;
 }
 
@@ -21,14 +22,30 @@ export const ToolCard: React.FC<ToolCardProps> = ({
   tone = 'neutral',
   collapsible = false,
   defaultExpanded = false,
+  badges = [],
   children,
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const badgeElements = badges.length > 0 ? (
+    <div className="flex flex-wrap items-center gap-2">
+      {badges.map((badge) => (
+        <span
+          key={badge}
+          className="rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:border-gray-700 dark:text-gray-400"
+        >
+          {badge}
+        </span>
+      ))}
+    </div>
+  ) : null;
 
   if (!collapsible) {
     return (
       <div className={toneStyles[tone]}>
-        <div className="text-sm font-medium leading-6">{summary}</div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-medium leading-6">{summary}</div>
+          {badgeElements}
+        </div>
         {children && <div className="mt-1 pl-4">{children}</div>}
       </div>
     );
@@ -42,7 +59,10 @@ export const ToolCard: React.FC<ToolCardProps> = ({
         className="flex w-full cursor-pointer items-center justify-between gap-3 text-left"
         aria-expanded={isExpanded}
       >
-        <span className="text-sm font-medium leading-6">{summary}</span>
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+          <span className="text-sm font-medium leading-6">{summary}</span>
+          {badgeElements}
+        </div>
         <svg
           className={`h-4 w-4 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
           viewBox="0 0 20 20"

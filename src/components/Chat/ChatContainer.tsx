@@ -1,13 +1,16 @@
 import { useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../../stores/chatStore';
+import { useConfigStore } from '../../stores/configStore';
+import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useSession } from '../../hooks/useSession';
-import { ToolDecision, ToolDecisionScope } from '../../types';
+import { Attachment, PendingQuestion, ToolDecision, ToolDecisionScope } from '../../types';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
-import { ToolConfirmModal } from '../Tools';
+import { PendingQuestionCard, ToolConfirmModal } from '../Tools';
+import { RunTimeline } from '../Run';
 
 const emptySession = {
   messages: [] as never[],
@@ -17,12 +20,15 @@ const emptySession = {
   assistantStatus: 'idle' as const,
   currentToolName: undefined as string | undefined,
   pendingToolConfirm: undefined as { tool_call_id: string; name: string; arguments: Record<string, unknown> } | undefined,
+  pendingQuestion: undefined as PendingQuestion | undefined,
 };
 
 export const ChatContainer = () => {
   const { currentSessionId, createSession } = useSession();
-  const { sendMessage, isConnected, confirmTool, interrupt } = useWebSocket();
+  const { sendMessage, answerQuestion, isConnected, confirmTool, interrupt } = useWebSocket();
   const { currentWorkspace } = useWorkspaceStore();
+  const config = useConfigStore((state) => state.config);
+  const updateSession = useSessionStore((state) => state.updateSession);
 
   const {
     messages,
@@ -32,6 +38,7 @@ export const ChatContainer = () => {
     assistantStatus,
     currentToolName,
     pendingToolConfirm,
+    pendingQuestion,
   } = useChatStore(
     useShallow((state) => {
       if (!currentSessionId) return emptySession;
@@ -44,20 +51,33 @@ export const ChatContainer = () => {
         assistantStatus: session.assistantStatus,
         currentToolName: session.currentToolName,
         pendingToolConfirm: session.pendingToolConfirm,
+        pendingQuestion: session.pendingQuestion,
       } : emptySession;
     })
   );
 
-  const handleSend = useCallback((content: string) => {
+  const handleSend = useCallback((content: string, attachments?: Attachment[]) => {
     let sessionId = currentSessionId;
 
     if (!sessionId) {
       sessionId = createSession();
     }
 
-    useChatStore.getState().addUserMessage(sessionId, content);
-    sendMessage(sessionId, content, currentWorkspace?.path);
-  }, [currentSessionId, createSession, sendMessage, currentWorkspace?.path]);
+    if (config && sessionId) {
+      const primaryProfile = config.profiles?.primary || config;
+      updateSession(sessionId, {
+        locked_model: {
+          profile_name: primaryProfile.profile_name || 'primary',
+          provider: primaryProfile.provider,
+          model: primaryProfile.model,
+        },
+      });
+    }
+
+    useChatStore.getState().clearPendingQuestion(sessionId);
+    useChatStore.getState().addUserMessage(sessionId, content, attachments);
+    sendMessage(sessionId, content, attachments, currentWorkspace?.path);
+  }, [config, currentSessionId, createSession, sendMessage, currentWorkspace?.path, updateSession]);
 
   const handleToolDecision = useCallback((decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
     if (!currentSessionId || !pendingToolConfirm) return;
@@ -70,8 +90,28 @@ export const ChatContainer = () => {
     interrupt(currentSessionId);
   }, [currentSessionId, interrupt, isStreaming]);
 
+  const handleQuestionOption = useCallback((option: string) => {
+    if (!currentSessionId || !pendingQuestion || pendingQuestion.status === 'submitting') return;
+    useChatStore.getState().markPendingQuestionSubmitting(currentSessionId, pendingQuestion.tool_call_id);
+    const sent = answerQuestion(pendingQuestion.tool_call_id, option, 'submit');
+    if (!sent) {
+      useChatStore.getState().markPendingQuestionIdle(currentSessionId, pendingQuestion.tool_call_id);
+    }
+  }, [answerQuestion, currentSessionId, pendingQuestion]);
+
+  const handleDismissQuestion = useCallback(() => {
+    if (!currentSessionId || !pendingQuestion || pendingQuestion.status === 'submitting') return;
+    useChatStore.getState().markPendingQuestionSubmitting(currentSessionId, pendingQuestion.tool_call_id);
+    const sent = answerQuestion(pendingQuestion.tool_call_id, undefined, 'dismiss');
+    if (!sent) {
+      useChatStore.getState().markPendingQuestionIdle(currentSessionId, pendingQuestion.tool_call_id);
+    }
+  }, [answerQuestion, currentSessionId, pendingQuestion]);
+
   return (
     <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_45%)] dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_35%)]">
+      {currentSessionId && <RunTimeline sessionId={currentSessionId} />}
+
       <MessageList
         messages={messages}
         currentStreamingContent={streamingContent}
@@ -80,6 +120,14 @@ export const ChatContainer = () => {
         assistantStatus={assistantStatus}
         currentToolName={currentToolName}
       />
+
+      {pendingQuestion && (
+        <PendingQuestionCard
+          question={pendingQuestion}
+          onSelectOption={handleQuestionOption}
+          onDismiss={handleDismissQuestion}
+        />
+      )}
 
       <MessageInput
         onSend={handleSend}

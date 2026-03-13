@@ -9,14 +9,19 @@ export interface Workspace {
   createdAt: string;
 }
 
+export type ChangedFileKind = 'created' | 'updated';
+
 interface WorkspaceState {
   workspaces: Workspace[];
   currentWorkspace: Workspace | null;
+  changedFiles: Record<string, ChangedFileKind>;
   addWorkspace: (path: string) => Promise<Workspace>;
   syncWorkspacePath: (id: string, path: string) => Workspace | null;
   removeWorkspace: (id: string) => void;
   setCurrentWorkspace: (workspace: Workspace | null) => void;
   updateLastOpened: (id: string) => void;
+  markChangedFile: (path: string, kind: ChangedFileKind) => void;
+  clearChangedFiles: () => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -27,6 +32,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     (set, get) => ({
       workspaces: [],
       currentWorkspace: null,
+      changedFiles: {},
 
       addWorkspace: async (path: string) => {
         const newWorkspace: Workspace = {
@@ -97,6 +103,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             w.id === id ? { ...w, lastOpened: new Date().toISOString() } : w
           ),
         }));
+      },
+
+      markChangedFile: (path, kind) => {
+        set((state) => ({
+          changedFiles: {
+            ...state.changedFiles,
+            [path]: kind,
+          },
+        }));
+      },
+
+      clearChangedFiles: () => {
+        set({ changedFiles: {} });
       },
     }),
     {

@@ -5,6 +5,7 @@ import { supportsReasoning } from '../../utils/modelCapabilities';
 interface ProviderConfigProps {
   config: Partial<ProviderConfig>;
   onChange: (config: Partial<ProviderConfig>) => void;
+  title?: string;
 }
 
 const PROVIDERS: { value: ProviderType; label: string }[] = [
@@ -19,7 +20,7 @@ const MODELS: Record<ProviderType, string[]> = {
   ollama: ['llama3.1', 'llama3.2', 'qwen3:8b', 'mistral', 'codellama'],
 };
 
-export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onChange }) => {
+export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onChange, title }) => {
   const handleChange = (key: keyof ProviderConfig, value: string | boolean) => {
     onChange({ ...config, [key]: value });
   };
@@ -47,6 +48,11 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
 
   return (
     <div className="space-y-4">
+      {title && (
+        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+          {title}
+        </h3>
+      )}
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Provider

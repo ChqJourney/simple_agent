@@ -81,7 +81,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
                 }`}
               >
                 <div className="font-medium truncate">
-                  {truncateText(session.session_id, 20)}
+                  {session.title || truncateText(session.session_id, 20)}
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
                   {formatTimestamp(session.created_at)}

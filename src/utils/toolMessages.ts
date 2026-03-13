@@ -1,4 +1,66 @@
+import type { TaskNode } from '../stores/taskStore';
 import { ToolDecision, ToolDecisionScope } from '../types';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isExecutionOutput(value: unknown): value is { exit_code: number; stdout?: string; stderr?: string } {
+  return isRecord(value) && typeof value.exit_code === 'number';
+}
+
+function isPendingQuestionOutput(value: unknown): value is {
+  event: 'pending_question';
+  question: string;
+  details?: string;
+  options?: string[];
+} {
+  return isRecord(value) && value.event === 'pending_question' && typeof value.question === 'string';
+}
+
+function isQuestionResponseOutput(value: unknown): value is {
+  event: 'question_response';
+  question: string;
+  answer?: string;
+  action: 'submit' | 'dismiss';
+  details?: string;
+  options?: string[];
+} {
+  return (
+    isRecord(value) &&
+    value.event === 'question_response' &&
+    typeof value.question === 'string' &&
+    (value.action === 'submit' || value.action === 'dismiss')
+  );
+}
+
+function isTodoTaskOutput(value: unknown): value is {
+  event: 'todo_task';
+  action: string;
+  task?: TaskNode;
+} {
+  return isRecord(value) && value.event === 'todo_task' && typeof value.action === 'string';
+}
+
+export function getToolCategoryLabel(toolName: string): string {
+  if (toolName.endsWith('_execute')) {
+    return 'execution';
+  }
+
+  if (toolName === 'todo_task') {
+    return 'task';
+  }
+
+  if (toolName === 'ask_question') {
+    return 'interaction';
+  }
+
+  if (toolName.startsWith('file_')) {
+    return 'workspace';
+  }
+
+  return 'general';
+}
 
 export function createToolDecisionSummary(toolName: string, decision: ToolDecision): string {
   const resolvedToolName = toolName || 'tool';
@@ -16,6 +78,53 @@ export function createToolDecisionSummary(toolName: string, decision: ToolDecisi
 
 export function renderToolResultDetails(success: boolean, output: unknown, error?: string): string {
   if (success) {
+    if (isQuestionResponseOutput(output)) {
+      const lines = [`Question: ${output.question}`];
+      if (output.details) {
+        lines.push(`Details: ${output.details}`);
+      }
+      lines.push(
+        output.action === 'submit'
+          ? `Answer: ${output.answer || '(empty)'}`
+          : 'Answer dismissed by user'
+      );
+      if (output.options && output.options.length > 0) {
+        lines.push(`Options: ${output.options.join(', ')}`);
+      }
+      return lines.join('\n');
+    }
+
+    if (isPendingQuestionOutput(output)) {
+      const lines = [`Question: ${output.question}`];
+      if (output.details) {
+        lines.push(`Details: ${output.details}`);
+      }
+      if (output.options && output.options.length > 0) {
+        lines.push(`Options: ${output.options.join(', ')}`);
+      }
+      return lines.join('\n');
+    }
+
+    if (isTodoTaskOutput(output)) {
+      const lines = [`Task action: ${output.action}`];
+      if (output.task) {
+        lines.push(`Task: ${output.task.content} (${output.task.status})`);
+        if (output.task.subTasks && output.task.subTasks.length > 0) {
+          lines.push(`Subtasks: ${output.task.subTasks.map((task) => task.content).join(', ')}`);
+        }
+      }
+      return lines.join('\n');
+    }
+
+    if (isExecutionOutput(output)) {
+      const lines = [`exit_code: ${output.exit_code}`];
+      lines.push(`stdout:\n${output.stdout || '(empty)'}`);
+      if (output.stderr) {
+        lines.push(`stderr:\n${output.stderr}`);
+      }
+      return lines.join('\n\n');
+    }
+
     if (typeof output === 'string') {
       return output;
     }

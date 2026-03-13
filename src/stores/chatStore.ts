@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AssistantStatus, Message, TokenUsage, ToolCall, ToolDecision, ToolDecisionScope } from '../types';
+import { AssistantStatus, Attachment, Message, PendingQuestion, RunEventRecord, TokenUsage, ToolCall, ToolDecision, ToolDecisionScope } from '../types';
 import {
   createToolDecisionSummary,
   createToolResultSummary,
@@ -8,22 +8,29 @@ import {
 
 interface SessionState {
   messages: Message[];
+  runEvents: RunEventRecord[];
   currentStreamingContent: string;
   currentReasoningContent: string;
   isStreaming: boolean;
   assistantStatus: AssistantStatus;
   currentToolName?: string;
   pendingToolConfirm?: ToolCall;
+  pendingQuestion?: PendingQuestion;
 }
 
 interface ChatState {
   sessions: Record<string, SessionState>;
+  addRunEvent: (sessionId: string, event: RunEventRecord) => void;
   addToken: (sessionId: string, token: string) => void;
   addReasoningToken: (sessionId: string, token: string) => void;
   setReasoningComplete: (sessionId: string) => void;
   setToolCall: (sessionId: string, toolCall: ToolCall) => void;
   setPendingToolConfirm: (sessionId: string, toolCall: ToolCall) => void;
   clearPendingToolConfirm: (sessionId: string, toolCallId?: string) => void;
+  setPendingQuestion: (sessionId: string, question: PendingQuestion) => void;
+  markPendingQuestionSubmitting: (sessionId: string, toolCallId?: string) => void;
+  markPendingQuestionIdle: (sessionId: string, toolCallId?: string) => void;
+  clearPendingQuestion: (sessionId: string, toolCallId?: string) => void;
   addToolDecision: (
     sessionId: string,
     toolCallId: string,
@@ -43,7 +50,7 @@ interface ChatState {
   setCompleted: (sessionId: string, usage?: TokenUsage) => void;
   setInterrupted: (sessionId: string) => void;
   setError: (sessionId: string, error: string, details?: string) => void;
-  addUserMessage: (sessionId: string, content: string) => void;
+  addUserMessage: (sessionId: string, content: string, attachments?: Attachment[]) => void;
   markUserMessageSent: (sessionId: string) => void;
   startStreaming: (sessionId: string) => void;
   clearSession: (sessionId: string) => void;
@@ -52,16 +59,31 @@ interface ChatState {
 
 const createEmptySession = (): SessionState => ({
   messages: [],
+  runEvents: [],
   currentStreamingContent: '',
   currentReasoningContent: '',
   isStreaming: false,
   assistantStatus: 'idle',
   currentToolName: undefined,
   pendingToolConfirm: undefined,
+  pendingQuestion: undefined,
 });
 
 export const useChatStore = create<ChatState>((set) => ({
   sessions: {},
+
+  addRunEvent: (sessionId, event) => set((state) => {
+    const session = state.sessions[sessionId] || createEmptySession();
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          runEvents: [...session.runEvents, event],
+        },
+      },
+    };
+  }),
 
   addToken: (sessionId, token) => set((state) => {
     const session = state.sessions[sessionId] || createEmptySession();
@@ -191,6 +213,85 @@ export const useChatStore = create<ChatState>((set) => ({
     };
   }),
 
+  setPendingQuestion: (sessionId, question) => set((state) => {
+    const session = state.sessions[sessionId] || createEmptySession();
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          pendingQuestion: {
+            ...question,
+            status: question.status || 'idle',
+          },
+        },
+      },
+    };
+  }),
+
+  markPendingQuestionSubmitting: (sessionId, toolCallId) => set((state) => {
+    const session = state.sessions[sessionId];
+    if (!session?.pendingQuestion) return state;
+
+    if (toolCallId && session.pendingQuestion.tool_call_id !== toolCallId) {
+      return state;
+    }
+
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          pendingQuestion: {
+            ...session.pendingQuestion,
+            status: 'submitting',
+          },
+        },
+      },
+    };
+  }),
+
+  markPendingQuestionIdle: (sessionId, toolCallId) => set((state) => {
+    const session = state.sessions[sessionId];
+    if (!session?.pendingQuestion) return state;
+
+    if (toolCallId && session.pendingQuestion.tool_call_id !== toolCallId) {
+      return state;
+    }
+
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          pendingQuestion: {
+            ...session.pendingQuestion,
+            status: 'idle',
+          },
+        },
+      },
+    };
+  }),
+
+  clearPendingQuestion: (sessionId, toolCallId) => set((state) => {
+    const session = state.sessions[sessionId];
+    if (!session?.pendingQuestion) return state;
+
+    if (toolCallId && session.pendingQuestion.tool_call_id !== toolCallId) {
+      return state;
+    }
+
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          pendingQuestion: undefined,
+        },
+      },
+    };
+  }),
+
   addToolDecision: (sessionId, toolCallId, toolName, decision, scope, reason) => set((state) => {
     const session = state.sessions[sessionId] || createEmptySession();
     const decisionText = createToolDecisionSummary(toolName, decision);
@@ -239,6 +340,10 @@ export const useChatStore = create<ChatState>((set) => ({
             session.pendingToolConfirm?.tool_call_id === toolCallId
               ? undefined
               : session.pendingToolConfirm,
+          pendingQuestion:
+            session.pendingQuestion?.tool_call_id === toolCallId
+              ? undefined
+              : session.pendingQuestion,
           messages: [
             ...session.messages,
             {
@@ -331,6 +436,7 @@ export const useChatStore = create<ChatState>((set) => ({
           assistantStatus: 'completed',
           currentToolName: undefined,
           pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
         },
       },
     };
@@ -381,6 +487,7 @@ export const useChatStore = create<ChatState>((set) => ({
           assistantStatus: 'idle',
           currentToolName: undefined,
           pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
         },
       },
     };
@@ -409,18 +516,20 @@ export const useChatStore = create<ChatState>((set) => ({
           assistantStatus: 'idle',
           currentToolName: undefined,
           pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
         },
       },
     };
   }),
 
-  addUserMessage: (sessionId, content) => set((state) => {
+  addUserMessage: (sessionId, content, attachments) => set((state) => {
     const session = state.sessions[sessionId] || createEmptySession();
     const newMessages = [...session.messages];
     newMessages.push({
       id: crypto.randomUUID(),
       role: 'user',
       content,
+      attachments,
       status: 'completed',
       userStatus: 'sending',
     });
@@ -431,6 +540,7 @@ export const useChatStore = create<ChatState>((set) => ({
         [sessionId]: {
           ...session,
           messages: newMessages,
+          pendingQuestion: undefined,
         },
       },
     };
@@ -480,6 +590,7 @@ export const useChatStore = create<ChatState>((set) => ({
           currentReasoningContent: '',
           assistantStatus: 'waiting',
           currentToolName: undefined,
+          pendingQuestion: undefined,
         },
       },
     };
@@ -494,13 +605,16 @@ export const useChatStore = create<ChatState>((set) => ({
     sessions: {
       ...state.sessions,
       [sessionId]: {
+        ...(state.sessions[sessionId] || createEmptySession()),
         messages,
+        runEvents: state.sessions[sessionId]?.runEvents || [],
         currentStreamingContent: '',
         currentReasoningContent: '',
         isStreaming: false,
         assistantStatus: 'idle',
         currentToolName: undefined,
         pendingToolConfirm: undefined,
+        pendingQuestion: undefined,
       },
     },
   })),

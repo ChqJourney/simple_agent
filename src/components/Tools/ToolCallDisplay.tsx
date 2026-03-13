@@ -1,5 +1,6 @@
 import React from 'react';
 import { ToolCall } from '../../types';
+import { getToolCategoryLabel } from '../../utils/toolMessages';
 import { ToolCard } from './ToolCard';
 
 interface ToolCallDisplayProps {
@@ -12,9 +13,10 @@ interface ToolCallDisplayProps {
 
 export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, result }) => {
   const summary = `请求执行 ${toolCall.name}`;
+  const category = getToolCategoryLabel(toolCall.name);
 
   return (
-    <ToolCard summary={summary} collapsible={true}>
+    <ToolCard summary={summary} collapsible={true} badges={[category]}>
       <div className="text-xs text-gray-600 dark:text-gray-400">
         <div className="font-medium">Arguments</div>
         <pre className="mt-1 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">

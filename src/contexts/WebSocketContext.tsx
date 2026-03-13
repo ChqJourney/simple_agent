@@ -2,9 +2,13 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { wsService } from '../services/websocket';
 import { useChatStore } from '../stores/chatStore';
 import { useConfigStore } from '../stores/configStore';
+import { useRunStore } from '../stores/runStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { Task, TaskNode, useTaskStore } from '../stores/taskStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import {
   ServerWebSocketMessage,
+  Attachment,
   ClientWebSocketMessage,
   ClientMessage,
   ToolCall,
@@ -19,7 +23,8 @@ type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 interface WebSocketContextValue {
   connectionStatus: ConnectionStatus;
   isConnected: boolean;
-  sendMessage: (sessionId: string, content: string, workspacePath?: string) => void;
+  sendMessage: (sessionId: string, content: string, attachments?: Attachment[], workspacePath?: string) => void;
+  answerQuestion: (toolCallId: string, answer?: string, action?: 'submit' | 'dismiss') => boolean;
   sendConfig: (configOverride?: ProviderConfig) => void;
   confirmTool: (toolCallId: string, decision: ToolDecision, scope?: ToolDecisionScope) => void;
   interrupt: (sessionId: string) => void;
@@ -27,6 +32,65 @@ interface WebSocketContextValue {
 }
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function normalizeTaskNode(candidate: unknown): TaskNode | undefined {
+  if (!isRecord(candidate) || typeof candidate.id !== 'string') {
+    return undefined;
+  }
+
+  return {
+    id: candidate.id,
+    content: typeof candidate.content === 'string' ? candidate.content : '',
+    status: (candidate.status as Task['status']) || 'pending',
+    subTasks: Array.isArray(candidate.subTasks)
+      ? candidate.subTasks
+          .map((item) => normalizeTaskNode(item))
+          .filter((item): item is TaskNode => Boolean(item))
+      : undefined,
+  };
+}
+
+function applyTodoToolResult(sessionId: string, output: unknown) {
+  if (!isRecord(output) || output.event !== 'todo_task' || typeof output.action !== 'string') {
+    return;
+  }
+
+  const task = normalizeTaskNode(output.task);
+  if (!task) {
+    return;
+  }
+
+  const taskStore = useTaskStore.getState();
+  if (output.action === 'remove') {
+    taskStore.removeTask(task.id);
+    return;
+  }
+
+  const nextTask: Task = {
+    ...task,
+    sessionId,
+    createdAt: new Date().toISOString(),
+  };
+
+  if (output.action === 'complete') {
+    nextTask.status = 'completed';
+  }
+
+  taskStore.upsertTask(nextTask);
+}
+
+function applyFileWriteToolResult(output: unknown) {
+  if (!isRecord(output) || output.event !== 'file_write' || typeof output.path !== 'string') {
+    return;
+  }
+
+  const change = output.change === 'created' ? 'created' : 'updated';
+  useWorkspaceStore.getState().markChangedFile(output.path, change);
+}
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
@@ -37,6 +101,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleMessage = (data: ServerWebSocketMessage) => {
       const store = useChatStore.getState();
+      const runStore = useRunStore.getState();
 
       switch (data.type) {
         case 'started':
@@ -83,7 +148,24 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             store.clearPendingToolConfirm(data.session_id, data.tool_call_id);
           }
           break;
+        case 'question_request': {
+          store.setPendingQuestion(data.session_id, {
+            tool_call_id: data.tool_call_id,
+            tool_name: data.tool_name || 'ask_question',
+            question: data.question,
+            details: data.details,
+            options: data.options,
+            status: 'idle',
+          });
+          break;
+        }
         case 'tool_result':
+          if (data.success && data.tool_name === 'file_write') {
+            applyFileWriteToolResult(data.output);
+          }
+          if (data.success && data.tool_name === 'todo_task') {
+            applyTodoToolResult(data.session_id, data.output);
+          }
           store.setToolResult(
             data.session_id,
             data.tool_call_id,
@@ -120,6 +202,13 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           break;
         case 'workspace_updated':
           console.log('Workspace updated:', data.workspace_path);
+          break;
+        case 'session_title_updated':
+          useSessionStore.getState().updateSession(data.session_id, { title: data.title });
+          break;
+        case 'run_event':
+          store.addRunEvent(data.session_id, data.event);
+          runStore.addEvent(data.session_id, data.event);
           break;
         default:
           console.log('Unknown message type:', data);
@@ -171,12 +260,24 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [config, isConnected, send]);
 
-  const sendMessage = useCallback((sessionId: string, content: string, workspacePath?: string) => {
+  const sendMessage = useCallback((sessionId: string, content: string, attachments?: Attachment[], workspacePath?: string) => {
     const message: ClientWebSocketMessage = { type: 'message', session_id: sessionId, content };
+    if (attachments && attachments.length > 0) {
+      (message as ClientMessage).attachments = attachments;
+    }
     if (workspacePath) {
       (message as ClientMessage).workspace_path = workspacePath;
     }
     send(message);
+  }, [send]);
+
+  const answerQuestion = useCallback((toolCallId: string, answer?: string, action: 'submit' | 'dismiss' = 'submit') => {
+    return send({
+      type: 'question_response',
+      tool_call_id: toolCallId,
+      answer,
+      action,
+    });
   }, [send]);
 
   const confirmTool = useCallback((toolCallId: string, decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
@@ -198,7 +299,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, [send]);
 
   return (
-    <WebSocketContext.Provider value={{ connectionStatus, isConnected, sendMessage, sendConfig, confirmTool, interrupt, sendWorkspace }}>
+    <WebSocketContext.Provider value={{ connectionStatus, isConnected, sendMessage, answerQuestion, sendConfig, confirmTool, interrupt, sendWorkspace }}>
       {children}
     </WebSocketContext.Provider>
   );

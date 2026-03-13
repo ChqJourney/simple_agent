@@ -1,4 +1,5 @@
-import { Message, ToolCall } from '../types';
+import { Attachment, Message, ToolCall } from '../types';
+import { LockedModelRef } from '../types';
 import {
   createToolDecisionSummary,
   createToolResultSummary,
@@ -133,6 +134,32 @@ function normalizePersistedToolCall(
   };
 }
 
+function normalizePersistedAttachment(rawAttachment: unknown): Attachment | null {
+  if (!rawAttachment || typeof rawAttachment !== 'object') {
+    return null;
+  }
+
+  const candidate = rawAttachment as {
+    kind?: unknown;
+    path?: unknown;
+    name?: unknown;
+    mime_type?: unknown;
+    data_url?: unknown;
+  };
+
+  if (candidate.kind !== 'image' || typeof candidate.path !== 'string' || typeof candidate.name !== 'string') {
+    return null;
+  }
+
+  return {
+    kind: 'image',
+    path: candidate.path,
+    name: candidate.name,
+    mime_type: typeof candidate.mime_type === 'string' ? candidate.mime_type : undefined,
+    data_url: typeof candidate.data_url === 'string' ? candidate.data_url : undefined,
+  };
+}
+
 export function deserializeSessionHistoryEntry(
   data: Record<string, unknown>,
   toolNamesById: Map<string, string> = new Map()
@@ -163,6 +190,11 @@ export function deserializeSessionHistoryEntry(
     id: crypto.randomUUID(),
     role: (data.role as Message['role']) || 'assistant',
     content,
+    attachments: Array.isArray(data.attachments)
+      ? data.attachments
+          .map((attachment) => normalizePersistedAttachment(attachment))
+          .filter((attachment): attachment is Attachment => attachment !== null)
+      : undefined,
     tool_calls: normalizedToolCalls,
     tool_call_id: toolCallId,
     name: rawName,
@@ -242,6 +274,8 @@ interface SessionMeta {
   workspace_path: string;
   created_at: string;
   updated_at: string;
+  title?: string;
+  locked_model?: LockedModelRef;
 }
 
 export async function scanSessions(workspacePath: string): Promise<SessionMeta[]> {
@@ -261,6 +295,7 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
 
       const sessionId = entry.name.replace('.jsonl', '');
       const sessionPath = `${sessionsDir}/${entry.name}`;
+      const metadataPath = `${sessionsDir}/${sessionId}.meta.json`;
 
       try {
         const content = await tauriReadTextFile(sessionPath);
@@ -270,6 +305,8 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
 
         let createdAt = new Date().toISOString();
         let updatedAt = new Date().toISOString();
+        let title: string | undefined;
+        let lockedModel: LockedModelRef | undefined;
 
         const firstLine = JSON.parse(lines[0]);
         const lastLine = JSON.parse(lines[lines.length - 1]);
@@ -281,11 +318,49 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
           updatedAt = lastLine.timestamp;
         }
 
+        if (await tauriExists(metadataPath)) {
+          try {
+            const metadata = JSON.parse(await tauriReadTextFile(metadataPath)) as {
+              created_at?: unknown;
+              updated_at?: unknown;
+              title?: unknown;
+              locked_model?: unknown;
+            };
+            if (typeof metadata.created_at === 'string') {
+              createdAt = metadata.created_at;
+            }
+            if (typeof metadata.updated_at === 'string') {
+              updatedAt = metadata.updated_at;
+            }
+            if (typeof metadata.title === 'string') {
+              title = metadata.title;
+            }
+            if (metadata.locked_model && typeof metadata.locked_model === 'object') {
+              const candidate = metadata.locked_model as Partial<LockedModelRef>;
+              if (
+                typeof candidate.profile_name === 'string'
+                && typeof candidate.provider === 'string'
+                && typeof candidate.model === 'string'
+              ) {
+                lockedModel = {
+                  profile_name: candidate.profile_name,
+                  provider: candidate.provider,
+                  model: candidate.model,
+                };
+              }
+            }
+          } catch {
+            // Ignore malformed metadata and fall back to the session transcript.
+          }
+        }
+
         sessions.push({
           session_id: sessionId,
           workspace_path: workspacePath,
           created_at: createdAt,
           updated_at: updatedAt,
+          title,
+          locked_model: lockedModel,
         });
       } catch {
         continue;
@@ -305,14 +380,21 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
 
 export async function deleteSessionHistory(workspacePath: string, sessionId: string): Promise<void> {
   const sessionPath = `${workspacePath}/.agent/sessions/${sessionId}.jsonl`;
+  const metadataPath = `${workspacePath}/.agent/sessions/${sessionId}.meta.json`;
 
   try {
     const fileExists = await tauriExists(sessionPath);
     if (!fileExists) {
+      if (await tauriExists(metadataPath)) {
+        await tauriRemove(metadataPath);
+      }
       return;
     }
 
     await tauriRemove(sessionPath);
+    if (await tauriExists(metadataPath)) {
+      await tauriRemove(metadataPath);
+    }
   } catch (error) {
     console.error('Failed to delete session history:', error);
     throw error;

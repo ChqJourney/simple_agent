@@ -109,4 +109,28 @@ describe("WorkspacePage", () => {
       "C:/Users/patri/source/repos/repo"
     );
   });
+
+  it("shows the locked model for the current session", async () => {
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/repo",
+          created_at: "2026-03-12T10:00:00.000Z",
+          updated_at: "2026-03-12T10:00:00.000Z",
+          locked_model: {
+            profile_name: "primary",
+            provider: "openai",
+            model: "gpt-4o",
+          },
+        },
+      ],
+      currentSessionId: "session-a",
+    }));
+
+    const { findByText } = render(<WorkspacePage />);
+
+    expect(await findByText("Locked: openai/gpt-4o")).toBeTruthy();
+  });
 });

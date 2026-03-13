@@ -51,4 +51,55 @@ describe("sessionStore", () => {
 
     expect(useSessionStore.getState().currentSessionId).toBe("session-b");
   });
+
+  it("preserves title and locked model metadata on session updates", () => {
+    useSessionStore.getState().addSession({
+      session_id: "session-a",
+      workspace_path: "/workspace-a",
+      created_at: "2026-03-12T10:00:00.000Z",
+      updated_at: "2026-03-12T10:00:00.000Z",
+    });
+
+    useSessionStore.getState().updateSession("session-a", {
+      title: "Investigate runtime contracts",
+      locked_model: {
+        profile_name: "primary",
+        provider: "openai",
+        model: "gpt-4o-mini",
+      },
+    });
+
+    expect(useSessionStore.getState().sessions[0]?.title).toBe("Investigate runtime contracts");
+    expect(useSessionStore.getState().sessions[0]?.locked_model?.model).toBe("gpt-4o-mini");
+  });
+
+  it("hydrates title metadata from disk for an existing session", async () => {
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "/workspace-a",
+          created_at: "2026-03-12T10:00:00.000Z",
+          updated_at: "2026-03-12T10:00:00.000Z",
+        },
+      ],
+      currentSessionId: "session-a",
+    }));
+
+    scanSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        workspace_path: "/workspace-a",
+        created_at: "2026-03-12T10:00:00.000Z",
+        updated_at: "2026-03-12T11:30:00.000Z",
+        title: "Investigate runtime contracts",
+      },
+    ]);
+
+    await useSessionStore.getState().loadSessionsFromDisk("/workspace-a");
+
+    expect(useSessionStore.getState().sessions[0]?.title).toBe("Investigate runtime contracts");
+    expect(useSessionStore.getState().sessions[0]?.updated_at).toBe("2026-03-12T11:30:00.000Z");
+  });
 });

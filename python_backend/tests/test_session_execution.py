@@ -10,7 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import main as backend_main
-from core.user import UserManager
+from core.user import Message, UserManager
 
 
 class FakeAgent:
@@ -22,6 +22,25 @@ class FakeAgent:
 
     def interrupt(self) -> None:
         self.interrupted = True
+
+
+class TitleCapableLLM:
+    def __init__(self, title: str) -> None:
+        self.title = title
+        self.complete_calls = 0
+
+    async def complete(self, messages, tools=None):
+        self.complete_calls += 1
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": self.title,
+                    }
+                }
+            ]
+        }
 
 
 class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
@@ -265,6 +284,67 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
                 "model": "gpt-4o-mini",
             },
             self.messages,
+        )
+
+    async def test_handle_message_routes_structured_question_responses(self) -> None:
+        await backend_main.user_manager.bind_session_to_connection("session-a", "conn-a")
+
+        response_task = asyncio.create_task(
+            backend_main.user_manager.request_question_response(
+                session_id="session-a",
+                tool_call_id="question-1",
+                tool_name="ask_question",
+                question="Continue deployment?",
+                details="Traffic is low right now.",
+                options=["continue", "wait"],
+            )
+        )
+
+        await asyncio.sleep(0)
+
+        await backend_main.handle_message(
+            None,
+            {
+                "type": "question_response",
+                "tool_call_id": "question-1",
+                "answer": "continue",
+                "action": "submit",
+            },
+            self.send_callback,
+            "conn-a",
+        )
+
+        result = await asyncio.wait_for(response_task, timeout=1)
+        self.assertEqual("continue", result["answer"])
+        self.assertEqual("submit", result["action"])
+
+    async def test_existing_untitled_session_generates_title_on_next_text_message(self) -> None:
+        title_llm = TitleCapableLLM("Friendly greeting")
+        backend_main.runtime_state.current_llm = title_llm
+
+        session = await backend_main.user_manager.create_session(self.temp_dir.name, "session-a")
+        session.add_message(Message(role="user", content="old message"))
+
+        await backend_main.handle_user_message(
+            {
+                "session_id": "session-a",
+                "content": "hello",
+                "workspace_path": self.temp_dir.name,
+            },
+            self.send_callback,
+            "conn-a",
+        )
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        self.assertEqual("Friendly greeting", session.title)
+        self.assertEqual(1, title_llm.complete_calls)
+        self.assertTrue(
+            any(
+                message.get("type") == "session_title_updated"
+                and message.get("title") == "Friendly greeting"
+                for message in self.messages
+            )
         )
 
 

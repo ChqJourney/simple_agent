@@ -1,7 +1,9 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
-from pydantic import BaseModel
+from typing import Any, Dict, List, Literal, Optional
+from pydantic import BaseModel, Field
+
+from .policies import ToolExecutionPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -12,13 +14,38 @@ class ToolResult(BaseModel):
     success: bool
     output: Any
     error: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolDescriptor(BaseModel):
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+    category: Literal["workspace", "execution", "task", "interaction", "general"] = "general"
+    require_confirmation: bool = False
+    display_name: Optional[str] = None
+    policy: ToolExecutionPolicy = Field(default_factory=ToolExecutionPolicy)
 
 
 class BaseTool(ABC):
     name: str
     description: str
     parameters: Dict[str, Any]
+    category: str = "general"
+    display_name: Optional[str] = None
     require_confirmation: bool = False
+    policy: ToolExecutionPolicy = ToolExecutionPolicy()
+
+    def descriptor(self) -> ToolDescriptor:
+        return ToolDescriptor(
+            name=self.name,
+            description=self.description,
+            parameters=self.parameters,
+            category=self.category,
+            require_confirmation=self.require_confirmation,
+            display_name=self.display_name,
+            policy=self.policy,
+        )
 
     @abstractmethod
     async def execute(self, **kwargs) -> ToolResult:
@@ -43,6 +70,16 @@ class ToolRegistry:
     def get_tool(self, name: str) -> Optional[BaseTool]:
         return self.tools.get(name)
 
+    def get_descriptors(self) -> List[ToolDescriptor]:
+        return [tool.descriptor() for tool in self.tools.values()]
+
+    def get_descriptor(self, name: str) -> Optional[ToolDescriptor]:
+        tool = self.get_tool(name)
+        return tool.descriptor() if tool else None
+
+    def list_by_category(self, category: str) -> List[BaseTool]:
+        return [tool for tool in self.tools.values() if tool.category == category]
+
     def get_schemas(self) -> List[Dict]:
         schemas = []
         for tool in self.tools.values():
@@ -51,8 +88,9 @@ class ToolRegistry:
                 "function": {
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.parameters
-                }
+                    "parameters": tool.parameters,
+                },
+                "x-tool-meta": tool.descriptor().model_dump(mode="json"),
             }
             schemas.append(schema)
         return schemas

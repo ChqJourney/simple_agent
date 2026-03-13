@@ -1,11 +1,70 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Attachment } from '../../types';
+
+const FILE_TREE_DRAG_MIME = 'application/x-tauri-agent-file';
+
+interface DraggedFileDescriptor {
+  path: string;
+  name?: string;
+  isDirectory?: boolean;
+  isImage?: boolean;
+}
 
 interface MessageInputProps {
-  onSend: (content: string) => void;
+  onSend: (content: string, attachments?: Attachment[]) => void;
   onInterrupt?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
   placeholder?: string;
+}
+
+function parseDraggedDescriptors(raw: string): DraggedFileDescriptor[] {
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const candidates = Array.isArray(parsed) ? parsed : [parsed];
+    return candidates.filter(
+      (candidate): candidate is DraggedFileDescriptor =>
+        Boolean(candidate)
+        && typeof candidate === 'object'
+        && typeof (candidate as { path?: unknown }).path === 'string'
+    );
+  } catch {
+    return [];
+  }
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary);
+}
+
+async function fileToAttachment(file: File): Promise<Attachment | null> {
+  if (!file.type.startsWith('image/')) {
+    return null;
+  }
+
+  const buffer = await file.arrayBuffer();
+  const base64 = arrayBufferToBase64(buffer);
+
+  return {
+    kind: 'image',
+    path: file.name,
+    name: file.name,
+    mime_type: file.type || 'image/png',
+    data_url: `data:${file.type || 'image/png'};base64,${base64}`,
+  };
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
@@ -16,6 +75,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   placeholder = 'Type your message...',
 }) => {
   const [content, setContent] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isInputDisabled = disabled || isStreaming;
 
@@ -28,9 +88,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (content.trim() && !isInputDisabled) {
-      onSend(content.trim());
+    if ((content.trim() || attachments.length > 0) && !isInputDisabled) {
+      onSend(content.trim(), attachments);
       setContent('');
+      setAttachments([]);
     }
   };
 
@@ -45,14 +106,100 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   };
 
+  const insertPathsIntoPrompt = (paths: string[]) => {
+    const normalizedPaths = paths.filter(Boolean);
+    if (normalizedPaths.length === 0) {
+      return;
+    }
+
+    setContent((previous) => {
+      const prefix = previous.trim() ? `${previous.trim()}\n` : '';
+      return `${prefix}${normalizedPaths.join('\n')}`;
+    });
+  };
+
+  const appendImageAttachments = (nextAttachments: Attachment[]) => {
+    if (nextAttachments.length === 0) {
+      return;
+    }
+
+    setAttachments((previous) => {
+      const existingKeys = new Set(previous.map((attachment) => `${attachment.name}:${attachment.path}`));
+      const deduped = nextAttachments.filter(
+        (attachment) => !existingKeys.has(`${attachment.name}:${attachment.path}`)
+      );
+      return [...previous, ...deduped];
+    });
+  };
+
+  const handlePromptDrop = (e: React.DragEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    const descriptors = parseDraggedDescriptors(e.dataTransfer.getData(FILE_TREE_DRAG_MIME));
+    insertPathsIntoPrompt(descriptors.map((descriptor) => descriptor.path));
+  };
+
+  const handleAttachmentDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+
+    const descriptors = parseDraggedDescriptors(e.dataTransfer.getData(FILE_TREE_DRAG_MIME));
+    const descriptorAttachments = descriptors
+      .filter((descriptor) => descriptor.isImage)
+      .map((descriptor) => ({
+        kind: 'image' as const,
+        path: descriptor.path,
+        name: descriptor.name || descriptor.path.split(/[\\/]/).pop() || descriptor.path,
+        mime_type: undefined,
+      }));
+
+    const fileAttachments = (await Promise.all(
+      Array.from(e.dataTransfer.files || []).map((file) => fileToAttachment(file))
+    ))
+      .filter((attachment): attachment is Attachment => attachment !== null);
+
+    appendImageAttachments([...descriptorAttachments, ...fileAttachments]);
+  };
+
+  const removeAttachment = (target: Attachment) => {
+    setAttachments((previous) =>
+      previous.filter((attachment) => `${attachment.name}:${attachment.path}` !== `${target.name}:${target.path}`)
+    );
+  };
+
   return (
     <form onSubmit={handleSubmit} className="px-4 pb-4 pt-2 md:px-6 md:pb-6">
-      <div className="flex items-end gap-3 rounded-[1.75rem] bg-white/90 p-3 shadow-lg shadow-gray-200/60 backdrop-blur dark:bg-gray-900/90 dark:shadow-black/20">
+      <div className="space-y-3 rounded-[1.75rem] bg-white/90 p-3 shadow-lg shadow-gray-200/60 backdrop-blur dark:bg-gray-900/90 dark:shadow-black/20">
+        <div
+          aria-label="Image attachment drop zone"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleAttachmentDrop}
+          className="rounded-[1.25rem] border border-dashed border-blue-300 bg-blue-50/80 px-4 py-3 text-sm text-blue-700 transition-colors dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
+        >
+          <div className="font-medium">Drop images here</div>
+          <div className="text-xs opacity-80">Images are attached to the next user message.</div>
+          {attachments.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {attachments.map((attachment) => (
+                <button
+                  key={`${attachment.name}:${attachment.path}`}
+                  type="button"
+                  onClick={() => removeAttachment(attachment)}
+                  className="rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-700 shadow-sm transition-colors hover:bg-blue-100 dark:bg-blue-900/80 dark:text-blue-100 dark:hover:bg-blue-900"
+                >
+                  {attachment.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-end gap-3">
         <textarea
           ref={textareaRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handlePromptDrop}
           placeholder={placeholder}
           disabled={isInputDisabled}
           rows={3}
@@ -74,7 +221,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         ) : (
           <button
             type="submit"
-            disabled={disabled || !content.trim()}
+            disabled={disabled || (!content.trim() && attachments.length === 0)}
             aria-label="Send message"
             title="Send message"
             className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"
@@ -84,6 +231,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             </svg>
           </button>
         )}
+        </div>
       </div>
     </form>
   );

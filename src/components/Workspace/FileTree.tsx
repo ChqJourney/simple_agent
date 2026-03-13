@@ -8,6 +8,14 @@ interface FileNode {
   children?: FileNode[];
 }
 
+const FILE_TREE_DRAG_MIME = 'application/x-tauri-agent-file';
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
+
+function isImagePath(path: string): boolean {
+  const extension = path.includes('.') ? `.${path.split('.').pop()?.toLowerCase()}` : '';
+  return IMAGE_EXTENSIONS.has(extension);
+}
+
 function sortEntries(entries: Array<{ name?: string; isDirectory?: boolean }>) {
   return entries
     .filter((entry) => entry.name && !entry.name.startsWith('.'))
@@ -36,7 +44,7 @@ function attachChildren(nodes: FileNode[], targetPath: string, children: FileNod
 }
 
 export const FileTree: React.FC = () => {
-  const { currentWorkspace } = useWorkspaceStore();
+  const { currentWorkspace, changedFiles } = useWorkspaceStore();
   const [tree, setTree] = useState<FileNode[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -137,16 +145,31 @@ export const FileTree: React.FC = () => {
   const renderNode = (node: FileNode, depth: number = 0) => {
     const isExpanded = expandedPaths.has(node.path);
     const isLoadingChildren = loadingPaths.has(node.path);
+    const changedKind = changedFiles[node.path];
+    const changeHighlightClass = changedKind === 'created'
+      ? 'ring-1 ring-emerald-300 bg-emerald-50/70 dark:bg-emerald-950/30 dark:ring-emerald-800'
+      : changedKind === 'updated'
+        ? 'ring-1 ring-amber-300 bg-amber-50/70 dark:bg-amber-950/30 dark:ring-amber-800'
+        : '';
 
     return (
       <div key={node.path}>
         <div
-          className="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer rounded text-sm"
+          className={`flex items-center gap-1 px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer rounded text-sm ${changeHighlightClass}`}
           style={{ paddingLeft: `${depth * 16 + 8}px` }}
           onClick={() => void toggleExpand(node)}
-          draggable={!node.isDirectory}
+          draggable={true}
           onDragStart={(e) => {
             e.dataTransfer.setData('text/plain', node.path);
+            e.dataTransfer.setData(
+              FILE_TREE_DRAG_MIME,
+              JSON.stringify({
+                path: node.path,
+                name: node.name,
+                isDirectory: node.isDirectory,
+                isImage: !node.isDirectory && isImagePath(node.path),
+              })
+            );
           }}
         >
           {node.isDirectory ? (

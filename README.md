@@ -1,39 +1,35 @@
 # AI Agent
 
-基于 `Tauri + React + TypeScript + Python(FastAPI/WebSocket)` 的桌面 AI Agent。
+基于 `Tauri + React + TypeScript + Python(FastAPI/WebSocket)` 的桌面 Agent 应用。
 
-项目采用前后端分层架构：
+项目现在已经从“单一聊天壳子”演进到一套可扩展的 Agent 平台，重点能力包括：
 
-- 前端负责工作区、会话、聊天 UI、工具确认和配置管理
-- Rust(Tauri) 负责桌面容器、能力授权和 Python sidecar 生命周期
-- Python 后端负责 Agent 编排、LLM 接入、工具执行和会话持久化
-
-## 当前能力
-
-- 流式聊天响应
-- 中止生成并保留已输出的 assistant 内容
-- Reasoning 内容展示
-- Tool call 与工具确认
-- Tool 请求 / 确认结果 / 执行结果文字摘要
-- 多工作区 / 多会话
-- 会话磁盘持久化
-- OpenAI / Qwen / Ollama Provider
-- 亮色 / 暗色 / 跟随系统主题
-- 工作区文件树与任务视图
+- 结构化运行日志与可观测 agent loop
+- 多模型 profile、session 级模型锁定
+- 可扩展工具系统
+- 本地 skill 与 workspace retrieval
+- 图片输入与工作区拖拽交互
+- 会话标题生成与会话元数据持久化
 
 ## 架构概览
 
 ```text
 React UI
-  -> WebSocket
-Python Backend (FastAPI)
-  -> Agent Core
-  -> LLM Providers
-  -> Tool Registry
+  -> Zustand stores
+  -> WebSocket context
+  -> Tauri desktop shell
 
-Tauri (Rust)
-  -> Window / Capability / Sidecar
-  -> plugin-fs / dialog / shell
+Python Backend (FastAPI / WebSocket)
+  -> Runtime config + router
+  -> Agent loop
+  -> Tool registry
+  -> Skill / Retrieval providers
+  -> Run-event logging
+
+Workspace
+  -> .agent/sessions/*.jsonl
+  -> .agent/sessions/*.meta.json
+  -> .agent/logs/*.json
 ```
 
 ### 前端
@@ -43,14 +39,13 @@ Tauri (Rust)
 - Zustand
 - Tailwind CSS v4
 - React Router
-- React Markdown
 
 ### 后端
 
-- Python 3.10+
+- Python 3.13
 - FastAPI
 - WebSocket
-- aiohttp / httpx
+- `httpx` / `aiohttp`
 
 ### 桌面层
 
@@ -58,161 +53,155 @@ Tauri (Rust)
 - Rust
 - Tauri Plugin FS / Dialog / Shell / Opener
 
-## 本轮架构整改
+## 当前能力
 
-本轮主要针对架构正确性、状态一致性和 UI 稳定性做了收口。
+### Agent 与运行态
 
-### 1. WebSocket 连接隔离
+- 流式聊天响应
+- reasoning 内容展示
+- 中断生成并保留已输出内容
+- 可观测 run timeline
+- 结构化 run event 落盘到 `.agent/logs/`
+- session title generation
 
-- 后端从“单全局 websocket 回调”改成“按 connection/session 路由”
-- session 与 connection 显式绑定
-- 工具确认只会回到所属连接
-- 某个窗口断开时，只清理该窗口名下的 pending confirm 和运行任务
+### 模型与配置
 
-相关文件：
+- OpenAI / Qwen / Ollama provider
+- `primary` / `secondary` 多 profile 配置
+- session 级 locked model
+- runtime 限制配置：
+  - `context_length`
+  - `max_output_tokens`
+  - `max_tool_rounds`
+  - `max_retries`
 
-- `python_backend/core/user.py`
-- `python_backend/main.py`
+### 工具平台
 
-### 2. 同 Session 串行执行
+内置工具：
 
-- 同一个 `session_id` 只允许一个活跃 run
-- 重复发送时会拒绝并返回错误，而不是并发交错执行
-- 配置切换和连接断开时会中断并清理对应任务
+- `file_read`
+- `file_write`
+- `shell_execute`
+- `python_execute`
+- `node_execute`
+- `todo_task`
+- `ask_question`
 
-相关文件：
+工具结果会被统一序列化，并映射到前端任务面板、工具摘要和待回答问题卡片。
 
-- `python_backend/main.py`
-- `python_backend/tests/test_session_execution.py`
+### Context Providers
 
-### 3. 配置同步与 Provider URL 归一化
+- Local Skills
+  - 默认扫描：
+    - `~/.agents/skills`
+    - `~/.codex/skills`
+- Workspace Retrieval
+  - 当前为轻量关键词检索
+  - 可配置 `max_hits` 与文件扩展名
 
-- 设置页保存后会立即向后端发送新配置
-- 重连后会自动补发当前配置
-- OpenAI / Qwen / Ollama 统一默认 `base_url`
-- Ollama 自动处理空 `base_url` 和 `/v1` 后缀
+### 输入与工作区交互
 
-相关文件：
+- 文本消息
+- 图片附件消息
+- 文件/文件夹从 file tree 拖到输入框时自动插入路径
+- 图片拖入附件区域时加入消息附件
+- `file_write` 产出的新建/修改文件会在 file tree 中高亮
 
-- `src/contexts/WebSocketContext.tsx`
-- `src/pages/SettingsPage.tsx`
-- `src/utils/config.ts`
-- `python_backend/main.py`
-- `python_backend/llms/ollama.py`
+## 运行时配置结构
 
-### 4. Session 删除一致性
+前后端共享的配置结构已经统一为 profile-based 形态，旧的单模型配置会被兼容提升为 `primary` profile。
 
-- 删除 session 时会同步删除磁盘上的 `.agent/sessions/<id>.jsonl`
-- 删除当前 session 时会自动切到下一个合法 session
-- 删除最后一个 session 时会自动补一个空 session，避免 UI 悬空
-- Tauri capability 已补充 `fs:allow-remove`
-
-相关文件：
-
-- `src/utils/storage.ts`
-- `src/stores/sessionStore.ts`
-- `src/hooks/useSession.ts`
-- `src/components/Sidebar/SessionList.tsx`
-- `src-tauri/capabilities/default.json`
-
-### 5. UI 稳定性优化
-
-- `retry` 不再被错误地渲染成最终失败消息
-- 文件树改为“根目录 loading + 子目录局部 loading”
-- 主题切换会真实应用到 DOM，而不只是写入 store
-- workspace 状态源收敛为单一 `workspaceStore`
-- 聊天输入区在流式响应期间显示 `Stop generating`
-- 点击中止后保留已输出的 assistant 内容，而不是直接清空
-- 顶栏左右 panel toggle 改为方块 panel 图标
-- `Assistant` 标识会显示在 `Thinking` block 上方
-- Tool request / decision / result 改为可展开的文字摘要，不再使用卡片底色
-- 输入区增高到约 3 行，并将发送 / 中止按钮改为图标按钮
-- Workspace 主界面移除明显分割线，改为留白与圆角分区
-
-相关文件：
-
-- `src/components/Workspace/FileTree.tsx`
-- `src/App.tsx`
-- `src/index.css`
-- `src/stores/configStore.ts`
-- `src/hooks/useConfig.ts`
-- `src/components/Chat/ChatContainer.tsx`
-- `src/components/Chat/MessageInput.tsx`
-- `src/components/Chat/MessageItem.tsx`
-- `src/components/Chat/MessageList.tsx`
-- `src/components/Reasoning/ReasoningBlock.tsx`
-- `src/components/Tools/ToolCallDisplay.tsx`
-- `src/components/Tools/ToolCard.tsx`
-- `src/components/Workspace/TopBar.tsx`
-- `src/stores/chatStore.ts`
-- `src/contexts/WebSocketContext.tsx`
-
-### 6. 后端状态收口与中断一致性
-
-- 运行态收敛为单一 `runtime_state`，统一管理任务、session run 槽位和 connection workspace
-- 同一 `session_id` 的运行占位改为原子化，避免并发请求同时启动
-- 流式中断改为显式 `interrupted` 路径，不再伪造空 assistant 消息或错误完成态
-- `file_write` 改为按原样写入，不再自动补末尾换行
-- `Message.model_label` 的 Pydantic protected namespace warning 已消除
-
-相关文件：
-
-- `python_backend/main.py`
-- `python_backend/core/agent.py`
-- `python_backend/core/user.py`
-- `python_backend/tools/file_write.py`
-- `python_backend/tests/test_session_execution.py`
-- `python_backend/tests/test_reasoning_streaming.py`
-- `python_backend/tests/test_file_write_tool.py`
-- `python_backend/tests/test_user_model_warnings.py`
-
-### 7. 前端打包体积优化
-
-- `react-markdown` 和 React 基础依赖拆分 chunk
-- 代码高亮组件改为按需懒加载
-- 高亮器切换为 `PrismAsyncLight` 并只注册常见语言
-
-相关文件：
-
-- `vite.config.ts`
-- `src/utils/markdown.tsx`
-- `src/components/common/CodeBlock.tsx`
-
-## 项目结构
-
-```text
-tauri_agent/
-├─ src/                    # React 前端
-│  ├─ components/
-│  ├─ contexts/
-│  ├─ hooks/
-│  ├─ pages/
-│  ├─ stores/
-│  ├─ types/
-│  └─ utils/
-├─ python_backend/         # Python Agent 后端
-│  ├─ core/
-│  ├─ llms/
-│  ├─ tools/
-│  └─ tests/
-├─ src-tauri/              # Rust / Tauri
-│  ├─ capabilities/
-│  ├─ src/
-│  └─ binaries/
-└─ vite.config.ts
+```json
+{
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "api_key": "YOUR_KEY",
+  "base_url": "https://api.openai.com/v1",
+  "enable_reasoning": false,
+  "profiles": {
+    "primary": {
+      "profile_name": "primary",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "api_key": "YOUR_KEY",
+      "base_url": "https://api.openai.com/v1",
+      "enable_reasoning": false
+    },
+    "secondary": {
+      "profile_name": "secondary",
+      "provider": "openai",
+      "model": "gpt-4.1-mini",
+      "api_key": "YOUR_KEY",
+      "base_url": "https://api.openai.com/v1",
+      "enable_reasoning": false
+    }
+  },
+  "runtime": {
+    "context_length": 64000,
+    "max_output_tokens": 4000,
+    "max_tool_rounds": 8,
+    "max_retries": 3
+  },
+  "context_providers": {
+    "skills": {
+      "local": {
+        "enabled": true
+      }
+    },
+    "retrieval": {
+      "workspace": {
+        "enabled": true,
+        "max_hits": 3,
+        "extensions": [".md", ".txt", ".json"]
+      }
+    }
+  }
+}
 ```
 
-## 开发环境
+## Run Event 模型
+
+agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agent/logs/`。
+
+常见事件包括：
+
+- `run_started`
+- `skill_resolution_completed`
+- `retrieval_completed`
+- `tool_requested`
+- `tool_completed`
+- `retry_scheduled`
+- `run_completed`
+- `run_interrupted`
+
+前端会把这些事件渲染为 run timeline。
+
+## 会话与工作区持久化
+
+每个 workspace 下会生成：
+
+```text
+.agent/
+  sessions/
+    <session-id>.jsonl
+    <session-id>.meta.json
+  logs/
+    <session-id>.json
+```
+
+- `*.jsonl` 保存消息历史
+- `*.meta.json` 保存 title、locked model 等会话元数据
+- `logs/*.json` 保存结构化 run event
+
+## 本地开发
 
 ### 依赖
 
 - Node.js 18+
-- Python 3.10+
-- Rust / cargo
+- Python 3.13
+- Rust / Cargo
 
-### 本地开发
-
-1. 启动 Python 后端
+### 启动 Python 后端
 
 ```bash
 cd python_backend
@@ -220,7 +209,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-2. 在项目根目录启动 Tauri
+### 启动桌面应用
 
 ```bash
 npm install
@@ -231,20 +220,19 @@ npm run tauri dev
 
 ## 构建
 
-### 前端构建
+### 前端
 
 ```bash
-npx tsx scripts/chat-ui-regression-check.tsx
 npm run build
 ```
 
-### Tauri 构建
+### Tauri
 
 ```bash
 npm run tauri build
 ```
 
-### Python Sidecar 打包
+### Python Sidecar
 
 ```bash
 cd python_backend
@@ -253,32 +241,53 @@ pyinstaller --onefile --name python_backend main.py
 
 ## 验证命令
 
-后端回归：
+### 后端全量
 
 ```bash
-python -m unittest python_backend.tests.test_connection_routing -v
-python -m unittest python_backend.tests.test_session_execution -v
-python -m unittest python_backend.tests.test_config_normalization -v
-python -m unittest python_backend.tests.test_reasoning_streaming -v
-python -m unittest python_backend.tests.test_file_write_tool -v
-python -m unittest python_backend.tests.test_user_model_warnings -v
+python -m unittest discover -s python_backend/tests -v
 ```
 
-Rust：
+### 前端全量
 
 ```bash
-cd src-tauri
-cargo check
-```
-
-前端：
-
-```bash
+npm run test
 npm run build
+```
+
+### Diff Hygiene
+
+```bash
+git diff --check
+```
+
+## 关键目录
+
+```text
+tauri_agent/
+├─ src/
+│  ├─ components/
+│  ├─ contexts/
+│  ├─ hooks/
+│  ├─ pages/
+│  ├─ stores/
+│  ├─ types/
+│  └─ utils/
+├─ python_backend/
+│  ├─ core/
+│  ├─ llms/
+│  ├─ retrieval/
+│  ├─ runtime/
+│  ├─ skills/
+│  ├─ tools/
+│  └─ tests/
+├─ src-tauri/
+└─ docs/plans/
 ```
 
 ## 注意事项
 
 - Tauri `plugin-fs` 权限由 `src-tauri/capabilities/default.json` 控制
-- 如果修改了 capability，通常需要重启桌面应用后生效
-- 会话历史保存在工作区下的 `.agent/sessions/*.jsonl`
+- 如果修改 capability，通常需要重启桌面应用
+- 同一 session 内不允许切换已锁定模型
+- 当前图片多模态只支持图片，不支持音频/视频
+- 当前 retrieval 是轻量关键词检索，不是向量索引

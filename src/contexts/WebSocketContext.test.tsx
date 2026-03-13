@@ -2,6 +2,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderConfig } from "../types";
 import { useConfigStore } from "../stores/configStore";
+import { useSessionStore } from "../stores/sessionStore";
+import { useTaskStore } from "../stores/taskStore";
+import { useWorkspaceStore } from "../stores/workspaceStore";
 import { WebSocketProvider, useWebSocket } from "./WebSocketContext";
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -13,6 +16,7 @@ const websocketMockState = vi.hoisted(() => {
     statusListeners,
     connectionStatus: "connecting" as ConnectionStatus,
     sendSucceeded: false,
+    messageHandler: undefined as ((message: any) => void) | undefined,
     onConnected: undefined as (() => void) | undefined,
     onDisconnected: undefined as (() => void) | undefined,
     connectMock: vi.fn((connected?: () => void, disconnected?: () => void) => {
@@ -25,7 +29,9 @@ const websocketMockState = vi.hoisted(() => {
       };
     }),
     sendMock: vi.fn(() => websocketMockState.sendSucceeded),
-    onMessageMock: vi.fn(),
+    onMessageMock: vi.fn((handler: (message: any) => void) => {
+      websocketMockState.messageHandler = handler;
+    }),
     offMessageMock: vi.fn(),
     isConnectedMock: vi.fn(() => websocketMockState.connectionStatus === "connected"),
     getConnectionStatusMock: vi.fn(() => websocketMockState.connectionStatus),
@@ -63,6 +69,13 @@ function Probe() {
       <button type="button" onClick={() => context.sendConfig()} aria-label="sync config">
         sync
       </button>
+      <button
+        type="button"
+        onClick={() => context.answerQuestion("question-1", "continue")}
+        aria-label="answer question"
+      >
+        answer
+      </button>
       <div data-testid="status">{context.connectionStatus ?? ""}</div>
     </>
   );
@@ -83,6 +96,7 @@ describe("WebSocketProvider", () => {
     websocketMockState.statusListeners.clear();
     websocketMockState.connectionStatus = "connecting";
     websocketMockState.sendSucceeded = false;
+    websocketMockState.messageHandler = undefined;
     websocketMockState.onConnected = undefined;
     websocketMockState.onDisconnected = undefined;
     websocketMockState.connectMock.mockClear();
@@ -95,6 +109,16 @@ describe("WebSocketProvider", () => {
     useConfigStore.setState((state) => ({
       ...state,
       config: testConfig,
+    }));
+    useTaskStore.setState({ tasks: [] });
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      changedFiles: {},
+    }));
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [],
+      currentSessionId: null,
     }));
   });
 
@@ -139,6 +163,166 @@ describe("WebSocketProvider", () => {
 
     await waitFor(() => {
       expect(websocketMockState.sendMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("forwards run_event messages into chat state", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "run_event",
+      session_id: "session-a",
+      event: {
+        event_type: "run_started",
+        session_id: "session-a",
+        run_id: "run-1",
+        payload: {
+          source: "backend",
+        },
+        timestamp: "2026-03-13T09:00:00.000Z",
+      },
+    });
+
+    await waitFor(async () => {
+      const { useChatStore } = await import("../stores/chatStore");
+      expect(useChatStore.getState().sessions["session-a"]?.runEvents).toHaveLength(1);
+    });
+  });
+
+  it("applies todo_task tool results into the task store", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "tool_result",
+      session_id: "session-a",
+      tool_call_id: "todo-1",
+      tool_name: "todo_task",
+      success: true,
+      output: {
+        event: "todo_task",
+        action: "create",
+        task: {
+          id: "task-1",
+          content: "Ship Task 5",
+          status: "in_progress",
+          subTasks: [
+            {
+              id: "sub-1",
+              content: "Wire frontend",
+              status: "pending",
+            },
+          ],
+        },
+      },
+    });
+
+    await waitFor(() => {
+      const tasks = useTaskStore.getState().getTasksBySession("session-a");
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]?.content).toBe("Ship Task 5");
+      expect(tasks[0]?.subTasks?.[0]?.content).toBe("Wire frontend");
+    });
+  });
+
+  it("tracks file_write tool results for file tree highlights", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "tool_result",
+      session_id: "session-a",
+      tool_call_id: "write-1",
+      tool_name: "file_write",
+      success: true,
+      output: {
+        event: "file_write",
+        path: "C:/repo/new-file.ts",
+        change: "created",
+      },
+    });
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().changedFiles["C:/repo/new-file.ts"]).toBe("created");
+    });
+  });
+
+  it("stores ask_question tool results as pending questions", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "question_request",
+      session_id: "session-a",
+      tool_call_id: "question-1",
+      tool_name: "ask_question",
+      question: "Continue deployment?",
+      details: "Traffic is low right now.",
+      options: ["continue", "wait"],
+    });
+
+    await waitFor(async () => {
+      const { useChatStore } = await import("../stores/chatStore");
+      expect(useChatStore.getState().sessions["session-a"]?.pendingQuestion?.question).toBe(
+        "Continue deployment?"
+      );
+    });
+  });
+
+  it("updates session titles from backend session metadata events", async () => {
+    useSessionStore.getState().addSession({
+      session_id: "session-a",
+      workspace_path: "/workspace-a",
+      created_at: "2026-03-12T10:00:00.000Z",
+      updated_at: "2026-03-12T10:00:00.000Z",
+    });
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "session_title_updated",
+      session_id: "session-a",
+      title: "Investigate runtime contracts",
+    });
+
+    await waitFor(() => {
+      expect(useSessionStore.getState().sessions[0]?.title).toBe("Investigate runtime contracts");
+    });
+  });
+
+  it("sends structured question responses", async () => {
+    websocketMockState.sendSucceeded = true;
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "answer question" }));
+
+    expect(websocketMockState.sendMock).toHaveBeenCalledWith({
+      type: "question_response",
+      tool_call_id: "question-1",
+      answer: "continue",
+      action: "submit",
     });
   });
 });

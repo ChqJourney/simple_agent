@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-03-11
+## [Unreleased] - 2026-03-13
 
 ### Added
 
@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added lazy-loaded code highlighting component `src/components/common/CodeBlock.tsx`
 - Added chat composer `Stop generating` action during streaming responses
 - Added frontend regression script `scripts/chat-ui-regression-check.tsx`
+- Added runtime contracts for profile-based config, session metadata, and run events
+- Added structured run-event logging under workspace `.agent/logs/`
+- Added observable run timeline in the chat UI
+- Added multi-profile model settings with session-level locked model metadata
+- Added execution tools for `shell_execute`, `python_execute`, `node_execute`, `todo_task`, and `ask_question`
+- Added local skill provider and workspace retrieval provider hooks
+- Added image attachment-aware messages and file-tree drag/drop insertion
+- Added file-tree highlighting for created and modified files from `file_write`
+- Added generated session titles with websocket sync and metadata persistence
 
 ### Changed
 
@@ -37,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reworked reasoning, tool request, tool decision, and tool result transcript blocks into collapsible text disclosures
 - Removed prominent workspace/chat divider lines in favor of spacing and softer panel surfaces
 - Split frontend build output into smaller chunks and moved code highlighting to lazy loading
+- Expanded config normalization to promote legacy single-model config into profile-based runtime config
+- Routed simple task execution through optional secondary profile selection while locking each session to its starting model
+- Persisted session metadata separately from transcript history via `.meta.json`
+- Upgraded frontend session, chat, and workspace stores to consume structured runtime events and metadata updates
+- Made image drops use inline data URLs so browser-sourced images can reach the backend without filesystem paths
+- Updated README to document the current platform architecture, runtime config shape, run events, tools, skills, retrieval, multimodal input, and verification commands
 
 ### Fixed
 
@@ -54,10 +69,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed retry messages being rendered as terminal chat errors
 - Fixed theme switching not taking effect visually
 - Fixed Tauri session deletion flow by adding `fs:allow-remove` capability
+- Fixed retrieval self-pollution by excluding `.agent/logs` from workspace retrieval
+- Fixed ask-question UX clearing too early by waiting for backend completion before removing the pending question
+- Fixed sessions losing generated titles after reload by persisting and rehydrating metadata from disk
+- Fixed attachment-only image messages being blocked by the send button state
+- Fixed browser-dropped image attachments missing usable image payloads by preserving inline `data_url`
 
 ### Docs
 
-- Rewrote `README.md` to reflect the current architecture, remediation work, verification commands, and project layout
+- Rewrote `README.md` to reflect the current platform architecture, feature set, persistence model, runtime config, and verification commands
 
 ## [0.1.0] - 2025-03-10
 

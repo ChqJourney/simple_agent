@@ -90,6 +90,7 @@ export const MessageItem = memo<MessageItemProps>(({
 
   const hasBodyContent = Boolean(
     (isAssistant && isStreaming ? streamingContent : message.content) ||
+      (message.attachments && message.attachments.length > 0) ||
       (message.tool_calls && message.tool_calls.length > 0)
   );
   const hasReasoning = Boolean(reasoningContent);
@@ -125,6 +126,19 @@ export const MessageItem = memo<MessageItemProps>(({
             <ReactMarkdown components={markdownComponents}>
               {message.content || ''}
             </ReactMarkdown>
+          )}
+
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {message.attachments.map((attachment) => (
+                <span
+                  key={`${attachment.name}:${attachment.path}`}
+                  className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200"
+                >
+                  {attachment.name}
+                </span>
+              ))}
+            </div>
           )}
 
           {message.tool_calls && message.tool_calls.length > 0 && (

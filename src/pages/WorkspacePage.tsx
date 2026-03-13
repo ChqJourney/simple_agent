@@ -18,7 +18,7 @@ export const WorkspacePage: React.FC = () => {
   const { workspaces, setCurrentWorkspace, currentWorkspace, syncWorkspacePath } = useWorkspaceStore();
   const { leftPanelCollapsed, rightPanelCollapsed, setPageLoading } = useUIStore();
   const { isConnected, sendWorkspace } = useWebSocket();
-  const { loadSessionsFromDisk, setCurrentSession } = useSessionStore();
+  const { loadSessionsFromDisk, setCurrentSession, sessions, currentSessionId } = useSessionStore();
   const [backendReady, setBackendReady] = useState(!IS_DEV);
   const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(null);
   const prevWorkspaceIdRef = useRef<string | null>(null);
@@ -118,6 +118,11 @@ export const WorkspacePage: React.FC = () => {
     );
   }
 
+  const currentSession = sessions.find((session) => session.session_id === currentSessionId);
+  const lockedModelLabel = currentSession?.locked_model
+    ? `Locked: ${currentSession.locked_model.provider}/${currentSession.locked_model.model}`
+    : null;
+
   return (
     <div className="flex h-screen flex-col bg-gray-100 dark:bg-gray-950">
       <TopBar />
@@ -147,7 +152,16 @@ export const WorkspacePage: React.FC = () => {
               </div>
             </div>
           ) : (
-            <ChatContainer />
+            <>
+              {lockedModelLabel && (
+                <div className="px-5 pt-3 md:px-6">
+                  <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+                    {lockedModelLabel}
+                  </div>
+                </div>
+              )}
+              <ChatContainer />
+            </>
           )}
         </main>
 

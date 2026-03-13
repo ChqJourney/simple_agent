@@ -1,0 +1,84 @@
+import sys
+import unittest
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from runtime.config import normalize_runtime_config
+from runtime.contracts import LockedModelRef, SessionMetadata
+from runtime.events import RunEvent
+
+
+class RuntimeContractTests(unittest.TestCase):
+    def test_normalize_runtime_config_promotes_flat_config_to_primary_profile(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_key": "test-key",
+                "base_url": "   ",
+                "enable_reasoning": False,
+            }
+        )
+
+        self.assertEqual("openai", normalized["provider"])
+        self.assertIn("profiles", normalized)
+        self.assertIn("primary", normalized["profiles"])
+        self.assertEqual("gpt-4o-mini", normalized["profiles"]["primary"]["model"])
+        self.assertEqual("primary", normalized["profiles"]["primary"]["profile_name"])
+        self.assertEqual("https://api.openai.com/v1", normalized["profiles"]["primary"]["base_url"])
+        self.assertIn("runtime", normalized)
+        self.assertEqual({}, normalized["runtime"])
+        self.assertEqual(
+            {
+                "skills": {"local": {"enabled": True}},
+                "retrieval": {
+                    "workspace": {
+                        "enabled": True,
+                        "max_hits": 3,
+                        "extensions": [".md", ".txt", ".json"],
+                    }
+                },
+            },
+            normalized["context_providers"],
+        )
+
+    def test_run_event_serializes_stable_fields(self) -> None:
+        event = RunEvent(
+            event_type="run_started",
+            session_id="session-1",
+            run_id="run-1",
+            payload={"step": "planning"},
+        )
+
+        serialized = event.model_dump(mode="json")
+
+        self.assertEqual("run_started", serialized["event_type"])
+        self.assertEqual("session-1", serialized["session_id"])
+        self.assertEqual("run-1", serialized["run_id"])
+        self.assertEqual({"step": "planning"}, serialized["payload"])
+        self.assertIn("timestamp", serialized)
+
+    def test_session_metadata_preserves_title_and_locked_model_placeholders(self) -> None:
+        metadata = SessionMetadata(
+            session_id="session-1",
+            workspace_path="/workspace",
+            title="Investigate routing",
+            locked_model=LockedModelRef(
+                profile_name="primary",
+                provider="openai",
+                model="gpt-4o-mini",
+            ),
+        )
+
+        serialized = metadata.model_dump(mode="json")
+
+        self.assertEqual("Investigate routing", serialized["title"])
+        self.assertEqual("primary", serialized["locked_model"]["profile_name"])
+        self.assertEqual("gpt-4o-mini", serialized["locked_model"]["model"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -2,12 +2,15 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import { deleteSessionHistory, scanSessions } from '../utils/storage';
+import { LockedModelRef } from '../types';
 
 interface SessionMeta {
   session_id: string;
   workspace_path: string;
   created_at: string;
   updated_at: string;
+  title?: string;
+  locked_model?: LockedModelRef;
 }
 
 interface SessionState {
@@ -123,10 +126,15 @@ export const useSessionStore = create<SessionState>()(
               : s
           );
 
-          const existingIds = new Set(fixedSessions.map(s => s.session_id));
-
+          const diskSessionMap = new Map(diskSessions.map((session) => [session.session_id, session]));
+          const mergedSessions = fixedSessions.map((session) =>
+            diskSessionMap.get(session.session_id)
+              ? { ...session, ...diskSessionMap.get(session.session_id) }
+              : session
+          );
+          const existingIds = new Set(mergedSessions.map(s => s.session_id));
           const newSessions = diskSessions.filter(s => !existingIds.has(s.session_id));
-          const mergedSessions = [...fixedSessions, ...newSessions];
+          mergedSessions.push(...newSessions);
           const workspaceSessions = mergedSessions.filter(s => s.workspace_path === workspacePath);
           const hasCurrentWorkspaceSession = workspaceSessions.some(
             s => s.session_id === state.currentSessionId
@@ -137,7 +145,7 @@ export const useSessionStore = create<SessionState>()(
 
           if (
             newSessions.length > 0 ||
-            JSON.stringify(fixedSessions) !== JSON.stringify(state.sessions) ||
+            JSON.stringify(mergedSessions) !== JSON.stringify(state.sessions) ||
             nextCurrentSessionId !== state.currentSessionId
           ) {
             set({

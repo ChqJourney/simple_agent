@@ -14,13 +14,21 @@ from fastapi.responses import JSONResponse
 from core.agent import Agent
 from core.user import Session, UserManager
 from llms.base import BaseLLM
-from llms.capabilities import coerce_reasoning_enabled
 from llms.openai import OpenAILLM
-from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM, normalize_ollama_base_url
+from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 from llms.qwen import QwenLLM
+from runtime.config import get_primary_profile_config, normalize_runtime_config
+from runtime.provider_registry import ContextProviderBundle, ContextProviderRegistry
+from runtime.router import lock_ref_from_profile, resolve_profile_for_task, session_lock_matches_profile
+from runtime.session_titles import run_session_title_task
 from tools.base import ToolRegistry
+from tools.ask_question import AskQuestionTool
 from tools.file_read import FileReadTool
 from tools.file_write import FileWriteTool
+from tools.node_execute import NodeExecuteTool
+from tools.python_execute import PythonExecuteTool
+from tools.shell_execute import ShellExecuteTool
+from tools.todo_task import TodoTaskTool
 
 SendCallback = Callable[[Dict[str, Any]], Any]
 
@@ -43,8 +51,19 @@ app.add_middleware(
 tool_registry = ToolRegistry()
 tool_registry.register(FileReadTool())
 tool_registry.register(FileWriteTool())
+tool_registry.register(ShellExecuteTool())
+tool_registry.register(PythonExecuteTool())
+tool_registry.register(NodeExecuteTool())
+tool_registry.register(TodoTaskTool())
+tool_registry.register(AskQuestionTool())
 
 user_manager = UserManager()
+context_provider_registry = ContextProviderRegistry(
+    skill_search_roots=[
+        Path.home() / ".agents" / "skills",
+        Path.home() / ".codex" / "skills",
+    ]
+)
 state_lock = asyncio.Lock()
 
 
@@ -53,6 +72,7 @@ class BackendRuntimeState:
     active_agents: Dict[str, Agent] = field(default_factory=dict)
     current_llm: Optional[BaseLLM] = None
     current_config: Optional[Dict[str, Any]] = None
+    current_context_bundle: ContextProviderBundle = field(default_factory=ContextProviderBundle)
     default_workspace: str = field(default_factory=lambda: str(Path.cwd()))
     connection_workspaces: Dict[str, str] = field(default_factory=dict)
     pending_tasks: Set[asyncio.Task] = field(default_factory=set)
@@ -64,53 +84,21 @@ class BackendRuntimeState:
 runtime_state = BackendRuntimeState()
 SESSION_TASK_RESERVED = object()
 
-DEFAULT_BASE_URLS = {
-    "openai": "https://api.openai.com/v1",
-    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "ollama": OLLAMA_DEFAULT_BASE_URL,
-}
-
-
-def _default_base_url(provider: str) -> str:
-    return DEFAULT_BASE_URLS.get(provider.lower(), "")
-
-
 def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
-    provider = str(data.get("provider") or "openai").strip().lower() or "openai"
-    default_model = "gpt-4" if provider == "openai" else ""
-    model = str(data.get("model") or default_model).strip()
-    api_key = str(data.get("api_key") or "").strip()
-    base_url = str(data.get("base_url") or "").strip() or _default_base_url(provider)
-
-    if provider == "ollama":
-        base_url = normalize_ollama_base_url(base_url)
-
-    normalized = coerce_reasoning_enabled({
-        "provider": provider,
-        "model": model,
-        "api_key": api_key,
-        "base_url": base_url,
-        "enable_reasoning": bool(data.get("enable_reasoning", False)),
-        "input_type": data.get("input_type") or "text",
-    })
-
-    normalized["provider"] = provider
-    normalized["model"] = model
-    normalized["api_key"] = api_key
-    normalized["base_url"] = base_url
-    return normalized
+    return normalize_runtime_config(data)
 
 
 def create_llm(config: Dict[str, Any]) -> BaseLLM:
     normalized_config = _normalize_provider_config(config)
-    provider = normalized_config.get("provider", "openai")
+    active_profile = get_primary_profile_config(normalized_config)
+    provider = active_profile.get("provider", "openai")
 
     if provider == "openai":
-        return OpenAILLM(normalized_config)
+        return OpenAILLM(active_profile)
     if provider == "qwen":
-        return QwenLLM(normalized_config)
+        return QwenLLM(active_profile)
     if provider == "ollama":
-        return OllamaLLM(normalized_config)
+        return OllamaLLM(active_profile)
     raise ValueError(f"Unknown provider: {provider}")
 
 
@@ -173,7 +161,9 @@ async def get_or_create_agent(session_id: str) -> Optional[Agent]:
             agent = Agent(
                 llm=runtime_state.current_llm,
                 tool_registry=tool_registry,
-                user_manager=user_manager
+                user_manager=user_manager,
+                skill_provider=runtime_state.current_context_bundle.skill_provider,
+                retrieval_provider=runtime_state.current_context_bundle.retrieval_provider,
             )
             runtime_state.active_agents[session_id] = agent
 
@@ -233,6 +223,8 @@ async def handle_message(
         await handle_user_message(data, send_callback, connection_id)
     elif message_type == "tool_confirm":
         await handle_tool_confirm(data)
+    elif message_type == "question_response":
+        await handle_question_response(data)
     elif message_type == "interrupt":
         await handle_interrupt(data)
     elif message_type == "set_workspace":
@@ -252,10 +244,12 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
         await cleanup_all_tasks()
 
         new_llm = create_llm(config)
+        context_bundle = context_provider_registry.build_bundle(config)
 
         async with state_lock:
             runtime_state.current_config = config
             runtime_state.current_llm = new_llm
+            runtime_state.current_context_bundle = context_bundle
             runtime_state.active_agents.clear()
 
         await send_callback({
@@ -285,7 +279,9 @@ async def handle_user_message(
 ) -> None:
     session_id = data.get("session_id")
     content = data.get("content")
+    attachments = data.get("attachments")
     workspace_path = data.get("workspace_path")
+    normalized_content = content if isinstance(content, str) else ""
 
     if not session_id:
         await send_callback({
@@ -294,7 +290,7 @@ async def handle_user_message(
         })
         return
 
-    if not content:
+    if not normalized_content and not attachments:
         await send_callback({
             "type": "error",
             "session_id": session_id,
@@ -303,6 +299,7 @@ async def handle_user_message(
         return
 
     async with state_lock:
+        current_config = runtime_state.current_config
         llm = runtime_state.current_llm
         workspace = (
             workspace_path
@@ -346,6 +343,25 @@ async def handle_user_message(
         if not session:
             session = await user_manager.create_session(workspace, session_id)
 
+        if current_config:
+            active_profile = resolve_profile_for_task(current_config, task_kind="default")
+            active_lock_ref = lock_ref_from_profile(active_profile)
+
+            if session.locked_model and not session_lock_matches_profile(session.locked_model, active_profile):
+                await send_callback({
+                    "type": "error",
+                    "session_id": session_id,
+                    "error": (
+                        f"Session {session_id} is locked to "
+                        f"{session.locked_model.provider}/{session.locked_model.model}"
+                    ),
+                })
+                return
+
+            if session.locked_model is None:
+                session.locked_model = active_lock_ref
+                session.save_metadata()
+
         await user_manager.bind_session_to_connection(session_id, connection_id)
 
         agent = await get_or_create_agent(session_id)
@@ -359,13 +375,36 @@ async def handle_user_message(
 
         agent.reset_interrupt()
 
-        task = asyncio.create_task(run_agent_task(agent, content, session, send_callback))
+        if isinstance(attachments, list) and attachments:
+            task = asyncio.create_task(
+                run_agent_task(agent, normalized_content, session, send_callback, attachments=attachments)
+            )
+        else:
+            task = asyncio.create_task(run_agent_task(agent, normalized_content, session, send_callback))
+
+        should_generate_title = (
+            bool(normalized_content.strip())
+            and not session.title
+            and callable(getattr(llm, "complete", None))
+        )
+        title_task = None
+        if should_generate_title:
+            title_task = asyncio.create_task(
+                run_session_title_task(session, llm, normalized_content, send_callback)
+            )
+
         async with state_lock:
             runtime_state.pending_tasks.add(task)
             runtime_state.active_session_tasks[session_id] = task
             runtime_state.task_connections[task] = connection_id
             runtime_state.task_sessions[task] = session_id
+            if title_task is not None:
+                runtime_state.pending_tasks.add(title_task)
+                runtime_state.task_connections[title_task] = connection_id
+                runtime_state.task_sessions[title_task] = session_id
         task.add_done_callback(_forget_task)
+        if title_task is not None:
+            title_task.add_done_callback(_forget_task)
 
     except Exception as e:
         if session_reserved:
@@ -380,9 +419,16 @@ async def handle_user_message(
         })
 
 
-async def run_agent_task(agent: Agent, content: str, session: Session, send_callback: SendCallback) -> None:
+async def run_agent_task(
+    agent: Agent,
+    content: str,
+    session: Session,
+    send_callback: SendCallback,
+    attachments: Optional[Any] = None,
+) -> None:
     try:
-        await agent.run(content, session)
+        normalized_attachments = attachments if isinstance(attachments, list) else None
+        await agent.run(content, session, attachments=normalized_attachments)
     except asyncio.CancelledError:
         logger.info("Agent task cancelled for session: %s", session.session_id)
         raise
@@ -424,6 +470,35 @@ async def handle_tool_confirm(data: Dict[str, Any]) -> None:
         decision,
         approved,
         scope,
+    )
+
+
+async def handle_question_response(data: Dict[str, Any]) -> None:
+    tool_call_id = data.get("tool_call_id")
+    answer = data.get("answer")
+    action = data.get("action", "submit")
+
+    if not tool_call_id:
+        logger.warning("Question response received without tool_call_id")
+        return
+
+    if action not in ("submit", "dismiss"):
+        action = "submit"
+
+    if answer is not None and not isinstance(answer, str):
+        answer = str(answer)
+
+    await user_manager.handle_question_response(
+        tool_call_id=tool_call_id,
+        answer=answer,
+        action=action,
+    )
+
+    logger.info(
+        "Question response processed: %s -> action=%s answer=%s",
+        tool_call_id,
+        action,
+        answer,
     )
 
 

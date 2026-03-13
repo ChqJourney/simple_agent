@@ -15,6 +15,23 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
+export interface Attachment {
+  kind: 'image';
+  path: string;
+  name: string;
+  mime_type?: string;
+  data_url?: string;
+}
+
+export interface PendingQuestion {
+  tool_call_id: string;
+  tool_name: string;
+  question: string;
+  details?: string;
+  options: string[];
+  status: 'idle' | 'submitting';
+}
+
 export interface ToolResult {
   tool_call_id: string;
   tool_name: string;
@@ -44,6 +61,7 @@ export interface Message {
   id: string;
   role: MessageRole;
   content: string | null;
+  attachments?: Attachment[];
   reasoning_content?: string;
   tool_calls?: ToolCall[];
   tool_results?: ToolResult[];
@@ -64,16 +82,67 @@ export interface TokenUsage {
   total_tokens: number;
 }
 
+export interface RunEventRecord {
+  event_type: string;
+  session_id: string;
+  run_id: string;
+  step_index?: number;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
+
 export type ProviderType = 'openai' | 'qwen' | 'ollama';
 export type InputType = 'text' | 'image';
 
-export interface ProviderConfig {
+export interface ModelProfile {
   provider: ProviderType;
   model: string;
   api_key: string;
   base_url: string;
   enable_reasoning: boolean;
   input_type?: InputType;
+  profile_name?: string;
+}
+
+export interface RuntimePolicy {
+  context_length?: number;
+  max_output_tokens?: number;
+  max_tool_rounds?: number;
+  max_retries?: number;
+}
+
+export interface LocalSkillContextProviderConfig {
+  enabled: boolean;
+}
+
+export interface WorkspaceRetrievalContextProviderConfig {
+  enabled: boolean;
+  max_hits?: number;
+  extensions?: string[];
+}
+
+export interface ContextProviderConfig {
+  skills?: {
+    local?: LocalSkillContextProviderConfig;
+  };
+  retrieval?: {
+    workspace?: WorkspaceRetrievalContextProviderConfig;
+  };
+}
+
+export interface ProviderConfig extends ModelProfile {
+  profiles?: {
+    primary: ModelProfile;
+    secondary?: ModelProfile;
+  };
+  runtime?: RuntimePolicy;
+  context_providers?: ContextProviderConfig;
+}
+
+export interface LockedModelRef {
+  profile_name: string;
+  provider: string;
+  model: string;
 }
 
 export interface Workspace {
@@ -90,12 +159,15 @@ export interface Session {
   messages: Message[];
   created_at?: string;
   updated_at?: string;
+  title?: string;
+  locked_model?: LockedModelRef;
 }
 
 export interface ClientMessage {
   type: 'message';
   session_id: string;
   content: string;
+  attachments?: Attachment[];
   workspace_path?: string;
 }
 
@@ -107,6 +179,9 @@ export interface ClientConfig {
   base_url: string;
   enable_reasoning: boolean;
   input_type?: InputType;
+  profiles?: ProviderConfig['profiles'];
+  runtime?: RuntimePolicy;
+  context_providers?: ContextProviderConfig;
 }
 
 export interface ClientToolConfirm {
@@ -115,6 +190,13 @@ export interface ClientToolConfirm {
   approved?: boolean;
   decision?: ToolDecision;
   scope?: ToolDecisionScope;
+}
+
+export interface ClientQuestionResponse {
+  type: 'question_response';
+  tool_call_id: string;
+  answer?: string;
+  action: 'submit' | 'dismiss';
 }
 
 export interface ClientInterrupt {
@@ -127,7 +209,13 @@ export interface ClientSetWorkspace {
   workspace_path: string;
 }
 
-export type ClientWebSocketMessage = ClientMessage | ClientConfig | ClientToolConfirm | ClientInterrupt | ClientSetWorkspace;
+export type ClientWebSocketMessage =
+  | ClientMessage
+  | ClientConfig
+  | ClientToolConfirm
+  | ClientQuestionResponse
+  | ClientInterrupt
+  | ClientSetWorkspace;
 
 export interface ServerToken {
   type: 'token';
@@ -182,6 +270,16 @@ export interface ServerToolResult {
   error?: string;
 }
 
+export interface ServerQuestionRequest {
+  type: 'question_request';
+  session_id: string;
+  tool_call_id: string;
+  tool_name?: string;
+  question: string;
+  details?: string;
+  options: string[];
+}
+
 export interface ServerRetry {
   type: 'retry';
   session_id: string;
@@ -230,6 +328,18 @@ export interface ServerWorkspaceUpdated {
   workspace_path: string;
 }
 
+export interface ServerSessionTitleUpdated {
+  type: 'session_title_updated';
+  session_id: string;
+  title: string;
+}
+
+export interface ServerRunEvent {
+  type: 'run_event';
+  session_id: string;
+  event: RunEventRecord;
+}
+
 export type ServerWebSocketMessage =
   | ServerToken
   | ServerReasoningToken
@@ -238,6 +348,7 @@ export type ServerWebSocketMessage =
   | ServerToolConfirmRequest
   | ServerToolDecision
   | ServerToolResult
+  | ServerQuestionRequest
   | ServerRetry
   | ServerError
   | ServerCompleted
@@ -245,7 +356,9 @@ export type ServerWebSocketMessage =
   | ServerStarted
   | ServerInterrupted
   | ServerConfigUpdated
-  | ServerWorkspaceUpdated;
+  | ServerWorkspaceUpdated
+  | ServerSessionTitleUpdated
+  | ServerRunEvent;
 
 export type WebSocketMessage = ClientWebSocketMessage | ServerWebSocketMessage;
 

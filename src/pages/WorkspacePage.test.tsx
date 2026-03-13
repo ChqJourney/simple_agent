@@ -110,7 +110,7 @@ describe("WorkspacePage", () => {
     );
   });
 
-  it("shows the locked model for the current session", async () => {
+  it("does not show a locked model badge for the current session", async () => {
     useSessionStore.setState((state) => ({
       ...state,
       sessions: [
@@ -129,8 +129,8 @@ describe("WorkspacePage", () => {
       currentSessionId: "session-a",
     }));
 
-    const { findByText } = render(<WorkspacePage />);
+    const { queryByText } = render(<WorkspacePage />);
 
-    expect(await findByText("Locked: openai/gpt-4o")).toBeTruthy();
+    expect(queryByText("Locked: openai/gpt-4o")).toBeNull();
   });
 });

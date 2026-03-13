@@ -1,6 +1,12 @@
 # Agent Platform Expansion Design
 
 > **Status:** Proposed on 2026-03-12
+>
+> **Implementation note on 2026-03-13:** The current codebase follows most of this architecture direction, but not every target behavior is fully landed yet. In particular:
+> - normal session message runs now always use the `primary` conversation profile
+> - `secondary` is now treated as a background-task model for internal helper work such as session title generation
+> - runtime policy fields in config contracts are enforced at execution time
+> - session title generation shipped earlier and more simply than this design anticipated: it is currently a model-generated async title on the next text message for any untitled session
 
 ## Goal
 
@@ -85,13 +91,19 @@ This is the right place to add:
 The app currently has one active backend config and one current LLM instance. The roadmap requires:
 
 - multiple saved model profiles
-- a primary model
-- a secondary model for lightweight one-shot tasks
+- a primary model for user conversation
+- a secondary model for background helper tasks such as title generation
 - richer settings such as context length and runtime limits
 - ability to switch the configured active model outside a running session
 - session-level lock so a single session does not change model mid-conversation
 
 The model router should choose a profile per run step while recording that decision as a structured event.
+
+Current implementation note:
+
+- profile storage and session lock are in place
+- normal message execution now stays on the primary conversation profile
+- background helper tasks can use the secondary profile without changing the session lock
 
 ### 5. Extension providers for skills and RAG
 
@@ -121,6 +133,11 @@ This should be implemented after the runtime contracts are stable, because the s
 ### 7. Derived UX features
 
 Session title generation should be derived from stable message and model-routing contracts rather than implemented as a one-off string helper. It can remain a lightweight feature and should be scheduled late because it depends on the final message shape but not vice versa.
+
+Current implementation note:
+
+- the shipped version is intentionally simpler than this target
+- titles are generated asynchronously from the next text user message when the session has no title yet
 
 ## Recommended Rollout
 

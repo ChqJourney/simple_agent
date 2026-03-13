@@ -193,7 +193,7 @@ export const SettingsPage: React.FC = () => {
                 onChange={(nextConfig) => updateProfile('secondary', nextConfig)}
               />
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Used for lightweight one-shot tasks. Falls back to the primary model when unset.
+                Used for background helper tasks such as title generation. Falls back to the primary model when unset.
               </p>
             </div>
             {primaryProfile.provider && primaryProfile.provider !== 'ollama' && (
@@ -238,6 +238,72 @@ export const SettingsPage: React.FC = () => {
                     runtime: {
                       ...draftConfig.runtime,
                       context_length: e.target.value ? Number(e.target.value) : undefined,
+                    },
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="max-output-tokens" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Max Output Tokens
+              </label>
+              <input
+                id="max-output-tokens"
+                type="number"
+                min={1}
+                value={draftConfig.runtime?.max_output_tokens ?? ''}
+                onChange={(e) =>
+                  setDraftConfig({
+                    ...draftConfig,
+                    runtime: {
+                      ...draftConfig.runtime,
+                      max_output_tokens: e.target.value ? Number(e.target.value) : undefined,
+                    },
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="max-tool-rounds" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Max Tool Rounds
+              </label>
+              <input
+                id="max-tool-rounds"
+                type="number"
+                min={1}
+                value={draftConfig.runtime?.max_tool_rounds ?? ''}
+                onChange={(e) =>
+                  setDraftConfig({
+                    ...draftConfig,
+                    runtime: {
+                      ...draftConfig.runtime,
+                      max_tool_rounds: e.target.value ? Number(e.target.value) : undefined,
+                    },
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="max-retries" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Max Retries
+              </label>
+              <input
+                id="max-retries"
+                type="number"
+                min={1}
+                value={draftConfig.runtime?.max_retries ?? ''}
+                onChange={(e) =>
+                  setDraftConfig({
+                    ...draftConfig,
+                    runtime: {
+                      ...draftConfig.runtime,
+                      max_retries: e.target.value ? Number(e.target.value) : undefined,
                     },
                   })
                 }

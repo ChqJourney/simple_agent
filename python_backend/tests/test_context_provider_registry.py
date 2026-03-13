@@ -16,8 +16,7 @@ class ContextProviderRegistryTests(unittest.TestCase):
 
         registry = ContextProviderRegistry(
             skill_search_roots=[
-                Path("C:/Users/patri/.agents/skills"),
-                Path("C:/Users/patri/.codex/skills"),
+                Path("C:/Users/patri/.agent/skills"),
             ]
         )
         config = normalize_runtime_config(
@@ -44,6 +43,7 @@ class ContextProviderRegistryTests(unittest.TestCase):
         self.assertIsInstance(bundle.retrieval_provider, SimpleRetrievalStore)
         self.assertEqual(5, bundle.retrieval_provider.max_hits)
         self.assertEqual((".md", ".py"), bundle.retrieval_provider.extensions)
+        self.assertEqual([Path("C:/Users/patri/.agent/skills")], registry.skill_search_roots)
 
 
 if __name__ == "__main__":

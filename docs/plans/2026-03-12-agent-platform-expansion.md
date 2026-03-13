@@ -1,6 +1,13 @@
 # Agent Platform Expansion Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+>
+> **Implementation note on 2026-03-13:** The shipped code differs from this original plan in a few important ways:
+> - normal message runs now always execute with the `primary` conversation profile
+> - `secondary` is reserved for background helper tasks such as session title generation, with fallback to `primary` when unset
+> - runtime policy fields are now enforced at execution time, including `max_tool_rounds`, `max_retries`, and provider-level `max_output_tokens`
+> - session title generation shipped as an async model-generated title on the next text message for any untitled session, not after a full user/assistant exchange
+> - structured run logs are persisted as `.agent/logs/*.jsonl`, and the emitted tool event names are `tool_call_requested` / `tool_execution_started` / `tool_execution_completed`
 
 **Goal:** Rework the current agent app into an extensible platform that supports structured logs, observable runs, richer tools, multi-model routing, skills, RAG, image input, and improved workspace interactions with minimal architectural rework later.
 
@@ -253,7 +260,7 @@ git commit -m "feat: add observable run timeline"
 
 Add tests for:
 
-- selecting primary vs secondary profile by task kind
+- selecting the `primary` conversation profile for normal messages and `secondary` for background helper tasks
 - locking a session to the model chosen when the session starts
 - rejecting or warning on attempted in-session model switch
 
@@ -274,6 +281,7 @@ Expected:
 Implement:
 
 - profile-based runtime config with `primary` and optional `secondary`
+- explicit conversation/background profile routing helpers
 - per-session locked model metadata
 - router helper used by `Agent` and runtime setup
 
@@ -283,7 +291,7 @@ Add tests for:
 
 - editing multiple profiles
 - showing runtime-limit settings such as context length
-- showing session lock status in workspace/session UI
+- describing the conversation/background split in settings UI
 
 **Step 5: Run frontend tests to verify they fail**
 
@@ -303,7 +311,7 @@ Implement:
 
 - profile editor for primary and secondary model
 - runtime limit fields
-- session metadata display showing locked model
+- settings copy that explains how `primary` and `secondary` are used
 
 **Step 7: Run focused verification**
 
@@ -582,7 +590,7 @@ git commit -m "feat: add image input and workspace drag drop"
 
 Add tests for:
 
-- generating a title after first stable user/assistant exchange
+- generating a title for an untitled session on the next text user message
 - preserving manual fallback behavior when generation data is unavailable
 - reloading stored titles from disk
 
@@ -605,7 +613,11 @@ Implement:
 - backend or frontend-derived title generation that uses the settled message model
 - persistence of title metadata with the session
 
-Prefer a deterministic first pass before adding a model-generated title path.
+Actual implementation note:
+
+- this shipped as a model-generated async title path
+- generation is triggered by the next text message for any untitled session
+- attachment-only messages do not trigger title generation
 
 **Step 4: Run focused verification**
 

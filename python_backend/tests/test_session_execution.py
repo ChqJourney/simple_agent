@@ -16,6 +16,7 @@ from core.user import Message, UserManager
 class FakeAgent:
     def __init__(self) -> None:
         self.interrupted = False
+        self.llm = None
 
     def reset_interrupt(self) -> None:
         return None
@@ -56,17 +57,38 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.original_runtime_state = backend_main.runtime_state
         self.original_run_agent_task = backend_main.run_agent_task
         self.original_create_llm = backend_main.create_llm
+        self.original_create_llm_for_profile = backend_main.create_llm_for_profile
 
         backend_main.user_manager = UserManager()
         backend_main.runtime_state = backend_main.BackendRuntimeState()
         backend_main.runtime_state.current_llm = object()
-        backend_main.runtime_state.current_config = None
+        backend_main.runtime_state.current_config = {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "api_key": "test-key",
+            "base_url": "https://api.openai.com/v1",
+            "enable_reasoning": False,
+            "profiles": {
+                "primary": {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "api_key": "test-key",
+                    "base_url": "https://api.openai.com/v1",
+                    "enable_reasoning": False,
+                    "profile_name": "primary",
+                },
+            },
+            "runtime": {},
+        }
         backend_main.runtime_state.default_workspace = self.temp_dir.name
         backend_main.runtime_state.active_agents = {
             "session-a": self.agent_a,
             "session-b": self.agent_b,
         }
         backend_main.create_llm = lambda config: {"provider": config["provider"], "model": config["model"]}
+        backend_main.create_llm_for_profile = (
+            lambda profile, runtime_policy=None: backend_main.runtime_state.current_llm
+        )
 
         async def fake_run_agent_task(agent, content, session, send_callback):
             self.run_invocations.append((session.session_id, content))
@@ -90,6 +112,7 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         backend_main.runtime_state = self.original_runtime_state
         backend_main.run_agent_task = self.original_run_agent_task
         backend_main.create_llm = self.original_create_llm
+        backend_main.create_llm_for_profile = self.original_create_llm_for_profile
         self.temp_dir.cleanup()
 
     async def test_rejects_second_message_while_session_run_is_active(self) -> None:
@@ -155,10 +178,10 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         first_call_started = asyncio.Event()
         allow_first_call_to_continue = asyncio.Event()
 
-        async def delayed_get_or_create_agent(session_id):
+        async def delayed_get_or_create_agent(session_id, *args, **kwargs):
             first_call_started.set()
             await allow_first_call_to_continue.wait()
-            return await original_get_or_create_agent(session_id)
+            return await original_get_or_create_agent(session_id, *args, **kwargs)
 
         backend_main.get_or_create_agent = delayed_get_or_create_agent
 
@@ -321,6 +344,7 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_existing_untitled_session_generates_title_on_next_text_message(self) -> None:
         title_llm = TitleCapableLLM("Friendly greeting")
         backend_main.runtime_state.current_llm = title_llm
+        self.agent_a.llm = title_llm
 
         session = await backend_main.user_manager.create_session(self.temp_dir.name, "session-a")
         session.add_message(Message(role="user", content="old message"))

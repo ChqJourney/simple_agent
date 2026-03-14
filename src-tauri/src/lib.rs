@@ -152,8 +152,13 @@ pub fn run() {
                 kill_sidecar(window.app_handle());
             }
         })
-        .run(tauri::generate_context!())
-        .unwrap_or_else(|error| eprintln!("error while running tauri application: {error}"));
+        .build(tauri::generate_context!())
+        .expect("Failed to build Tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                kill_sidecar(app);
+            }
+        });
 }
 
 #[cfg(test)]

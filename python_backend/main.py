@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Set
@@ -44,7 +45,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AI Agent Backend")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup: nothing extra needed
+    yield
+    # shutdown: interrupt all active agents so uvicorn can exit cleanly
+    for agent in list(runtime_state.active_agents.values()):
+        try:
+            agent.interrupt()
+        except Exception:
+            pass
+
+app = FastAPI(title="AI Agent Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

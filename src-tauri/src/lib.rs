@@ -3,6 +3,9 @@ use tauri::Manager;
 
 mod workspace_paths;
 
+const EMBEDDED_PYTHON_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_PYTHON";
+const EMBEDDED_NODE_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_NODE";
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -49,6 +52,40 @@ where
     Ok(action(&mut *guard))
 }
 
+fn embedded_python_dir(resource_dir: &Path) -> std::path::PathBuf {
+    resource_dir.join("runtimes").join("python")
+}
+
+fn embedded_node_dir(resource_dir: &Path) -> std::path::PathBuf {
+    resource_dir.join("runtimes").join("node")
+}
+
+fn embedded_runtime_envs(resource_dir: &Path) -> [(String, String); 2] {
+    [
+        (
+            EMBEDDED_PYTHON_ENV_VAR.to_string(),
+            embedded_python_dir(resource_dir).display().to_string(),
+        ),
+        (
+            EMBEDDED_NODE_ENV_VAR.to_string(),
+            embedded_node_dir(resource_dir).display().to_string(),
+        ),
+    ]
+}
+
+fn kill_sidecar(app: &tauri::AppHandle) {
+    let sidecar = app.state::<PythonSidecar>();
+    match with_sidecar_slot(&sidecar.0, |slot| slot.take()) {
+        Ok(Some(child)) => {
+            if let Err(error) = child.kill() {
+                eprintln!("Failed to stop Python sidecar: {error}");
+            }
+        }
+        Ok(None) => {}
+        Err(error) => eprintln!("{error}"),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -75,9 +112,14 @@ pub fn run() {
                 use tauri_plugin_shell::ShellExt;
                 
                 let shell = _app.shell();
+                let resource_dir = _app
+                    .path()
+                    .resource_dir()
+                    .map_err(|error| std::io::Error::other(format!("Failed to resolve Tauri resource directory: {error}")))?;
                 let sidecar_command = shell
                     .sidecar("python_backend")
-                    .map_err(|error| std::io::Error::other(format!("Failed to create Python sidecar command: {error}")))?;
+                    .map_err(|error| std::io::Error::other(format!("Failed to create Python sidecar command: {error}")))?
+                    .envs(embedded_runtime_envs(&resource_dir));
                 
                 let (mut rx, child) = sidecar_command
                     .spawn()
@@ -107,17 +149,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                let app = window.app_handle();
-                let sidecar = app.state::<PythonSidecar>();
-                match with_sidecar_slot(&sidecar.0, |slot| slot.take()) {
-                    Ok(Some(child)) => {
-                        if let Err(error) = child.kill() {
-                            eprintln!("Failed to stop Python sidecar: {error}");
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(error) => eprintln!("{error}"),
-                }
+                kill_sidecar(window.app_handle());
             }
         })
         .run(tauri::generate_context!())
@@ -126,8 +158,14 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::with_sidecar_slot;
-    use std::sync::{Arc, Mutex};
+    use super::{
+        embedded_node_dir, embedded_python_dir, embedded_runtime_envs, with_sidecar_slot,
+        EMBEDDED_NODE_ENV_VAR, EMBEDDED_PYTHON_ENV_VAR,
+    };
+    use std::{
+        path::Path,
+        sync::{Arc, Mutex},
+    };
 
     #[test]
     fn with_sidecar_slot_updates_healthy_mutex() {
@@ -151,5 +189,37 @@ mod tests {
         let result = with_sidecar_slot(&state, |slot| slot.take());
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn embedded_runtime_helpers_use_resource_dir_without_product_name_assumptions() {
+        let resource_dir = Path::new(r"C:\release-root\custom-product\resources");
+
+        assert_eq!(
+            resource_dir.join("runtimes").join("python"),
+            embedded_python_dir(resource_dir)
+        );
+        assert_eq!(
+            resource_dir.join("runtimes").join("node"),
+            embedded_node_dir(resource_dir)
+        );
+    }
+
+    #[test]
+    fn embedded_runtime_envs_include_python_and_node_variables() {
+        let resource_dir = Path::new(r"C:\release-root\resources");
+
+        let envs = embedded_runtime_envs(resource_dir);
+
+        assert_eq!(EMBEDDED_PYTHON_ENV_VAR, envs[0].0);
+        assert_eq!(
+            resource_dir.join("runtimes").join("python").display().to_string(),
+            envs[0].1
+        );
+        assert_eq!(EMBEDDED_NODE_ENV_VAR, envs[1].0);
+        assert_eq!(
+            resource_dir.join("runtimes").join("node").display().to_string(),
+            envs[1].1
+        );
     }
 }

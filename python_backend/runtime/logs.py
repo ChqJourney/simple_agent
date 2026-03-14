@@ -2,13 +2,15 @@ import json
 import logging
 from pathlib import Path
 
+from core.user import validate_session_id
 from runtime.events import RunEvent
 
 logger = logging.getLogger(__name__)
 
 
 def append_run_event(workspace_path: str, session_id: str, event: RunEvent) -> None:
-    log_path = Path(workspace_path) / ".agent" / "logs" / f"{session_id}.jsonl"
+    safe_session_id = validate_session_id(session_id)
+    log_path = Path(workspace_path) / ".agent" / "logs" / f"{safe_session_id}.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:

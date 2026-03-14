@@ -87,6 +87,33 @@ class MultimodalMessageTests(unittest.TestCase):
                 llm_messages[0]["content"],
             )
 
+    def test_get_messages_for_llm_preserves_assistant_reasoning_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session = Session("session-1", temp_dir)
+            session.add_message(
+                Message(
+                    role="assistant",
+                    content="I'll inspect that.",
+                    reasoning_content="Need to check file layout first.",
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": "{\"path\":\"README.md\"}",
+                            },
+                        }
+                    ],
+                )
+            )
+
+            llm_messages = session.get_messages_for_llm()
+
+            self.assertEqual("assistant", llm_messages[0]["role"])
+            self.assertEqual("Need to check file layout first.", llm_messages[0]["reasoning_content"])
+            self.assertEqual("read_file", llm_messages[0]["tool_calls"][0]["function"]["name"])
+
 
 if __name__ == "__main__":
     unittest.main()

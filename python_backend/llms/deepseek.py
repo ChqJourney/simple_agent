@@ -19,6 +19,7 @@ class DeepSeekLLM(BaseLLM):
         self.client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
+            timeout=self._get_timeout_seconds(),
         )
 
     def _build_request_kwargs(

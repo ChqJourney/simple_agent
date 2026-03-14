@@ -98,6 +98,20 @@ class BaseLLM(ABC):
             return parsed
         return get_default_context_length(str(self.config.get("provider") or ""), self.model)
 
+    def _get_timeout_seconds(self, default: float = 60.0) -> float:
+        value = self.config.get("timeout_seconds")
+        if value in (None, ""):
+            runtime = self.config.get("runtime")
+            if isinstance(runtime, dict):
+                value = runtime.get("timeout_seconds")
+
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = default
+
+        return parsed if parsed > 0 else default
+
     @staticmethod
     def _coerce_usage_field(raw_usage: Any, field: str) -> Optional[int]:
         if isinstance(raw_usage, dict):

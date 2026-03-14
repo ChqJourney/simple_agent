@@ -39,6 +39,16 @@ fn authorize_workspace_path(
 
 pub struct PythonSidecar(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
+fn with_sidecar_slot<T, F, R>(mutex: &Mutex<Option<T>>, action: F) -> Result<R, String>
+where
+    F: FnOnce(&mut Option<T>) -> R,
+{
+    let mut guard = mutex
+        .lock()
+        .map_err(|_| "Python sidecar state lock poisoned".to_string())?;
+    Ok(action(&mut *guard))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -65,12 +75,17 @@ pub fn run() {
                 use tauri_plugin_shell::ShellExt;
                 
                 let shell = _app.shell();
-                let sidecar_command = shell.sidecar("python_backend").expect("Failed to create sidecar command");
+                let sidecar_command = shell
+                    .sidecar("python_backend")
+                    .map_err(|error| std::io::Error::other(format!("Failed to create Python sidecar command: {error}")))?;
                 
-                let (mut rx, child) = sidecar_command.spawn().expect("Failed to spawn Python sidecar");
+                let (mut rx, child) = sidecar_command
+                    .spawn()
+                    .map_err(|error| std::io::Error::other(format!("Failed to spawn Python sidecar: {error}")))?;
                 
                 let sidecar = _app.state::<PythonSidecar>();
-                *sidecar.0.lock().unwrap() = Some(child);
+                with_sidecar_slot(&sidecar.0, |slot| *slot = Some(child))
+                    .map_err(std::io::Error::other)?;
                 
                 tauri::async_runtime::spawn(async move {
                     use tauri_plugin_shell::process::CommandEvent;
@@ -94,11 +109,47 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let app = window.app_handle();
                 let sidecar = app.state::<PythonSidecar>();
-                if let Some(child) = sidecar.0.lock().unwrap().take() {
-                    let _ = child.kill();
-                };
+                match with_sidecar_slot(&sidecar.0, |slot| slot.take()) {
+                    Ok(Some(child)) => {
+                        if let Err(error) = child.kill() {
+                            eprintln!("Failed to stop Python sidecar: {error}");
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => eprintln!("{error}"),
+                }
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|error| eprintln!("error while running tauri application: {error}"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_sidecar_slot;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn with_sidecar_slot_updates_healthy_mutex() {
+        let state = Mutex::new(Some(1_u8));
+
+        let value = with_sidecar_slot(&state, |slot| slot.take()).expect("slot mutation should succeed");
+
+        assert_eq!(Some(1_u8), value);
+    }
+
+    #[test]
+    fn with_sidecar_slot_returns_error_for_poisoned_mutex() {
+        let state = Arc::new(Mutex::new(None::<u8>));
+        let cloned = Arc::clone(&state);
+
+        let _ = std::panic::catch_unwind(move || {
+            let _guard = cloned.lock().expect("poison test lock");
+            panic!("poison sidecar state");
+        });
+
+        let result = with_sidecar_slot(&state, |slot| slot.take());
+
+        assert!(result.is_err());
+    }
 }

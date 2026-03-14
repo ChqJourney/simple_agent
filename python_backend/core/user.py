@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import mimetypes
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,14 @@ logger = logging.getLogger(__name__)
 
 SendCallback = Callable[[Dict[str, Any]], Awaitable[None]]
 ConnectionId = str
+SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def validate_session_id(session_id: str) -> str:
+    normalized = str(session_id or "").strip()
+    if not SESSION_ID_PATTERN.fullmatch(normalized):
+        raise ValueError(f"Invalid session_id: {session_id}")
+    return normalized
 
 
 class Message(BaseModel):
@@ -41,7 +50,7 @@ class Session:
         title: Optional[str] = None,
         locked_model: Optional[LockedModelRef] = None,
     ):
-        self.session_id = session_id
+        self.session_id = validate_session_id(session_id)
         self.workspace_path = workspace_path
         self.messages: List[Message] = []
         self.created_at = datetime.now(timezone.utc)
@@ -149,6 +158,8 @@ class Session:
                 llm_msg["tool_call_id"] = msg.tool_call_id
             if msg.name is not None:
                 llm_msg["name"] = msg.name
+            if msg.reasoning_content is not None:
+                llm_msg["reasoning_content"] = msg.reasoning_content
             result.append(llm_msg)
         return result
 

@@ -11,6 +11,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.agent import Agent
 from core.user import Session, UserManager
+from runtime.events import RunEvent
+from runtime.logs import append_run_event
 from tools.base import ToolRegistry
 
 
@@ -104,6 +106,23 @@ class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertTrue(any(entry["event_type"] == "retry_scheduled" for entry in log_entries))
         self.assertTrue(any(entry["event_type"] == "run_completed" for entry in log_entries))
+
+    async def test_session_rejects_path_traversal_session_ids(self) -> None:
+        with self.assertRaises(ValueError):
+            Session("../escape", self.temp_dir.name)
+
+    async def test_run_logging_rejects_path_traversal_session_ids(self) -> None:
+        with self.assertRaises(ValueError):
+            append_run_event(
+                self.temp_dir.name,
+                "../escape",
+                RunEvent(
+                    event_type="run_started",
+                    session_id="session-1",
+                    run_id="run-1",
+                    payload={},
+                ),
+            )
 
 
 if __name__ == "__main__":

@@ -25,6 +25,7 @@ class OllamaLLM(BaseLLM):
         config_with_defaults = {**config, 'base_url': base_url}
         super().__init__(config_with_defaults)
         self.enable_reasoning = bool(config.get('enable_reasoning', False))
+        self.request_timeout = aiohttp.ClientTimeout(total=self._get_timeout_seconds())
 
     def _build_payload(self, messages: List[Dict], tools: Optional[List[Dict]], stream: bool) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
@@ -48,7 +49,7 @@ class OllamaLLM(BaseLLM):
         payload = self._build_payload(messages, tools, True)
         self.reset_latest_usage()
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.request_timeout) as session:
             async with session.post(url, json=payload) as response:
                 response.raise_for_status()
                 async for line in response.content:
@@ -67,7 +68,7 @@ class OllamaLLM(BaseLLM):
         payload = self._build_payload(messages, tools, False)
         self.reset_latest_usage()
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.request_timeout) as session:
             async with session.post(url, json=payload) as response:
                 response.raise_for_status()
                 data = await response.json()

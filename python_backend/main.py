@@ -178,6 +178,12 @@ def _runtime_policy_value(runtime_policy: Dict[str, Any], key: str, default: int
     return parsed if parsed > 0 else default
 
 
+async def _release_reserved_session(session_id: str) -> None:
+    async with state_lock:
+        if runtime_state.active_session_tasks.get(session_id) is SESSION_TASK_RESERVED:
+            runtime_state.active_session_tasks.pop(session_id, None)
+
+
 async def get_or_create_agent(
     session_id: str,
     profile_config: Dict[str, Any],
@@ -382,6 +388,7 @@ async def handle_user_message(
             active_lock_ref = lock_ref_from_profile(active_profile) if active_profile else None
 
             if session.locked_model and (not active_profile or not session_lock_matches_profile(session.locked_model, active_profile)):
+                await _release_reserved_session(session_id)
                 await send_callback({
                     "type": "error",
                     "session_id": session_id,
@@ -404,6 +411,7 @@ async def handle_user_message(
         await user_manager.bind_session_to_connection(session_id, connection_id)
 
         if not active_profile:
+            await _release_reserved_session(session_id)
             await send_callback({
                 "type": "error",
                 "session_id": session_id,
@@ -413,6 +421,7 @@ async def handle_user_message(
 
         agent = await get_or_create_agent(session_id, active_profile, runtime_policy)
         if not agent:
+            await _release_reserved_session(session_id)
             await send_callback({
                 "type": "error",
                 "session_id": session_id,
@@ -457,9 +466,7 @@ async def handle_user_message(
 
     except Exception as e:
         if session_reserved:
-            async with state_lock:
-                if runtime_state.active_session_tasks.get(session_id) is SESSION_TASK_RESERVED:
-                    runtime_state.active_session_tasks.pop(session_id, None)
+            await _release_reserved_session(session_id)
         logger.exception(f"Failed to handle user message: {e}")
         await send_callback({
             "type": "error",

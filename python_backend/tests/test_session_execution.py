@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import main as backend_main
 from core.user import Message, UserManager
+from runtime.contracts import LockedModelRef
 
 
 class FakeAgent:
@@ -367,6 +368,33 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
             any(
                 message.get("type") == "session_title_updated"
                 and message.get("title") == "Friendly greeting"
+                for message in self.messages
+            )
+        )
+
+    async def test_releases_reserved_session_when_locked_model_rejects_request(self) -> None:
+        session = await backend_main.user_manager.create_session(self.temp_dir.name, "session-a")
+        session.locked_model = LockedModelRef(
+            profile_name="primary",
+            provider="openai",
+            model="gpt-4o-mini",
+        )
+
+        await backend_main.handle_user_message(
+            {
+                "session_id": "session-a",
+                "content": "hello",
+                "workspace_path": self.temp_dir.name,
+            },
+            self.send_callback,
+            "conn-a",
+        )
+
+        self.assertNotIn("session-a", backend_main.runtime_state.active_session_tasks)
+        self.assertTrue(
+            any(
+                message.get("type") == "error"
+                and "locked to" in message.get("error", "")
                 for message in self.messages
             )
         )

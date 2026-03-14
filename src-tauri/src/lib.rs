@@ -73,6 +73,91 @@ fn embedded_runtime_envs(resource_dir: &Path) -> [(String, String); 2] {
     ]
 }
 
+#[cfg(all(windows, not(debug_assertions)))]
+mod sidecar_job {
+    //! Windows Job Object that auto-kills the sidecar when the host process exits.
+    //!
+    //! The Job Object handle is intentionally kept alive for the entire process
+    //! lifetime (stored in a `Box` that is leaked). When the host process exits
+    //! for any reason, the OS closes all handles, which triggers
+    //! JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE and terminates every process in the job.
+
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE},
+        System::{
+            JobObjects::{
+                AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+                SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            },
+            Threading::{OpenProcess, PROCESS_ALL_ACCESS},
+        },
+    };
+
+    pub struct JobObject(HANDLE);
+
+    // SAFETY: The HANDLE is valid as long as JobObject is alive.
+    // We only store it in a global-lifetime Box (via Box::leak), so Send is safe.
+    unsafe impl Send for JobObject {}
+    unsafe impl Sync for JobObject {}
+
+    impl Drop for JobObject {
+        fn drop(&mut self) {
+            // Normally never called (we leak the Box), but correct to implement.
+            unsafe { CloseHandle(self.0) };
+        }
+    }
+
+    /// Creates a Job Object with KILL_ON_JOB_CLOSE set.
+    /// Returns `None` if any Win32 API call fails (non-fatal; caller falls back gracefully).
+    pub fn create_kill_on_close_job() -> Option<JobObject> {
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job == 0 {
+                eprintln!("[JobObject] CreateJobObjectW failed");
+                return None;
+            }
+
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+            let ok = SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &raw const info as *const _,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            if ok == 0 {
+                eprintln!("[JobObject] SetInformationJobObject failed");
+                CloseHandle(job);
+                return None;
+            }
+
+            Some(JobObject(job))
+        }
+    }
+
+    /// Opens a handle to the process with the given PID and assigns it to the job.
+    /// Logs on failure but does not propagate error (non-fatal).
+    pub fn bind_pid_to_job(job: &JobObject, pid: u32) {
+        unsafe {
+            let proc = OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
+            if proc == 0 {
+                eprintln!("[JobObject] OpenProcess failed for PID {pid}");
+                return;
+            }
+
+            if AssignProcessToJobObject(job.0, proc) == 0 {
+                eprintln!("[JobObject] AssignProcessToJobObject failed for PID {pid}");
+            } else {
+                println!("[JobObject] Sidecar PID {pid} bound to kill-on-close Job Object");
+            }
+
+            CloseHandle(proc);
+        }
+    }
+}
+
 fn kill_sidecar(app: &tauri::AppHandle) {
     let sidecar = app.state::<PythonSidecar>();
     match with_sidecar_slot(&sidecar.0, |slot| slot.take()) {
@@ -128,7 +213,27 @@ pub fn run() {
                 let sidecar = _app.state::<PythonSidecar>();
                 with_sidecar_slot(&sidecar.0, |slot| *slot = Some(child))
                     .map_err(std::io::Error::other)?;
-                
+
+                // Windows: bind sidecar to a Job Object so the OS kills it when host exits.
+                #[cfg(windows)]
+                {
+                    use sidecar_job::{bind_pid_to_job, create_kill_on_close_job};
+                    if let Some(job) = create_kill_on_close_job() {
+                        // Read PID from the slot without taking it
+                        let pid = _app
+                            .state::<PythonSidecar>()
+                            .0
+                            .lock()
+                            .ok()
+                            .and_then(|guard| guard.as_ref().map(|c| c.pid()));
+                        if let Some(pid) = pid {
+                            bind_pid_to_job(&job, pid);
+                        }
+                        // Leak the Job Object — its handle must outlive the process.
+                        Box::leak(Box::new(job));
+                    }
+                }
+
                 tauri::async_runtime::spawn(async move {
                     use tauri_plugin_shell::process::CommandEvent;
                     while let Some(event) = rx.recv().await {

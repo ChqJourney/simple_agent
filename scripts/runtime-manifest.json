@@ -1,0 +1,13 @@
+{
+  "python": {
+    "version": "3.13.12",
+    "installer": "python-3.13.12-amd64.exe"
+  },
+  "node": {
+    "version": "22.22.1",
+    "archive": "node-v22.22.1-win-x64.zip"
+  },
+  "build": {
+    "backendSidecarBaseName": "python_backend"
+  }
+}

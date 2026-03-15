@@ -1,7 +1,8 @@
 import asyncio
-import sys
 from pathlib import Path
 from typing import Any, Optional
+
+from runtime.embedded_runtime import get_python_executable
 
 from .base import BaseTool, ToolResult
 from .policies import ToolExecutionPolicy
@@ -48,8 +49,9 @@ class PythonExecuteTool(BaseTool):
             )
 
         cwd = str(Path(workspace_path).resolve()) if workspace_path else None
+        python_executable = str(get_python_executable())
         process = await asyncio.create_subprocess_exec(
-            sys.executable,
+            python_executable,
             "-c",
             code,
             cwd=cwd,

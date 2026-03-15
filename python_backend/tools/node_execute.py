@@ -2,6 +2,8 @@ import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
+from runtime.embedded_runtime import get_node_executable
+
 from .base import BaseTool, ToolResult
 from .policies import ToolExecutionPolicy
 
@@ -47,8 +49,9 @@ class NodeExecuteTool(BaseTool):
             )
 
         cwd = str(Path(workspace_path).resolve()) if workspace_path else None
+        node_executable = str(get_node_executable())
         process = await asyncio.create_subprocess_exec(
-            "node",
+            node_executable,
             "-e",
             code,
             cwd=cwd,

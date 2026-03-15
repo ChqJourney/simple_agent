@@ -3789,6 +3789,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-shell",
  "tempfile",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

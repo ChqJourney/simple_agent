@@ -165,7 +165,7 @@ function normalizePersistedUsage(rawUsage: unknown): Message['usage'] {
     return undefined;
   }
 
-  const candidate = rawUsage as Partial<Message['usage']>;
+  const candidate = rawUsage as Partial<NonNullable<Message['usage']>>;
 
   if (
     typeof candidate.prompt_tokens !== 'number'

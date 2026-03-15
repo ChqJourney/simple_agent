@@ -33,4 +33,7 @@ __pycache__
 .agent
 *.exe
 binaries
+tmp/runtime-stage
+src-tauri/resources/runtimes
+artifacts
 

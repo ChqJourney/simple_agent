@@ -113,7 +113,7 @@ mod sidecar_job {
     pub fn create_kill_on_close_job() -> Option<JobObject> {
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if job == 0 {
+            if job.is_null() {
                 eprintln!("[JobObject] CreateJobObjectW failed");
                 return None;
             }
@@ -142,7 +142,7 @@ mod sidecar_job {
     pub fn bind_pid_to_job(job: &JobObject, pid: u32) {
         unsafe {
             let proc = OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
-            if proc == 0 {
+            if proc.is_null() {
                 eprintln!("[JobObject] OpenProcess failed for PID {pid}");
                 return;
             }

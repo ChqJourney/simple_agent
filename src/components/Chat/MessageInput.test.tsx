@@ -96,4 +96,13 @@ describe("MessageInput", () => {
       ]
     );
   });
+
+  it("shows execution mode selector with Regular and Free options", () => {
+    render(<MessageInput onSend={vi.fn()} />);
+
+    const selector = screen.getByLabelText("Execution mode") as HTMLSelectElement;
+    expect(selector.value).toBe("regular");
+    expect(screen.getByRole("option", { name: "Regular" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Free" })).toBeTruthy();
+  });
 });

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
@@ -6,7 +6,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useSession } from '../../hooks/useSession';
-import { Attachment, PendingQuestion, ToolDecision, ToolDecisionScope } from '../../types';
+import { Attachment, ExecutionMode, PendingQuestion, ToolDecision, ToolDecisionScope } from '../../types';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { PendingQuestionCard, ToolConfirmModal } from '../Tools';
@@ -25,10 +25,12 @@ const emptySession = {
 
 export const ChatContainer = () => {
   const { currentSessionId, createSession } = useSession();
-  const { sendMessage, answerQuestion, isConnected, confirmTool, interrupt } = useWebSocket();
+  const { sendMessage, answerQuestion, isConnected, confirmTool, interrupt, setExecutionMode } = useWebSocket();
   const { currentWorkspace } = useWorkspaceStore();
   const config = useConfigStore((state) => state.config);
   const updateSession = useSessionStore((state) => state.updateSession);
+  const [sessionExecutionModes, setSessionExecutionModes] = useState<Record<string, ExecutionMode>>({});
+  const [draftExecutionMode, setDraftExecutionMode] = useState<ExecutionMode>('regular');
 
   const {
     messages,
@@ -74,10 +76,35 @@ export const ChatContainer = () => {
       });
     }
 
+    const effectiveMode = (sessionId && sessionExecutionModes[sessionId]) || draftExecutionMode;
+    if (sessionId) {
+      setExecutionMode(sessionId, effectiveMode);
+      setSessionExecutionModes((previous) => ({
+        ...previous,
+        [sessionId as string]: effectiveMode,
+      }));
+    }
+
     useChatStore.getState().clearPendingQuestion(sessionId);
     useChatStore.getState().addUserMessage(sessionId, content, attachments);
     sendMessage(sessionId, content, attachments, currentWorkspace?.path);
-  }, [config, currentSessionId, createSession, sendMessage, currentWorkspace?.path, updateSession]);
+  }, [config, currentSessionId, createSession, draftExecutionMode, sendMessage, currentWorkspace?.path, sessionExecutionModes, setExecutionMode, updateSession]);
+
+  const handleExecutionModeChange = useCallback((mode: ExecutionMode) => {
+    setDraftExecutionMode(mode);
+    if (!currentSessionId) {
+      return;
+    }
+    setSessionExecutionModes((previous) => ({
+      ...previous,
+      [currentSessionId]: mode,
+    }));
+    setExecutionMode(currentSessionId, mode);
+  }, [currentSessionId, setExecutionMode]);
+
+  const activeExecutionMode = currentSessionId
+    ? (sessionExecutionModes[currentSessionId] || draftExecutionMode)
+    : draftExecutionMode;
 
   const handleToolDecision = useCallback((decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
     if (!currentSessionId || !pendingToolConfirm) return;
@@ -131,6 +158,8 @@ export const ChatContainer = () => {
 
       <MessageInput
         onSend={handleSend}
+        executionMode={activeExecutionMode}
+        onExecutionModeChange={handleExecutionModeChange}
         onInterrupt={handleInterrupt}
         isStreaming={isStreaming}
         disabled={!isConnected}

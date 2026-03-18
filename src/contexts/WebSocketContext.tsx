@@ -15,6 +15,7 @@ import {
   ToolDecision,
   ToolDecisionScope,
   ProviderConfig,
+  ExecutionMode,
 } from '../types';
 import { normalizeProviderConfig } from '../utils/config';
 import { backendAuthTokenUrl } from '../utils/backendEndpoint';
@@ -30,12 +31,23 @@ interface WebSocketContextValue {
   confirmTool: (toolCallId: string, decision: ToolDecision, scope?: ToolDecisionScope) => void;
   interrupt: (sessionId: string) => void;
   sendWorkspace: (workspacePath: string) => void;
+  setExecutionMode: (sessionId: string, mode: ExecutionMode) => boolean;
 }
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
+const TASK_STATUS_VALUES: Task['status'][] = ['pending', 'in_progress', 'completed', 'failed'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function normalizeTaskStatus(candidate: unknown): Task['status'] {
+  if (typeof candidate !== 'string') {
+    return 'pending';
+  }
+  return TASK_STATUS_VALUES.includes(candidate as Task['status'])
+    ? (candidate as Task['status'])
+    : 'pending';
 }
 
 function normalizeTaskNode(candidate: unknown): TaskNode | undefined {
@@ -46,7 +58,7 @@ function normalizeTaskNode(candidate: unknown): TaskNode | undefined {
   return {
     id: candidate.id,
     content: typeof candidate.content === 'string' ? candidate.content : '',
-    status: (candidate.status as Task['status']) || 'pending',
+    status: normalizeTaskStatus(candidate.status),
     subTasks: Array.isArray(candidate.subTasks)
       ? candidate.subTasks
           .map((item) => normalizeTaskNode(item))
@@ -206,6 +218,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           break;
         case 'workspace_updated':
           console.log('Workspace updated:', data.workspace_path);
+          break;
+        case 'execution_mode_updated':
+          console.log('Execution mode updated:', data.session_id, data.execution_mode);
           break;
         case 'session_title_updated':
           useSessionStore.getState().updateSession(data.session_id, { title: data.title });
@@ -383,8 +398,16 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     send({ type: 'set_workspace', workspace_path: workspacePath });
   }, [send]);
 
+  const setExecutionMode = useCallback((sessionId: string, mode: ExecutionMode) => {
+    return send({
+      type: 'set_execution_mode',
+      session_id: sessionId,
+      execution_mode: mode,
+    });
+  }, [send]);
+
   return (
-    <WebSocketContext.Provider value={{ connectionStatus, isConnected, sendMessage, answerQuestion, sendConfig, confirmTool, interrupt, sendWorkspace }}>
+    <WebSocketContext.Provider value={{ connectionStatus, isConnected, sendMessage, answerQuestion, sendConfig, confirmTool, interrupt, sendWorkspace, setExecutionMode }}>
       {children}
     </WebSocketContext.Provider>
   );

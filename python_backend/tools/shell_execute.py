@@ -3,20 +3,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .base import BaseTool, ToolResult
+from .execution_common import MAX_OUTPUT_BYTES, format_process_output, normalize_timeout
 from .policies import ToolExecutionPolicy
-
-MIN_TIMEOUT_SECONDS = 1
-MAX_TIMEOUT_SECONDS = 120
-
-
-def _normalize_timeout(timeout_seconds: Any, default_timeout: int = 30) -> int:
-    try:
-        parsed = int(timeout_seconds)
-    except (TypeError, ValueError):
-        parsed = default_timeout
-    if parsed < MIN_TIMEOUT_SECONDS:
-        return default_timeout
-    return min(parsed, MAX_TIMEOUT_SECONDS)
 
 
 class ShellExecuteTool(BaseTool):
@@ -59,7 +47,7 @@ class ShellExecuteTool(BaseTool):
                 error="Command is empty",
             )
 
-        normalized_timeout = _normalize_timeout(timeout_seconds, self.policy.timeout_seconds)
+        normalized_timeout = normalize_timeout(timeout_seconds, self.policy.timeout_seconds)
         cwd = str(Path(workspace_path).resolve()) if workspace_path else None
         process = await asyncio.create_subprocess_shell(
             command,
@@ -86,11 +74,17 @@ class ShellExecuteTool(BaseTool):
             raise
 
         exit_code = process.returncode or 0
+        capture_output = bool(getattr(self.policy, "capture_output", True))
+
         output = {
             "command": command,
             "exit_code": exit_code,
-            "stdout": stdout.decode("utf-8", errors="replace").strip(),
-            "stderr": stderr.decode("utf-8", errors="replace").strip(),
+            **format_process_output(
+                stdout=stdout,
+                stderr=stderr,
+                capture_output=capture_output,
+                max_bytes=MAX_OUTPUT_BYTES,
+            ),
         }
         return ToolResult(
             tool_call_id=tool_call_id,

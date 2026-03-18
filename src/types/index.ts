@@ -5,6 +5,7 @@ export type MessageStatus = 'streaming' | 'completed' | 'error';
 export type UserMessageStatus = 'sending' | 'sent';
 
 export type AssistantStatus = 'idle' | 'waiting' | 'thinking' | 'streaming' | 'tool_calling' | 'completed';
+export type ExecutionMode = 'regular' | 'free';
 
 export type ToolDecision = 'approve_once' | 'approve_always' | 'reject';
 export type ToolDecisionScope = 'session' | 'workspace';
@@ -217,13 +218,20 @@ export interface ClientSetWorkspace {
   workspace_path: string;
 }
 
+export interface ClientSetExecutionMode {
+  type: 'set_execution_mode';
+  session_id: string;
+  execution_mode: ExecutionMode;
+}
+
 export type ClientWebSocketMessage =
   | ClientMessage
   | ClientConfig
   | ClientToolConfirm
   | ClientQuestionResponse
   | ClientInterrupt
-  | ClientSetWorkspace;
+  | ClientSetWorkspace
+  | ClientSetExecutionMode;
 
 export interface ServerToken {
   type: 'token';
@@ -336,6 +344,12 @@ export interface ServerWorkspaceUpdated {
   workspace_path: string;
 }
 
+export interface ServerExecutionModeUpdated {
+  type: 'execution_mode_updated';
+  session_id: string;
+  execution_mode: ExecutionMode;
+}
+
 export interface ServerSessionTitleUpdated {
   type: 'session_title_updated';
   session_id: string;
@@ -371,6 +385,7 @@ export type ServerWebSocketMessage =
   | ServerInterrupted
   | ServerConfigUpdated
   | ServerWorkspaceUpdated
+  | ServerExecutionModeUpdated
   | ServerSessionTitleUpdated
   | ServerSessionLockUpdated
   | ServerRunEvent;

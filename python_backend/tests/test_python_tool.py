@@ -74,6 +74,45 @@ class PythonExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.success)
         self.assertEqual(sys.executable, fake_subprocess.await_args.args[0])
 
+    async def test_python_tool_truncates_large_outputs(self) -> None:
+        fake_subprocess = AsyncMock(
+            return_value=FakeProcess(stdout=(b"x" * 80000), stderr=b"", returncode=0)
+        )
+
+        with patch("tools.python_execute.asyncio.create_subprocess_exec", fake_subprocess):
+            result = await PythonExecuteTool().execute(
+                tool_call_id="python-large-output",
+                code="print('x' * 80000)",
+            )
+
+        self.assertTrue(result.success)
+        self.assertTrue(result.output["stdout_truncated"])
+        self.assertFalse(result.output["stderr_truncated"])
+        self.assertLessEqual(
+            len(result.output["stdout"].encode("utf-8")),
+            result.output["output_max_bytes"],
+        )
+
+    async def test_python_tool_respects_capture_output_policy(self) -> None:
+        fake_subprocess = AsyncMock(
+            return_value=FakeProcess(stdout=b"secret", stderr=b"warn", returncode=0)
+        )
+        tool = PythonExecuteTool()
+        tool.policy.capture_output = False
+
+        with patch("tools.python_execute.asyncio.create_subprocess_exec", fake_subprocess):
+            result = await tool.execute(
+                tool_call_id="python-no-capture",
+                code="print('secret')",
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual("", result.output["stdout"])
+        self.assertEqual("", result.output["stderr"])
+        self.assertFalse(result.output["stdout_truncated"])
+        self.assertFalse(result.output["stderr_truncated"])
+        self.assertFalse(result.output["captured_output"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,9 @@ from typing import Any, Dict, List, Optional
 
 from .base import BaseTool, ToolResult
 
+ALLOWED_ACTIONS = {"create", "update", "complete", "remove"}
+ALLOWED_STATUS = {"pending", "in_progress", "completed", "failed"}
+
 
 def _normalize_task(candidate: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -58,6 +61,24 @@ class TodoTaskTool(BaseTool):
         sub_tasks: Optional[List[Dict[str, Any]]] = None,
         **kwargs: Any,
     ) -> ToolResult:
+        if action not in ALLOWED_ACTIONS:
+            return ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=self.name,
+                success=False,
+                output=None,
+                error=f"Invalid value for 'action': {action}",
+            )
+
+        if status not in ALLOWED_STATUS:
+            return ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=self.name,
+                success=False,
+                output=None,
+                error=f"Invalid value for 'status': {status}",
+            )
+
         task = {
             "id": task_id or str(uuid.uuid4()),
             "content": content,

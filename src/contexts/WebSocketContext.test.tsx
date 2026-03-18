@@ -62,6 +62,7 @@ function emitStatus(nextStatus: ConnectionStatus) {
 function Probe() {
   const context = useWebSocket() as ReturnType<typeof useWebSocket> & {
     connectionStatus?: ConnectionStatus;
+    setExecutionMode?: (sessionId: string, mode: "regular" | "free") => void;
   };
 
   return (
@@ -75,6 +76,13 @@ function Probe() {
         aria-label="answer question"
       >
         answer
+      </button>
+      <button
+        type="button"
+        onClick={() => context.setExecutionMode?.("session-a", "free")}
+        aria-label="set execution mode"
+      >
+        mode
       </button>
       <div data-testid="status">{context.connectionStatus ?? ""}</div>
     </>
@@ -232,6 +240,45 @@ describe("WebSocketProvider", () => {
     });
   });
 
+  it("falls back to pending status for invalid todo_task statuses", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "tool_result",
+      session_id: "session-a",
+      tool_call_id: "todo-2",
+      tool_name: "todo_task",
+      success: true,
+      output: {
+        event: "todo_task",
+        action: "create",
+        task: {
+          id: "task-invalid",
+          content: "Ship Task 6",
+          status: "blocked",
+          subTasks: [
+            {
+              id: "sub-invalid",
+              content: "Invalid sub status",
+              status: 123,
+            },
+          ],
+        },
+      },
+    });
+
+    await waitFor(() => {
+      const tasks = useTaskStore.getState().getTasksBySession("session-a");
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]?.status).toBe("pending");
+      expect(tasks[0]?.subTasks?.[0]?.status).toBe("pending");
+    });
+  });
+
   it("tracks file_write tool results for file tree highlights", async () => {
     render(
       <WebSocketProvider>
@@ -378,6 +425,24 @@ describe("WebSocketProvider", () => {
       tool_call_id: "question-1",
       answer: "continue",
       action: "submit",
+    });
+  });
+
+  it("sends execution mode updates", async () => {
+    websocketMockState.sendSucceeded = true;
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "set execution mode" }));
+
+    expect(websocketMockState.sendMock).toHaveBeenCalledWith({
+      type: "set_execution_mode",
+      session_id: "session-a",
+      execution_mode: "free",
     });
   });
 });

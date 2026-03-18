@@ -223,6 +223,25 @@ Workspace
 - `Runtime Limits` now displays explicit defaults when users have not set custom values: `context_length=64000`, `max_output_tokens=4000`, `max_tool_rounds=8`, `max_retries=3`.
 - `Appearance` now includes `Base Font Size`, persisted via `appearance.base_font_size` and applied globally in the frontend runtime.
 
+## Tool System Updates (2026-03-18)
+
+- Added execution mode selector near chat composer: `Regular` and `Free`.
+- `Regular` mode keeps confirmation flow for tools with `require_confirmation=true`.
+- `Free` mode bypasses confirmation for all tool executions within the current session.
+- Tool confirmation modal now supports:
+  - `Approve Once`
+  - `Always This Session`
+  - `Always This Workspace`
+  - `Reject`
+- Tool auto-approval policies are now persisted to `~/.agent/tool-policies.json` and reloaded on backend startup.
+- Execution tools (`shell_execute`, `python_execute`, `node_execute`) now return bounded output metadata:
+  - `stdout_truncated`
+  - `stderr_truncated`
+  - `captured_output`
+  - `output_max_bytes`
+- Tool argument validation now runs before tool execution for required fields and enum constraints.
+- See also: `docs/tool-system-current-state.md`.
+
 ## Run Event 模型
 
 agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agent/logs/`。

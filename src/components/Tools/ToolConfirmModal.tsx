@@ -41,10 +41,16 @@ export const ToolConfirmModal: React.FC<ToolConfirmModalProps> = ({
             Approve Once
           </button>
           <button
+            onClick={() => onDecision('approve_always', 'session')}
+            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors"
+          >
+            Always This Session
+          </button>
+          <button
             onClick={() => onDecision('approve_always', 'workspace')}
             className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
           >
-            Always Approve
+            Always This Workspace
           </button>
         </div>
       </div>

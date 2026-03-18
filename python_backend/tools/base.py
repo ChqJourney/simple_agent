@@ -36,6 +36,10 @@ class BaseTool(ABC):
     require_confirmation: bool = False
     policy: ToolExecutionPolicy = ToolExecutionPolicy()
 
+    def __init__(self) -> None:
+        # Avoid shared mutable class-level policy state leaking across instances/tests.
+        self.policy = self.__class__.policy.model_copy(deep=True)
+
     def descriptor(self) -> ToolDescriptor:
         return ToolDescriptor(
             name=self.name,

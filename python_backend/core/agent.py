@@ -131,7 +131,7 @@ class Agent:
                         role="tool",
                         tool_call_id=result.tool_call_id,
                         name=result.tool_name,
-                        content=str(content)
+                        content=self._serialize_tool_message_content(content)
                     ))
 
             await self._emit_run_event(
@@ -236,6 +236,60 @@ class Agent:
         if isinstance(tool_call_delta, dict):
             return tool_call_delta.get(field)
         return getattr(tool_call_delta, field, None)
+
+    @staticmethod
+    def _serialize_tool_message_content(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, (dict, list, int, float, bool)) or content is None:
+            try:
+                return json.dumps(content, ensure_ascii=False)
+            except TypeError:
+                return str(content)
+        return str(content)
+
+    @staticmethod
+    def _validate_tool_arguments(tool: BaseTool, arguments: Dict[str, Any]) -> Optional[str]:
+        schema = getattr(tool, "parameters", None)
+        if not isinstance(schema, dict):
+            return None
+
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            properties = {}
+        required = schema.get("required")
+        if not isinstance(required, list):
+            required = []
+
+        for key in required:
+            if key not in arguments:
+                return f"Missing required argument: {key}"
+
+        type_checkers = {
+            "string": lambda value: isinstance(value, str),
+            "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
+            "number": lambda value: (isinstance(value, int) or isinstance(value, float)) and not isinstance(value, bool),
+            "boolean": lambda value: isinstance(value, bool),
+            "object": lambda value: isinstance(value, dict),
+            "array": lambda value: isinstance(value, list),
+        }
+
+        for key, value in arguments.items():
+            prop_schema = properties.get(key)
+            if not isinstance(prop_schema, dict):
+                continue
+
+            expected_type = prop_schema.get("type")
+            if isinstance(expected_type, str):
+                checker = type_checkers.get(expected_type)
+                if checker and not checker(value):
+                    return f"Invalid type for '{key}': expected {expected_type}"
+
+            enum_values = prop_schema.get("enum")
+            if isinstance(enum_values, list) and value not in enum_values:
+                return f"Invalid value for '{key}': {value}"
+
+        return None
 
     async def _stream_llm_response(
         self,
@@ -382,25 +436,43 @@ class Agent:
                 arguments = json.loads(arguments_str) if arguments_str else {}
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse tool arguments: {e}")
-                tool_results.append(ToolResult(
+                result = ToolResult(
                     tool_call_id=tool_call_id,
                     tool_name=function_name,
                     success=False,
                     output=None,
                     error=f"Invalid JSON in arguments: {e}"
-                ))
+                )
+                tool_results.append(result)
+                await self._emit_pre_execution_tool_failure(session, run_id, result)
                 continue
 
             tool = self.tool_registry.get_tool(function_name)
             if not tool:
                 logger.error(f"Unknown tool: {function_name}")
-                tool_results.append(ToolResult(
+                result = ToolResult(
                     tool_call_id=tool_call_id,
                     tool_name=function_name,
                     success=False,
                     output=None,
                     error=f"Unknown tool: {function_name}"
-                ))
+                )
+                tool_results.append(result)
+                await self._emit_pre_execution_tool_failure(session, run_id, result)
+                continue
+
+            validation_error = self._validate_tool_arguments(tool, arguments)
+            if validation_error:
+                logger.error("Invalid tool arguments for %s: %s", function_name, validation_error)
+                result = ToolResult(
+                    tool_call_id=tool_call_id,
+                    tool_name=function_name,
+                    success=False,
+                    output=None,
+                    error=validation_error,
+                )
+                tool_results.append(result)
+                await self._emit_pre_execution_tool_failure(session, run_id, result)
                 continue
 
             scheduled_calls.append((tool_call_id, function_name))
@@ -427,6 +499,33 @@ class Agent:
                     tool_results.append(result)
 
         return tool_results
+
+    async def _emit_pre_execution_tool_failure(
+        self,
+        session: Session,
+        run_id: str,
+        result: ToolResult,
+    ) -> None:
+        await self.user_manager.send_to_frontend({
+            "type": "tool_result",
+            "session_id": session.session_id,
+            "tool_call_id": result.tool_call_id,
+            "tool_name": result.tool_name,
+            "success": False,
+            "output": None,
+            "error": result.error,
+        })
+        await self._emit_run_event(
+            session,
+            run_id,
+            "tool_execution_completed",
+            {
+                "tool_call_id": result.tool_call_id,
+                "tool_name": result.tool_name,
+                "success": False,
+                "error": result.error,
+            },
+        )
 
     @staticmethod
     def _clamp_tool_timeout_seconds(tool: BaseTool, arguments: Dict[str, Any]) -> int:
@@ -508,8 +607,22 @@ class Agent:
             },
         )
 
+        execution_mode = self.user_manager.get_session_execution_mode(session.session_id)
+
         if tool.require_confirmation:
-            if self.user_manager.is_tool_auto_approved(session.session_id, session.workspace_path, tool.name):
+            if execution_mode == "free":
+                await self._emit_run_event(
+                    session,
+                    run_id,
+                    "tool_confirmation_skipped",
+                    {
+                        "tool_call_id": tool_call_id,
+                        "tool_name": tool.name,
+                        "reason": "execution_mode_free",
+                        "execution_mode": execution_mode,
+                    },
+                )
+            elif self.user_manager.is_tool_auto_approved(session.session_id, session.workspace_path, tool.name):
                 decision_data = {
                     "decision": "approve_always",
                     "scope": "workspace",
@@ -524,56 +637,57 @@ class Agent:
                     arguments=arguments
                 )
 
-            decision = decision_data.get("decision", "reject")
-            scope = decision_data.get("scope", "session")
-            reason = decision_data.get("reason", "user_action")
+            if execution_mode != "free":
+                decision = decision_data.get("decision", "reject")
+                scope = decision_data.get("scope", "session")
+                reason = decision_data.get("reason", "user_action")
 
-            await self.user_manager.send_to_frontend({
-                "type": "tool_decision",
-                "session_id": session.session_id,
-                "tool_call_id": tool_call_id,
-                "name": tool.name,
-                "decision": decision,
-                "scope": scope,
-                "reason": reason
-            })
-
-            session.add_message(Message(
-                role="tool",
-                tool_call_id=tool_call_id,
-                name="tool_decision",
-                content=f"decision={decision}; scope={scope}; reason={reason}"
-            ))
-
-            if decision == "reject":
-                reject_result = ToolResult(
-                    tool_call_id=tool_call_id,
-                    tool_name=tool.name,
-                    success=False,
-                    output=None,
-                    error="Tool execution was not approved by user"
-                )
                 await self.user_manager.send_to_frontend({
-                    "type": "tool_result",
+                    "type": "tool_decision",
                     "session_id": session.session_id,
                     "tool_call_id": tool_call_id,
-                    "tool_name": tool.name,
-                    "success": False,
-                    "output": None,
-                    "error": reject_result.error
+                    "name": tool.name,
+                    "decision": decision,
+                    "scope": scope,
+                    "reason": reason
                 })
-                await self._emit_run_event(
-                    session,
-                    run_id,
-                    "tool_execution_completed",
-                    {
+
+                session.add_message(Message(
+                    role="tool",
+                    tool_call_id=tool_call_id,
+                    name="tool_decision",
+                    content=f"decision={decision}; scope={scope}; reason={reason}"
+                ))
+
+                if decision == "reject":
+                    reject_result = ToolResult(
+                        tool_call_id=tool_call_id,
+                        tool_name=tool.name,
+                        success=False,
+                        output=None,
+                        error="Tool execution was not approved by user"
+                    )
+                    await self.user_manager.send_to_frontend({
+                        "type": "tool_result",
+                        "session_id": session.session_id,
                         "tool_call_id": tool_call_id,
                         "tool_name": tool.name,
                         "success": False,
-                        "error": reject_result.error,
-                    },
-                )
-                return reject_result
+                        "output": None,
+                        "error": reject_result.error
+                    })
+                    await self._emit_run_event(
+                        session,
+                        run_id,
+                        "tool_execution_completed",
+                        {
+                            "tool_call_id": tool_call_id,
+                            "tool_name": tool.name,
+                            "success": False,
+                            "error": reject_result.error,
+                        },
+                    )
+                    return reject_result
 
         effective_timeout_seconds = self._clamp_tool_timeout_seconds(tool, arguments)
         arguments["timeout_seconds"] = effective_timeout_seconds

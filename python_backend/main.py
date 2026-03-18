@@ -5,7 +5,7 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Literal, Optional, Set, cast
 
 import httpx
 
@@ -110,6 +110,46 @@ class BackendRuntimeState:
 
 runtime_state = BackendRuntimeState()
 SESSION_TASK_RESERVED = object()
+TOOL_CONFIRM_DECISIONS: Set[str] = {"approve_once", "approve_always", "reject"}
+TOOL_CONFIRM_SCOPES: Set[str] = {"session", "workspace"}
+EXECUTION_MODES: Set[str] = {"regular", "free"}
+
+
+def _normalize_non_empty_string(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalize_optional_bool(value: Any) -> Optional[bool]:
+    return value if isinstance(value, bool) else None
+
+
+def _normalize_tool_decision(value: Any) -> Optional[Literal["approve_once", "approve_always", "reject"]]:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in TOOL_CONFIRM_DECISIONS:
+        return cast(Literal["approve_once", "approve_always", "reject"], normalized)
+    return None
+
+
+def _normalize_tool_scope(value: Any) -> Literal["session", "workspace"]:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in TOOL_CONFIRM_SCOPES:
+            return cast(Literal["session", "workspace"], normalized)
+    return "session"
+
+
+def _normalize_execution_mode(value: Any) -> Optional[Literal["regular", "free"]]:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in EXECUTION_MODES:
+        return cast(Literal["regular", "free"], normalized)
+    return None
 
 def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
     return normalize_runtime_config(data)
@@ -386,6 +426,8 @@ async def handle_message(
         await handle_question_response(data)
     elif message_type == "interrupt":
         await handle_interrupt(data)
+    elif message_type == "set_execution_mode":
+        await handle_set_execution_mode(data, send_callback)
     elif message_type == "set_workspace":
         await handle_set_workspace(data, send_callback, connection_id)
     else:
@@ -619,20 +661,14 @@ async def run_agent_task(
 
 
 async def handle_tool_confirm(data: Dict[str, Any]) -> None:
-    tool_call_id = data.get("tool_call_id")
-    approved = data.get("approved")
-    decision = data.get("decision")
-    scope = data.get("scope", "session")
+    tool_call_id = _normalize_non_empty_string(data.get("tool_call_id"))
+    approved = _normalize_optional_bool(data.get("approved"))
+    decision = _normalize_tool_decision(data.get("decision"))
+    scope = _normalize_tool_scope(data.get("scope"))
 
     if not tool_call_id:
         logger.warning("Tool confirm received without tool_call_id")
         return
-
-    if decision not in ("approve_once", "approve_always", "reject", None):
-        decision = None
-
-    if scope not in ("session", "workspace"):
-        scope = "session"
 
     await user_manager.handle_tool_confirmation(
         tool_call_id=tool_call_id,
@@ -693,6 +729,40 @@ async def handle_interrupt(data: Dict[str, Any]) -> None:
         agent.interrupt()
         await user_manager.cancel_pending_for_session(session_id, reason="interrupted")
         logger.info(f"Agent interrupted for session: {session_id}")
+
+
+async def handle_set_execution_mode(data: Dict[str, Any], send_callback: SendCallback) -> None:
+    session_id = _normalize_non_empty_string(data.get("session_id"))
+    mode = _normalize_execution_mode(data.get("execution_mode"))
+
+    if not session_id:
+        await send_callback({
+            "type": "error",
+            "error": "Missing or invalid session_id",
+        })
+        return
+
+    if mode is None:
+        await send_callback({
+            "type": "error",
+            "session_id": session_id,
+            "error": f"Invalid execution_mode: {data.get('execution_mode')}",
+        })
+        return
+
+    effective_mode = user_manager.set_session_execution_mode(session_id, mode)
+
+    await send_callback({
+        "type": "execution_mode_updated",
+        "session_id": session_id,
+        "execution_mode": effective_mode,
+    })
+
+    logger.info(
+        "Execution mode updated: session=%s mode=%s",
+        session_id,
+        effective_mode,
+    )
 
 
 async def handle_set_workspace(

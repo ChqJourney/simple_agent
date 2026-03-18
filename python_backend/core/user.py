@@ -238,7 +238,7 @@ class Session:
 class UserManager:
     DEFAULT_CONFIRMATION_TIMEOUT = 300
 
-    def __init__(self):
+    def __init__(self, policy_store_path: Optional[Path | str] = None):
         self.sessions: Dict[str, Session] = {}
         self.tool_confirmations: Dict[str, asyncio.Future[Dict[str, str]]] = {}
         self.pending_tool_context: Dict[str, Dict[str, str]] = {}
@@ -246,9 +246,76 @@ class UserManager:
         self.pending_question_context: Dict[str, Dict[str, str]] = {}
         self.session_tool_policies: Dict[str, Set[str]] = {}
         self.workspace_tool_policies: Dict[str, Set[str]] = {}
+        self.session_execution_modes: Dict[str, Literal["regular", "free"]] = {}
         self.connection_callbacks: Dict[ConnectionId, SendCallback] = {}
         self.session_connections: Dict[str, ConnectionId] = {}
         self._lock = asyncio.Lock()
+        self.policy_store_path = (
+            Path(policy_store_path).resolve()
+            if policy_store_path is not None
+            else (Path.home() / ".agent" / "tool-policies.json").resolve()
+        )
+        self._load_tool_policies()
+
+    def _load_tool_policies(self) -> None:
+        if not self.policy_store_path.exists():
+            return
+
+        try:
+            with self.policy_store_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning("Failed to load tool policies from %s: %s", self.policy_store_path, e)
+            return
+
+        if not isinstance(data, dict):
+            return
+
+        session_policies = data.get("session_tool_policies")
+        workspace_policies = data.get("workspace_tool_policies")
+
+        if isinstance(session_policies, dict):
+            self.session_tool_policies = {
+                str(key): {
+                    str(tool_name)
+                    for tool_name in value
+                    if isinstance(tool_name, str) and tool_name
+                }
+                for key, value in session_policies.items()
+                if isinstance(value, list)
+            }
+
+        if isinstance(workspace_policies, dict):
+            self.workspace_tool_policies = {
+                str(key): {
+                    str(tool_name)
+                    for tool_name in value
+                    if isinstance(tool_name, str) and tool_name
+                }
+                for key, value in workspace_policies.items()
+                if isinstance(value, list)
+            }
+
+    def _persist_tool_policies(self) -> None:
+        payload = {
+            "session_tool_policies": {
+                session_id: sorted(tool_names)
+                for session_id, tool_names in self.session_tool_policies.items()
+                if tool_names
+            },
+            "workspace_tool_policies": {
+                workspace_path: sorted(tool_names)
+                for workspace_path, tool_names in self.workspace_tool_policies.items()
+                if tool_names
+            },
+        }
+
+        try:
+            self.policy_store_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.policy_store_path.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning("Failed to persist tool policies to %s: %s", self.policy_store_path, e)
 
     async def register_connection(self, connection_id: ConnectionId, callback: SendCallback) -> None:
         async with self._lock:
@@ -316,12 +383,34 @@ class UserManager:
         return self.sessions.get(session_id)
 
     async def remove_session(self, session_id: str) -> bool:
+        should_persist = False
         async with self._lock:
             self.session_connections.pop(session_id, None)
+            self.session_execution_modes.pop(session_id, None)
+            if session_id in self.session_tool_policies:
+                self.session_tool_policies.pop(session_id, None)
+                should_persist = True
             if session_id in self.sessions:
                 del self.sessions[session_id]
-                return True
-            return False
+                removed = True
+            else:
+                removed = False
+
+        if should_persist:
+            self._persist_tool_policies()
+        return removed
+
+    def set_session_execution_mode(
+        self,
+        session_id: str,
+        mode: Literal["regular", "free"],
+    ) -> Literal["regular", "free"]:
+        normalized: Literal["regular", "free"] = "free" if mode == "free" else "regular"
+        self.session_execution_modes[session_id] = normalized
+        return normalized
+
+    def get_session_execution_mode(self, session_id: str) -> Literal["regular", "free"]:
+        return self.session_execution_modes.get(session_id, "regular")
 
     async def send_to_frontend(
         self,
@@ -487,6 +576,7 @@ class UserManager:
         decision: Optional[Literal["approve_once", "approve_always", "reject"]] = None,
         scope: Literal["session", "workspace"] = "session"
     ) -> bool:
+        should_persist = False
         async with self._lock:
             if tool_call_id not in self.tool_confirmations:
                 logger.warning(f"No pending confirmation for {tool_call_id}")
@@ -506,10 +596,12 @@ class UserManager:
                         workspace_path = context.get("workspace_path")
                         if workspace_path:
                             self.workspace_tool_policies.setdefault(workspace_path, set()).add(tool_name)
+                            should_persist = True
                     else:
                         session_id = context.get("session_id")
                         if session_id:
                             self.session_tool_policies.setdefault(session_id, set()).add(tool_name)
+                            should_persist = True
 
             if not future.done():
                 future.set_result({
@@ -517,8 +609,13 @@ class UserManager:
                     "scope": scope,
                     "reason": "user_action",
                 })
-                return True
-            return False
+                handled = True
+            else:
+                handled = False
+
+        if should_persist:
+            self._persist_tool_policies()
+        return handled
 
     async def cancel_tool_confirmation(self, tool_call_id: str) -> bool:
         async with self._lock:

@@ -9,6 +9,7 @@ const sendMessageMock = vi.hoisted(() => vi.fn());
 const answerQuestionMock = vi.hoisted(() => vi.fn());
 const confirmToolMock = vi.hoisted(() => vi.fn());
 const interruptMock = vi.hoisted(() => vi.fn());
+const setExecutionModeMock = vi.hoisted(() => vi.fn());
 const createSessionMock = vi.hoisted(() => vi.fn(() => "session-a"));
 
 vi.mock("../../contexts/WebSocketContext", () => ({
@@ -18,6 +19,7 @@ vi.mock("../../contexts/WebSocketContext", () => ({
     isConnected: true,
     confirmTool: confirmToolMock,
     interrupt: interruptMock,
+    setExecutionMode: setExecutionModeMock,
   }),
 }));
 
@@ -55,6 +57,7 @@ describe("ChatContainer", () => {
     answerQuestionMock.mockReturnValue(true);
     confirmToolMock.mockReset();
     interruptMock.mockReset();
+    setExecutionModeMock.mockReset();
     createSessionMock.mockClear();
     useConfigStore.setState({ config: null as never });
     useWorkspaceStore.setState((state) => ({

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added session-level execution mode switching (`Regular` / `Free`) with websocket sync and frontend selector support
+- Added tool approval scope actions in confirmation modal: `Always This Session` and `Always This Workspace`
+- Added persistent tool auto-approval policy storage in `~/.agent/tool-policies.json` with startup reload support
+- Added pre-execution tool argument validation coverage for required fields and enum constraints
+- Added backend regression tests: `test_execution_mode`, `test_tool_argument_validation`, `test_tool_policy_persistence`
+- Added frontend regression test for scoped approval actions in `ToolConfirmModal`
 - Added websocket auth handshake endpoint `GET /auth-token` and required `auth_token` flow for websocket `config` initialization
 - Added websocket origin allowlist validation for desktop/dev trusted origins
 - Added backend runtime cleanup hooks for LLM clients (`aclose/close`) and explicit provider client shutdown support
@@ -41,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Changed execution tools (`shell_execute`, `python_execute`, `node_execute`) to emit bounded/truncation-aware output metadata and honor `capture_output` policy at runtime
+- Changed backend tool confirmation and execution-mode handlers to use stricter runtime payload normalization for malformed client fields
+- Refactored execution tool shared timeout/output shaping logic into `python_backend/tools/execution_common.py`
 - Changed tool execution timeout behavior to enforce bounded runtime with interruption-aware cancellation and subprocess cleanup
 - Changed workspace retrieval scanning to bounded `os.walk` with file-count and file-size limits
 - Changed local skill loading to skip oversized files and gracefully handle decode/read errors
@@ -99,6 +108,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 
+- Updated `README.md` with tool-system updates for execution mode, scoped approvals, persisted policies, and execution output metadata
+- Updated `docs/tool-system-current-state.md` with current permission model (Regular/Free + persisted policies) and execution tool output fields
 - Rewrote `README.md` to reflect the current platform architecture, feature set, persistence model, runtime config, provider matrix, token-usage widget, and verification commands
 
 ## [0.1.0] - 2025-03-10

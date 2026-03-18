@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Attachment } from '../../types';
+import { Attachment, ExecutionMode } from '../../types';
 
 const FILE_TREE_DRAG_MIME = 'application/x-tauri-agent-file';
 
@@ -12,10 +12,12 @@ interface DraggedFileDescriptor {
 
 interface MessageInputProps {
   onSend: (content: string, attachments?: Attachment[]) => void;
+  onExecutionModeChange?: (mode: ExecutionMode) => void;
   onInterrupt?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
   placeholder?: string;
+  executionMode?: ExecutionMode;
 }
 
 function parseDraggedDescriptors(raw: string): DraggedFileDescriptor[] {
@@ -69,10 +71,12 @@ async function fileToAttachment(file: File): Promise<Attachment | null> {
 
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
+  onExecutionModeChange,
   onInterrupt,
   isStreaming = false,
   disabled = false,
   placeholder = 'Type your message...',
+  executionMode = 'regular',
 }) => {
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -165,9 +169,30 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     );
   };
 
+  const handleExecutionModeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value === 'free' ? 'free' : 'regular';
+    onExecutionModeChange?.(value);
+  };
+
   return (
     <form onSubmit={handleSubmit} className="px-4 pb-4 pt-2 md:px-6 md:pb-6">
       <div className="space-y-3 rounded-[1.75rem] bg-white/90 p-3 shadow-lg shadow-gray-200/60 backdrop-blur dark:bg-gray-900/90 dark:shadow-black/20">
+        <div className="flex items-center justify-between rounded-[1rem] border border-gray-200 bg-gray-50/80 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/70">
+          <label htmlFor="execution-mode-select" className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-600 dark:text-gray-300">
+            Execution mode
+          </label>
+          <select
+            id="execution-mode-select"
+            aria-label="Execution mode"
+            value={executionMode}
+            onChange={handleExecutionModeChange}
+            disabled={isInputDisabled}
+            className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 outline-none focus:border-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <option value="regular">Regular</option>
+            <option value="free">Free</option>
+          </select>
+        </div>
         <div
           aria-label="Image attachment drop zone"
           onDragOver={(e) => e.preventDefault()}

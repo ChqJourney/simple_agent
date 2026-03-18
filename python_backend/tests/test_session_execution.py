@@ -342,6 +342,93 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("continue", result["answer"])
         self.assertEqual("submit", result["action"])
 
+    async def test_handle_message_updates_session_execution_mode(self) -> None:
+        await backend_main.handle_message(
+            None,
+            {
+                "type": "set_execution_mode",
+                "session_id": "session-a",
+                "execution_mode": "free",
+            },
+            self.send_callback,
+            "conn-a",
+        )
+
+        self.assertEqual(
+            "free",
+            backend_main.user_manager.get_session_execution_mode("session-a"),
+        )
+        self.assertTrue(
+            any(
+                message.get("type") == "execution_mode_updated"
+                and message.get("session_id") == "session-a"
+                and message.get("execution_mode") == "free"
+                for message in self.messages
+            )
+        )
+
+    async def test_handle_message_falls_back_to_session_scope_for_invalid_tool_confirm_scope(self) -> None:
+        await backend_main.user_manager.bind_session_to_connection("session-a", "conn-a")
+
+        confirmation_task = asyncio.create_task(
+            backend_main.user_manager.request_tool_confirmation(
+                session_id="session-a",
+                tool_call_id="tool-1",
+                tool_name="shell_execute",
+                workspace_path=self.temp_dir.name,
+                arguments={"command": "echo hello"},
+            )
+        )
+        await asyncio.sleep(0)
+
+        await backend_main.handle_message(
+            None,
+            {
+                "type": "tool_confirm",
+                "tool_call_id": "tool-1",
+                "decision": "approve_always",
+                "scope": ["workspace"],
+                "approved": True,
+            },
+            self.send_callback,
+            "conn-a",
+        )
+
+        result = await asyncio.wait_for(confirmation_task, timeout=1)
+        self.assertEqual("approve_always", result["decision"])
+        self.assertEqual("session", result["scope"])
+
+    async def test_handle_message_rejects_invalid_tool_confirm_decision_payload(self) -> None:
+        await backend_main.user_manager.bind_session_to_connection("session-a", "conn-a")
+
+        confirmation_task = asyncio.create_task(
+            backend_main.user_manager.request_tool_confirmation(
+                session_id="session-a",
+                tool_call_id="tool-2",
+                tool_name="shell_execute",
+                workspace_path=self.temp_dir.name,
+                arguments={"command": "echo hello"},
+            )
+        )
+        await asyncio.sleep(0)
+
+        await backend_main.handle_message(
+            None,
+            {
+                "type": "tool_confirm",
+                "tool_call_id": "tool-2",
+                "decision": {"value": "approve_once"},
+                "scope": "workspace",
+                "approved": "true",
+            },
+            self.send_callback,
+            "conn-a",
+        )
+
+        result = await asyncio.wait_for(confirmation_task, timeout=1)
+        self.assertEqual("reject", result["decision"])
+        self.assertEqual("workspace", result["scope"])
+
     async def test_existing_untitled_session_generates_title_on_next_text_message(self) -> None:
         title_llm = TitleCapableLLM("Friendly greeting")
         backend_main.runtime_state.current_llm = title_llm

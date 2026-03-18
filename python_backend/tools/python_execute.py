@@ -7,6 +7,19 @@ from runtime.embedded_runtime import get_python_executable
 from .base import BaseTool, ToolResult
 from .policies import ToolExecutionPolicy
 
+MIN_TIMEOUT_SECONDS = 1
+MAX_TIMEOUT_SECONDS = 120
+
+
+def _normalize_timeout(timeout_seconds: Any, default_timeout: int = 30) -> int:
+    try:
+        parsed = int(timeout_seconds)
+    except (TypeError, ValueError):
+        parsed = default_timeout
+    if parsed < MIN_TIMEOUT_SECONDS:
+        return default_timeout
+    return min(parsed, MAX_TIMEOUT_SECONDS)
+
 
 class PythonExecuteTool(BaseTool):
     name = "python_execute"
@@ -48,6 +61,7 @@ class PythonExecuteTool(BaseTool):
                 error="Code is empty",
             )
 
+        normalized_timeout = _normalize_timeout(timeout_seconds, self.policy.timeout_seconds)
         cwd = str(Path(workspace_path).resolve()) if workspace_path else None
         python_executable = str(get_python_executable())
         process = await asyncio.create_subprocess_exec(
@@ -60,7 +74,7 @@ class PythonExecuteTool(BaseTool):
         )
 
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=normalized_timeout)
         except asyncio.TimeoutError:
             process.kill()
             await process.communicate()
@@ -69,8 +83,12 @@ class PythonExecuteTool(BaseTool):
                 tool_name=self.name,
                 success=False,
                 output=None,
-                error=f"Python execution timed out after {timeout_seconds} seconds",
+                error=f"Python execution timed out after {normalized_timeout} seconds",
             )
+        except asyncio.CancelledError:
+            process.kill()
+            await process.communicate()
+            raise
 
         exit_code = process.returncode or 0
         output = {

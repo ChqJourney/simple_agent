@@ -1,10 +1,11 @@
 import asyncio
+import inspect
 import logging
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 import httpx
 
@@ -45,6 +46,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+ALLOWED_BROWSER_ORIGINS = {
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "tauri://localhost",
+    "https://tauri.localhost",
+}
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup: nothing extra needed
@@ -60,7 +68,7 @@ app = FastAPI(title="AI Agent Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:1420", "http://127.0.0.1:1420"],
+    allow_origins=sorted(ALLOWED_BROWSER_ORIGINS),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -96,6 +104,8 @@ class BackendRuntimeState:
     active_session_tasks: Dict[str, object] = field(default_factory=dict)
     task_connections: Dict[asyncio.Task, str] = field(default_factory=dict)
     task_sessions: Dict[asyncio.Task, str] = field(default_factory=dict)
+    auth_token: str = field(default_factory=lambda: uuid.uuid4().hex)
+    authenticated_connections: Set[str] = field(default_factory=set)
 
 
 runtime_state = BackendRuntimeState()
@@ -143,6 +153,63 @@ def _forget_task(task: asyncio.Task) -> None:
         runtime_state.active_session_tasks.pop(session_id, None)
 
 
+def _origin_allowed(origin: Optional[str]) -> bool:
+    if not origin:
+        return False
+    return origin in ALLOWED_BROWSER_ORIGINS
+
+
+async def _close_llm_instance(llm: Optional[BaseLLM]) -> None:
+    if llm is None:
+        return
+
+    close_candidates = [
+        getattr(llm, "aclose", None),
+        getattr(llm, "close", None),
+    ]
+    client = getattr(llm, "client", None)
+    if client is not None:
+        close_candidates.extend(
+            [
+                getattr(client, "aclose", None),
+                getattr(client, "close", None),
+            ]
+        )
+
+    attempted: Set[int] = set()
+    for close_fn in close_candidates:
+        if not callable(close_fn):
+            continue
+        fn_id = id(close_fn)
+        if fn_id in attempted:
+            continue
+        attempted.add(fn_id)
+        try:
+            result = close_fn()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            logger.debug("Failed to close llm resource cleanly: %s", exc)
+
+
+async def _close_runtime_llms() -> None:
+    async with state_lock:
+        llm_instances: List[BaseLLM] = []
+        if runtime_state.current_llm is not None:
+            llm_instances.append(runtime_state.current_llm)
+        for agent in runtime_state.active_agents.values():
+            if getattr(agent, "llm", None) is not None:
+                llm_instances.append(agent.llm)
+
+    seen: Set[int] = set()
+    for llm in llm_instances:
+        llm_id = id(llm)
+        if llm_id in seen:
+            continue
+        seen.add(llm_id)
+        await _close_llm_instance(llm)
+
+
 async def cleanup_connection_tasks(connection_id: str) -> None:
     async with state_lock:
         task_contexts = [
@@ -151,6 +218,7 @@ async def cleanup_connection_tasks(connection_id: str) -> None:
             if task_connection_id == connection_id
         ]
         runtime_state.connection_workspaces.pop(connection_id, None)
+        runtime_state.authenticated_connections.discard(connection_id)
 
     for task, session_id in task_contexts:
         if session_id:
@@ -223,6 +291,12 @@ async def get_or_create_agent(
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    origin = websocket.headers.get("origin")
+    if not _origin_allowed(origin):
+        logger.warning("Rejected WebSocket connection with invalid origin: %s", origin)
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
     logger.info("WebSocket client connected")
     connection_id = str(uuid.uuid4())
@@ -239,6 +313,40 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             try:
                 data = await websocket.receive_json()
+
+                async with state_lock:
+                    is_authenticated = connection_id in runtime_state.authenticated_connections
+
+                message_type = data.get("type")
+                if not is_authenticated:
+                    if message_type != "config":
+                        await websocket.send_json({
+                            "type": "error",
+                            "error": "Connection not authenticated. Send config with auth_token first.",
+                        })
+                        continue
+                    provided_token = str(data.get("auth_token") or "")
+                    if provided_token != runtime_state.auth_token:
+                        await websocket.send_json({
+                            "type": "error",
+                            "error": "Invalid auth_token in config handshake.",
+                        })
+                        continue
+                    async with state_lock:
+                        runtime_state.authenticated_connections.add(connection_id)
+
+                if message_type == "message":
+                    async with state_lock:
+                        has_bound_workspace = connection_id in runtime_state.connection_workspaces
+                    if not has_bound_workspace:
+                        await websocket.send_json({
+                            "type": "error",
+                            "error": "Workspace not set. Send set_workspace before message.",
+                        })
+                        continue
+                    # Never trust per-message workspace overrides over connection binding.
+                    data["workspace_path"] = None
+
                 await handle_message(websocket, data, send_callback, connection_id)
             except WebSocketDisconnect:
                 raise
@@ -293,6 +401,7 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
         config = _normalize_provider_config(data)
 
         await cleanup_all_tasks()
+        await _close_runtime_llms()
 
         new_llm = create_llm(config)
         context_bundle = context_provider_registry.build_bundle(config)
@@ -582,6 +691,7 @@ async def handle_interrupt(data: Dict[str, Any]) -> None:
 
     if agent:
         agent.interrupt()
+        await user_manager.cancel_pending_for_session(session_id, reason="interrupted")
         logger.info(f"Agent interrupted for session: {session_id}")
 
 
@@ -643,6 +753,13 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.get("/auth-token")
+async def auth_token():
+    async with state_lock:
+        token = runtime_state.auth_token
+    return {"auth_token": token}
 
 
 @app.post("/test-config")

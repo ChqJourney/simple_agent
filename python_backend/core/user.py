@@ -551,3 +551,41 @@ class UserManager:
                     future.cancel()
             self.question_responses.clear()
             self.pending_question_context.clear()
+
+    async def cancel_pending_for_session(self, session_id: str, reason: str = "interrupted") -> None:
+        tool_futures: List[asyncio.Future[Dict[str, str]]] = []
+        question_futures: List[asyncio.Future[Dict[str, Any]]] = []
+
+        async with self._lock:
+            for tool_call_id, context in list(self.pending_tool_context.items()):
+                if context.get("session_id") != session_id:
+                    continue
+                future = self.tool_confirmations.pop(tool_call_id, None)
+                self.pending_tool_context.pop(tool_call_id, None)
+                if future and not future.done():
+                    tool_futures.append(future)
+
+            for tool_call_id, context in list(self.pending_question_context.items()):
+                if context.get("session_id") != session_id:
+                    continue
+                future = self.question_responses.pop(tool_call_id, None)
+                self.pending_question_context.pop(tool_call_id, None)
+                if future and not future.done():
+                    question_futures.append(future)
+
+        for future in tool_futures:
+            future.set_result(
+                {
+                    "decision": "reject",
+                    "scope": "session",
+                    "reason": reason,
+                }
+            )
+
+        for future in question_futures:
+            future.set_result(
+                {
+                    "action": "dismiss",
+                    "reason": reason,
+                }
+            )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import List, Sequence
@@ -8,9 +9,17 @@ from .base import RetrievalHit, RetrievalProvider
 
 
 class SimpleRetrievalStore(RetrievalProvider):
-    def __init__(self, extensions: Sequence[str] | None = None, max_hits: int = 3) -> None:
+    def __init__(
+        self,
+        extensions: Sequence[str] | None = None,
+        max_hits: int = 3,
+        max_scan_files: int = 1200,
+        max_file_size_bytes: int = 256 * 1024,
+    ) -> None:
         self.extensions = tuple(extensions or (".md", ".txt", ".json"))
         self.max_hits = max_hits
+        self.max_scan_files = max_scan_files
+        self.max_file_size_bytes = max_file_size_bytes
         self.excluded_dirs = {".agent", ".git", "node_modules", "dist", "__pycache__"}
 
     def retrieve(self, query: str, workspace_path: str, limit: int | None = None) -> List[RetrievalHit]:
@@ -23,28 +32,46 @@ class SimpleRetrievalStore(RetrievalProvider):
             return []
 
         hits: List[RetrievalHit] = []
-        for file_path in root.rglob("*"):
-            if not file_path.is_file() or file_path.suffix.lower() not in self.extensions:
-                continue
-            if any(part in self.excluded_dirs for part in file_path.parts):
-                continue
+        scanned_files = 0
+        reached_scan_limit = False
 
-            try:
-                content = file_path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                continue
+        for current_root, dirs, files in os.walk(root, topdown=True):
+            dirs[:] = [d for d in dirs if d not in self.excluded_dirs]
 
-            score = sum(content.lower().count(term) for term in terms)
-            if score <= 0:
-                continue
+            for file_name in files:
+                file_path = Path(current_root) / file_name
+                if file_path.suffix.lower() not in self.extensions:
+                    continue
+                scanned_files += 1
+                if scanned_files > self.max_scan_files:
+                    reached_scan_limit = True
+                    break
 
-            hits.append(
-                RetrievalHit(
-                    path=str(file_path),
-                    snippet=self._extract_snippet(content, terms),
-                    score=score,
+                try:
+                    file_size = file_path.stat().st_size
+                except OSError:
+                    continue
+                if file_size > self.max_file_size_bytes:
+                    continue
+
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                except (UnicodeDecodeError, OSError):
+                    continue
+
+                score = sum(content.lower().count(term) for term in terms)
+                if score <= 0:
+                    continue
+
+                hits.append(
+                    RetrievalHit(
+                        path=str(file_path),
+                        snippet=self._extract_snippet(content, terms),
+                        score=score,
+                    )
                 )
-            )
+            if reached_scan_limit:
+                break
 
         hits.sort(key=lambda hit: (-hit.score, hit.path))
         effective_limit = limit if limit is not None and limit > 0 else self.max_hits

@@ -17,6 +17,7 @@ import {
   ProviderConfig,
 } from '../types';
 import { normalizeProviderConfig } from '../utils/config';
+import { backendAuthTokenUrl } from '../utils/backendEndpoint';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -95,8 +96,11 @@ function applyFileWriteToolResult(output: unknown) {
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const lastSentConfigKeyRef = useRef<string | null>(null);
+  const authTokenRef = useRef<string | null>(null);
+  const authTokenPromiseRef = useRef<Promise<string | null> | null>(null);
   const config = useConfigStore((state) => state.config);
   const isConnected = connectionStatus === 'connected';
+  const isTestMode = import.meta.env.MODE === 'test';
 
   useEffect(() => {
     const handleMessage = (data: ServerWebSocketMessage) => {
@@ -237,6 +241,43 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     return wsService.send(message);
   }, []);
 
+  const fetchAuthToken = useCallback(async (): Promise<string | null> => {
+    if (isTestMode) {
+      return 'test-auth-token';
+    }
+    if (authTokenRef.current) {
+      return authTokenRef.current;
+    }
+    if (authTokenPromiseRef.current) {
+      return authTokenPromiseRef.current;
+    }
+
+    authTokenPromiseRef.current = (async () => {
+      try {
+        const response = await fetch(backendAuthTokenUrl);
+        if (!response.ok) {
+          return null;
+        }
+        const payload = await response.json().catch(() => ({}));
+        if (typeof payload.auth_token !== 'string' || !payload.auth_token) {
+          return null;
+        }
+        authTokenRef.current = payload.auth_token;
+        return payload.auth_token;
+      } catch {
+        return null;
+      } finally {
+        authTokenPromiseRef.current = null;
+      }
+    })();
+
+    return authTokenPromiseRef.current;
+  }, [isTestMode]);
+
+  useEffect(() => {
+    void fetchAuthToken();
+  }, [fetchAuthToken]);
+
   const sendConfig = useCallback((configOverride?: ProviderConfig) => {
     const sourceConfig = configOverride || config;
     if (!sourceConfig) {
@@ -244,10 +285,32 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }
 
     const runtimeConfig = normalizeProviderConfig(sourceConfig);
-    if (send({ type: 'config', ...runtimeConfig })) {
-      lastSentConfigKeyRef.current = JSON.stringify(runtimeConfig);
+    const configKey = JSON.stringify(runtimeConfig);
+
+    const sendWithToken = (authToken: string | null) => {
+      if (!authToken) {
+        return;
+      }
+      const payload: ClientWebSocketMessage = {
+        type: 'config',
+        ...runtimeConfig,
+        auth_token: authToken,
+      };
+      if (send(payload)) {
+        lastSentConfigKeyRef.current = configKey;
+      }
+    };
+
+    const immediateToken = isTestMode ? 'test-auth-token' : authTokenRef.current;
+    if (immediateToken) {
+      sendWithToken(immediateToken);
+      return;
     }
-  }, [config, send]);
+
+    void fetchAuthToken().then((token) => {
+      sendWithToken(token);
+    });
+  }, [config, fetchAuthToken, isTestMode, send]);
 
   useEffect(() => {
     if (!isConnected || !config) {
@@ -257,11 +320,30 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     const runtimeConfig = normalizeProviderConfig(config);
     const nextConfigKey = JSON.stringify(runtimeConfig);
     if (nextConfigKey !== lastSentConfigKeyRef.current) {
-      if (send({ type: 'config', ...runtimeConfig })) {
-        lastSentConfigKeyRef.current = nextConfigKey;
+      const sendWithToken = (authToken: string | null) => {
+        if (!authToken) {
+          return;
+        }
+        const payload: ClientWebSocketMessage = {
+          type: 'config',
+          ...runtimeConfig,
+          auth_token: authToken,
+        };
+        if (send(payload)) {
+          lastSentConfigKeyRef.current = nextConfigKey;
+        }
+      };
+
+      const immediateToken = isTestMode ? 'test-auth-token' : authTokenRef.current;
+      if (immediateToken) {
+        sendWithToken(immediateToken);
+      } else {
+        void fetchAuthToken().then((token) => {
+          sendWithToken(token);
+        });
       }
     }
-  }, [config, isConnected, send]);
+  }, [config, fetchAuthToken, isConnected, isTestMode, send]);
 
   const sendMessage = useCallback((sessionId: string, content: string, attachments?: Attachment[], workspacePath?: string) => {
     const message: ClientWebSocketMessage = { type: 'message', session_id: sessionId, content };

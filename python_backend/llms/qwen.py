@@ -1,5 +1,6 @@
 from typing import Any, AsyncIterator, Dict, List, Optional
 
+import httpx
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
@@ -17,10 +18,11 @@ class QwenLLM(BaseLLM):
         config_with_defaults = {**config, 'base_url': base_url}
         super().__init__(config_with_defaults)
         self.enable_reasoning = bool(config.get('enable_reasoning', False))
+        self.http_client = httpx.AsyncClient(timeout=self._get_timeout_seconds())
         self.client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
-            timeout=self._get_timeout_seconds(),
+            http_client=self.http_client,
         )
 
     def _build_request_kwargs(
@@ -61,3 +63,9 @@ class QwenLLM(BaseLLM):
         if getattr(response, 'usage', None) is not None:
             self._set_latest_usage(response.usage)
         return response
+
+    async def aclose(self) -> None:
+        await self.http_client.aclose()
+
+    def close(self):
+        return self.http_client.aclose()

@@ -13,6 +13,7 @@ from skills.base import SkillProvider
 from tools.base import BaseTool, ToolRegistry, ToolResult
 
 logger = logging.getLogger(__name__)
+MAX_TOOL_EXECUTION_TIMEOUT_SECONDS = 120
 
 
 class RunInterrupted(Exception):
@@ -412,6 +413,8 @@ class Agent:
 
             for i, result in enumerate(results):
                 call_id, call_name = scheduled_calls[i]
+                if isinstance(result, RunInterrupted):
+                    raise result
                 if isinstance(result, Exception):
                     tool_results.append(ToolResult(
                         tool_call_id=call_id,
@@ -424,6 +427,67 @@ class Agent:
                     tool_results.append(result)
 
         return tool_results
+
+    @staticmethod
+    def _clamp_tool_timeout_seconds(tool: BaseTool, arguments: Dict[str, Any]) -> int:
+        policy_timeout = getattr(getattr(tool, "policy", None), "timeout_seconds", 30)
+        try:
+            default_timeout = int(policy_timeout)
+        except (TypeError, ValueError):
+            default_timeout = 30
+
+        requested_timeout = arguments.get("timeout_seconds", default_timeout)
+        try:
+            parsed_timeout = int(requested_timeout)
+        except (TypeError, ValueError):
+            parsed_timeout = default_timeout
+
+        if parsed_timeout < 1:
+            parsed_timeout = default_timeout if default_timeout > 0 else 30
+
+        return min(parsed_timeout, MAX_TOOL_EXECUTION_TIMEOUT_SECONDS)
+
+    async def _execute_tool_with_interrupt_timeout(
+        self,
+        tool: BaseTool,
+        tool_call_id: str,
+        workspace_path: str,
+        timeout_seconds: int,
+        arguments: Dict[str, Any],
+    ) -> ToolResult:
+        if self._interrupt_event.is_set():
+            raise RunInterrupted()
+
+        execution_task = asyncio.create_task(
+            tool.execute(
+                tool_call_id=tool_call_id,
+                workspace_path=workspace_path,
+                **arguments,
+            )
+        )
+        interrupt_task = asyncio.create_task(self._interrupt_event.wait())
+
+        try:
+            done, _ = await asyncio.wait(
+                {execution_task, interrupt_task},
+                timeout=timeout_seconds,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if interrupt_task in done and self._interrupt_event.is_set():
+                execution_task.cancel()
+                await asyncio.gather(execution_task, return_exceptions=True)
+                raise RunInterrupted()
+
+            if execution_task in done:
+                return await execution_task
+
+            execution_task.cancel()
+            await asyncio.gather(execution_task, return_exceptions=True)
+            raise asyncio.TimeoutError(f"{tool.name} timed out after {timeout_seconds} seconds")
+        finally:
+            interrupt_task.cancel()
+            await asyncio.gather(interrupt_task, return_exceptions=True)
 
     async def _execute_single_tool(
         self,
@@ -511,11 +575,16 @@ class Agent:
                 )
                 return reject_result
 
+        effective_timeout_seconds = self._clamp_tool_timeout_seconds(tool, arguments)
+        arguments["timeout_seconds"] = effective_timeout_seconds
+
         try:
-            result = await tool.execute(
+            result = await self._execute_tool_with_interrupt_timeout(
+                tool=tool,
                 tool_call_id=tool_call_id,
                 workspace_path=session.workspace_path,
-                **arguments
+                timeout_seconds=effective_timeout_seconds,
+                arguments=arguments,
             )
 
             if tool.name == "ask_question" and result.success:
@@ -549,6 +618,43 @@ class Agent:
             )
 
             return result
+        except asyncio.TimeoutError as e:
+            error_message = str(e)
+            logger.warning(
+                "Tool execution timed out: %s (%s seconds)",
+                tool.name,
+                effective_timeout_seconds,
+            )
+            timeout_result = ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=tool.name,
+                success=False,
+                output=None,
+                error=error_message,
+            )
+            await self.user_manager.send_to_frontend({
+                "type": "tool_result",
+                "session_id": session.session_id,
+                "tool_call_id": tool_call_id,
+                "tool_name": tool.name,
+                "success": False,
+                "output": None,
+                "error": error_message,
+            })
+            await self._emit_run_event(
+                session,
+                run_id,
+                "tool_execution_completed",
+                {
+                    "tool_call_id": tool_call_id,
+                    "tool_name": tool.name,
+                    "success": False,
+                    "error": error_message,
+                },
+            )
+            return timeout_result
+        except RunInterrupted:
+            raise
         except Exception as e:
             logger.exception(f"Tool execution failed: {tool.name}")
             error_result = ToolResult(

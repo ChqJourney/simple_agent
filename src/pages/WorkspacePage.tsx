@@ -5,6 +5,7 @@ import { useWorkspaceStore, useUIStore, useSessionStore } from '../stores';
 import { TopBar, LeftPanel, RightPanel } from '../components/Workspace';
 import { ChatContainer } from '../components/Chat';
 import { useWebSocket } from '../contexts/WebSocketContext';
+import { backendHealthUrl, backendHttpBase } from '../utils/backendEndpoint';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -95,7 +96,7 @@ export const WorkspacePage: React.FC = () => {
     if (IS_DEV && !backendReady) {
       const checkBackend = async () => {
         try {
-          const response = await fetch('http://127.0.0.1:8765/health');
+          const response = await fetch(backendHealthUrl);
           if (response.ok) {
             setBackendReady(true);
           }
@@ -138,7 +139,7 @@ export const WorkspacePage: React.FC = () => {
           ) : IS_DEV && !backendReady ? (
             <div className="flex-1 flex items-center justify-center p-4 bg-yellow-50 dark:bg-yellow-950 text-yellow-900 dark:text-yellow-200 text-center text-sm">
               <div>
-                Waiting for Python backend at http://127.0.0.1:8765...
+                Waiting for Python backend at {backendHttpBase}...
                 <br />
                 <code className="text-xs bg-yellow-100 dark:bg-yellow-900 px-1.5 py-0.5 rounded">
                   cd python_backend && python main.py

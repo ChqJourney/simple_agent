@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added websocket auth handshake endpoint `GET /auth-token` and required `auth_token` flow for websocket `config` initialization
+- Added websocket origin allowlist validation for desktop/dev trusted origins
+- Added backend runtime cleanup hooks for LLM clients (`aclose/close`) and explicit provider client shutdown support
+- Added connection-scoped auth state and stricter session/workspace binding enforcement before message execution
+- Added centralized frontend backend endpoint helpers in `src/utils/backendEndpoint.ts`
 - Added first-class `DeepSeek` provider support across backend runtime, config normalization, settings UI, and connection testing
 - Added normalized completion-usage capture across providers plus persisted assistant-message usage metadata
 - Added workspace header token-usage circular widget for latest `prompt_tokens / context_length`
@@ -34,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Changed tool execution timeout behavior to enforce bounded runtime with interruption-aware cancellation and subprocess cleanup
+- Changed workspace retrieval scanning to bounded `os.walk` with file-count and file-size limits
+- Changed local skill loading to skip oversized files and gracefully handle decode/read errors
+- Changed Tauri CSP from `null` to an explicit restrictive policy with local backend connect targets
+- Changed Python dependency specs to pinned direct versions for `openai` and `aiohttp`
+- Changed frontend websocket config sending to require auth token before sending `config` payload
 - Changed completion websocket payloads to forward latest-request usage snapshots to the frontend
 - Reworked backend websocket routing from a single global callback to per-connection routing
 - Bound sessions to frontend connections so tool confirmations and streamed messages no longer cross windows
@@ -59,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed interrupt flow so pending tool confirmations and pending question prompts are cancelled with the run
+- Fixed run interruption propagation across parallel tool execution to avoid swallowed `RunInterrupted` states
+- Fixed potential stale LLM client/socket accumulation across config switches by explicitly closing previous clients
+- Fixed websocket auth race where frontend could send unauthenticated `config` payloads when token fetch was unavailable
 - Fixed multi-window websocket state bleeding between frontend connections
 - Fixed global workspace fallback leaking across frontend connections
 - Fixed interrupted runs being reported as completed with an empty assistant message

@@ -5,6 +5,19 @@ from typing import Any, Optional
 from .base import BaseTool, ToolResult
 from .policies import ToolExecutionPolicy
 
+MIN_TIMEOUT_SECONDS = 1
+MAX_TIMEOUT_SECONDS = 120
+
+
+def _normalize_timeout(timeout_seconds: Any, default_timeout: int = 30) -> int:
+    try:
+        parsed = int(timeout_seconds)
+    except (TypeError, ValueError):
+        parsed = default_timeout
+    if parsed < MIN_TIMEOUT_SECONDS:
+        return default_timeout
+    return min(parsed, MAX_TIMEOUT_SECONDS)
+
 
 class ShellExecuteTool(BaseTool):
     name = "shell_execute"
@@ -46,6 +59,7 @@ class ShellExecuteTool(BaseTool):
                 error="Command is empty",
             )
 
+        normalized_timeout = _normalize_timeout(timeout_seconds, self.policy.timeout_seconds)
         cwd = str(Path(workspace_path).resolve()) if workspace_path else None
         process = await asyncio.create_subprocess_shell(
             command,
@@ -55,7 +69,7 @@ class ShellExecuteTool(BaseTool):
         )
 
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=normalized_timeout)
         except asyncio.TimeoutError:
             process.kill()
             await process.communicate()
@@ -64,8 +78,12 @@ class ShellExecuteTool(BaseTool):
                 tool_name=self.name,
                 success=False,
                 output=None,
-                error=f"Command timed out after {timeout_seconds} seconds",
+                error=f"Command timed out after {normalized_timeout} seconds",
             )
+        except asyncio.CancelledError:
+            process.kill()
+            await process.communicate()
+            raise
 
         exit_code = process.returncode or 0
         output = {

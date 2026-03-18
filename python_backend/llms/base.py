@@ -35,6 +35,12 @@ class BaseLLM(ABC):
     async def complete(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict:
         """Non-streaming complete response"""
 
+    async def aclose(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
     def _build_tool_schemas(self, tools: List[Any]) -> Optional[List[Dict]]:
         """Convert tool registry to OpenAI function calling format.
         

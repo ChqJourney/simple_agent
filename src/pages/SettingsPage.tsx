@@ -6,6 +6,7 @@ import { useUIStore } from '../stores';
 import { ModelProfile, ProviderConfig } from '../types';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { normalizeBaseUrl, normalizeContextProviders, normalizeProviderConfig } from '../utils/config';
+import { backendTestConfigUrl } from '../utils/backendEndpoint';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 
@@ -62,7 +63,7 @@ export const SettingsPage: React.FC = () => {
 
     try {
       const baseUrl = normalizeBaseUrl(primaryProfile.provider, primaryProfile.base_url);
-      const response = await fetch('http://127.0.0.1:8765/test-config', {
+      const response = await fetch(backendTestConfigUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

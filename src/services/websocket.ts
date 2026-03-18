@@ -1,4 +1,5 @@
 import { ServerWebSocketMessage, ClientWebSocketMessage } from '../types';
+import { backendWsUrl } from '../utils/backendEndpoint';
 
 export type MessageHandler = (data: ServerWebSocketMessage) => void;
 
@@ -61,7 +62,7 @@ class WebSocketService {
     this.isConnecting = true;
     
     try {
-      this.ws = new WebSocket('ws://127.0.0.1:8765/ws');
+      this.ws = new WebSocket(backendWsUrl);
 
       this.ws.onopen = () => {
         if (!this.mounted) {

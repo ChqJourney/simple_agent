@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
 from .base import ResolvedSkill, SkillProvider
+
+logger = logging.getLogger(__name__)
+MAX_SKILL_FILE_SIZE_BYTES = 256 * 1024
 
 
 class LocalSkillLoader(SkillProvider):
@@ -48,7 +52,15 @@ class LocalSkillLoader(SkillProvider):
 
     @staticmethod
     def _parse_skill_file(skill_file: Path) -> dict[str, str] | None:
-        raw_text = skill_file.read_text(encoding="utf-8")
+        try:
+            if skill_file.stat().st_size > MAX_SKILL_FILE_SIZE_BYTES:
+                logger.warning("Skipping skill file larger than %s bytes: %s", MAX_SKILL_FILE_SIZE_BYTES, skill_file)
+                return None
+            raw_text = skill_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning("Failed to read skill file %s: %s", skill_file, exc)
+            return None
+
         lines = raw_text.splitlines()
 
         if lines and lines[0].strip() == "---":

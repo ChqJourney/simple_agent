@@ -174,6 +174,7 @@ export interface ClientMessage {
 
 export interface ClientConfig {
   type: 'config';
+  auth_token?: string;
   provider: ProviderType;
   model: string;
   api_key: string;

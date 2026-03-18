@@ -30,7 +30,16 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual("primary", normalized["profiles"]["primary"]["profile_name"])
         self.assertEqual("https://api.openai.com/v1", normalized["profiles"]["primary"]["base_url"])
         self.assertIn("runtime", normalized)
-        self.assertEqual({}, normalized["runtime"])
+        self.assertEqual(
+            {
+                "context_length": 64000,
+                "max_output_tokens": 4000,
+                "max_tool_rounds": 8,
+                "max_retries": 3,
+            },
+            normalized["runtime"],
+        )
+        self.assertEqual({"base_font_size": 16}, normalized["appearance"])
         self.assertEqual(
             {
                 "skills": {"local": {"enabled": True}},
@@ -59,6 +68,22 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual("deepseek", normalized["provider"])
         self.assertEqual("deepseek", normalized["profiles"]["primary"]["provider"])
         self.assertEqual("https://api.deepseek.com", normalized["profiles"]["primary"]["base_url"])
+
+    def test_normalize_runtime_config_preserves_custom_appearance_font_size(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_key": "test-key",
+                "base_url": "https://api.openai.com/v1",
+                "enable_reasoning": False,
+                "appearance": {
+                    "base_font_size": 18,
+                },
+            }
+        )
+
+        self.assertEqual({"base_font_size": 18}, normalized["appearance"])
 
     def test_run_event_serializes_stable_fields(self) -> None:
         event = RunEvent(

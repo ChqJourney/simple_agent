@@ -112,6 +112,10 @@ export interface RuntimePolicy {
   max_retries?: number;
 }
 
+export interface AppearanceConfig {
+  base_font_size?: number;
+}
+
 export interface LocalSkillContextProviderConfig {
   enabled: boolean;
 }
@@ -137,6 +141,7 @@ export interface ProviderConfig extends ModelProfile {
     secondary?: ModelProfile;
   };
   runtime?: RuntimePolicy;
+  appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
 }
 
@@ -183,6 +188,7 @@ export interface ClientConfig {
   input_type?: InputType;
   profiles?: ProviderConfig['profiles'];
   runtime?: RuntimePolicy;
+  appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
 }
 

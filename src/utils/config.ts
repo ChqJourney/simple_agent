@@ -1,4 +1,11 @@
-import { ContextProviderConfig, ModelProfile, ProviderConfig, ProviderType } from '../types';
+import {
+  AppearanceConfig,
+  ContextProviderConfig,
+  ModelProfile,
+  ProviderConfig,
+  ProviderType,
+  RuntimePolicy,
+} from '../types';
 import { getSupportedInputTypes, supportsReasoning } from './modelCapabilities';
 
 export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
@@ -6,6 +13,20 @@ export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
   deepseek: 'https://api.deepseek.com',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   ollama: 'http://127.0.0.1:11434',
+};
+
+export const DEFAULT_RUNTIME_POLICY: Required<RuntimePolicy> = {
+  context_length: 64000,
+  max_output_tokens: 4000,
+  max_tool_rounds: 8,
+  max_retries: 3,
+};
+
+export const MIN_BASE_FONT_SIZE = 12;
+export const MAX_BASE_FONT_SIZE = 20;
+
+export const DEFAULT_APPEARANCE_CONFIG: Required<AppearanceConfig> = {
+  base_font_size: 16,
 };
 
 export function getDefaultBaseUrl(provider: ProviderType): string {
@@ -60,6 +81,38 @@ function normalizeProfileConfig(profile: ModelProfile, profileName: string): Mod
   };
 }
 
+function normalizePositiveInt(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.round(parsed);
+}
+
+export function normalizeRuntimePolicy(runtime?: RuntimePolicy): Required<RuntimePolicy> {
+  return {
+    context_length: normalizePositiveInt(runtime?.context_length, DEFAULT_RUNTIME_POLICY.context_length),
+    max_output_tokens: normalizePositiveInt(runtime?.max_output_tokens, DEFAULT_RUNTIME_POLICY.max_output_tokens),
+    max_tool_rounds: normalizePositiveInt(runtime?.max_tool_rounds, DEFAULT_RUNTIME_POLICY.max_tool_rounds),
+    max_retries: normalizePositiveInt(runtime?.max_retries, DEFAULT_RUNTIME_POLICY.max_retries),
+  };
+}
+
+export function normalizeBaseFontSize(value?: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_APPEARANCE_CONFIG.base_font_size;
+  }
+
+  return Math.min(MAX_BASE_FONT_SIZE, Math.max(MIN_BASE_FONT_SIZE, Math.round(parsed)));
+}
+
+export function normalizeAppearanceConfig(appearance?: AppearanceConfig): Required<AppearanceConfig> {
+  return {
+    base_font_size: normalizeBaseFontSize(appearance?.base_font_size),
+  };
+}
+
 export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig {
   const primaryProfile = normalizeProfileConfig(config.profiles?.primary || config, 'primary');
   const secondaryProfile = config.profiles?.secondary
@@ -73,7 +126,8 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
       primary: primaryProfile,
       ...(secondaryProfile ? { secondary: secondaryProfile } : {}),
     },
-    runtime: config.runtime ? { ...config.runtime } : undefined,
+    runtime: normalizeRuntimePolicy(config.runtime),
+    appearance: normalizeAppearanceConfig(config.appearance),
     context_providers: normalizeContextProviders(config.context_providers),
   };
 }

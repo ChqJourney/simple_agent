@@ -24,6 +24,37 @@ describe("normalizeProviderConfig", () => {
     expect(normalized.context_providers?.retrieval?.workspace?.extensions).toEqual([".md", ".txt", ".json"]);
   });
 
+  it("fills runtime defaults when runtime values are omitted", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+    });
+
+    expect(normalized.runtime).toEqual({
+      context_length: 64000,
+      max_output_tokens: 4000,
+      max_tool_rounds: 8,
+      max_retries: 3,
+    });
+  });
+
+  it("fills appearance defaults when appearance values are omitted", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+    });
+
+    expect(normalized.appearance).toEqual({
+      base_font_size: 16,
+    });
+  });
+
   it("normalizes deepseek config with the provider default base url", () => {
     const normalized = normalizeProviderConfig({
       provider: "deepseek",

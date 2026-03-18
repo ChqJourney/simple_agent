@@ -11,6 +11,20 @@ DEFAULT_BASE_URLS = {
     "ollama": OLLAMA_DEFAULT_BASE_URL,
 }
 
+DEFAULT_RUNTIME_POLICY = {
+    "context_length": 64000,
+    "max_output_tokens": 4000,
+    "max_tool_rounds": 8,
+    "max_retries": 3,
+}
+
+DEFAULT_APPEARANCE = {
+    "base_font_size": 16,
+}
+
+MIN_BASE_FONT_SIZE = 12
+MAX_BASE_FONT_SIZE = 20
+
 
 def _default_base_url(provider: str) -> str:
     return DEFAULT_BASE_URLS.get(provider.lower(), "")
@@ -83,6 +97,38 @@ def _normalize_context_providers(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _normalize_runtime_policy(data: Dict[str, Any]) -> Dict[str, int]:
+    runtime_input = data.get("runtime") if isinstance(data.get("runtime"), dict) else {}
+
+    def normalize_runtime_value(key: str) -> int:
+        candidate = _to_int(runtime_input.get(key))
+        if candidate is None:
+            candidate = _to_int(data.get(key))
+        if candidate is None or candidate <= 0:
+            return DEFAULT_RUNTIME_POLICY[key]
+        return candidate
+
+    return {
+        "context_length": normalize_runtime_value("context_length"),
+        "max_output_tokens": normalize_runtime_value("max_output_tokens"),
+        "max_tool_rounds": normalize_runtime_value("max_tool_rounds"),
+        "max_retries": normalize_runtime_value("max_retries"),
+    }
+
+
+def _normalize_appearance(data: Dict[str, Any]) -> Dict[str, int]:
+    raw_appearance = data.get("appearance") if isinstance(data.get("appearance"), dict) else {}
+    base_font_size = _to_int(raw_appearance.get("base_font_size"))
+    if base_font_size is None:
+        base_font_size = DEFAULT_APPEARANCE["base_font_size"]
+
+    base_font_size = max(MIN_BASE_FONT_SIZE, min(MAX_BASE_FONT_SIZE, base_font_size))
+
+    return {
+        "base_font_size": base_font_size,
+    }
+
+
 def _normalize_profile(
     data: Dict[str, Any],
     *,
@@ -143,14 +189,8 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
             fallback_provider=primary_profile["provider"],
         )
 
-    runtime_input = data.get("runtime") if isinstance(data.get("runtime"), dict) else {}
-    runtime = {
-        "context_length": _to_int(runtime_input.get("context_length") or data.get("context_length")),
-        "max_output_tokens": _to_int(runtime_input.get("max_output_tokens") or data.get("max_output_tokens")),
-        "max_tool_rounds": _to_int(runtime_input.get("max_tool_rounds") or data.get("max_tool_rounds")),
-        "max_retries": _to_int(runtime_input.get("max_retries") or data.get("max_retries")),
-    }
-    runtime = {key: value for key, value in runtime.items() if value is not None}
+    runtime = _normalize_runtime_policy(data)
+    appearance = _normalize_appearance(data)
 
     normalized = {
         **primary_profile,
@@ -159,6 +199,7 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
             **({"secondary": secondary_profile} if secondary_profile else {}),
         },
         "runtime": runtime,
+        "appearance": appearance,
         "context_providers": _normalize_context_providers(data),
     }
 

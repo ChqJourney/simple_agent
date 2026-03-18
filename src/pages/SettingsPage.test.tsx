@@ -78,6 +78,7 @@ describe("SettingsPage", () => {
     useUIStore.setState((state) => ({
       ...state,
       theme: "system",
+      baseFontSize: 16,
     }));
   });
 
@@ -96,6 +97,44 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Enable Local Skills")).toBeTruthy();
     expect(screen.getByLabelText("Enable Workspace Retrieval")).toBeTruthy();
     expect(screen.getByLabelText("Retrieval Max Hits")).toBeTruthy();
+    expect(screen.getByLabelText("Base Font Size")).toBeTruthy();
+  });
+
+  it("renders separate connection test actions for primary and secondary profiles", () => {
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("button", { name: "Test Primary Connection" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Test Secondary Connection" })).toBeTruthy();
+  });
+
+  it("shows default runtime values when runtime config is missing", () => {
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o",
+            api_key: "test-key",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+        },
+      },
+      setConfig: setConfigMock,
+    });
+
+    render(<SettingsPage />);
+
+    expect((screen.getByLabelText("Context Length") as HTMLInputElement).value).toBe("64000");
+    expect((screen.getByLabelText("Max Output Tokens") as HTMLInputElement).value).toBe("4000");
+    expect((screen.getByLabelText("Max Tool Rounds") as HTMLInputElement).value).toBe("8");
+    expect((screen.getByLabelText("Max Retries") as HTMLInputElement).value).toBe("3");
   });
 
   it("offers DeepSeek in the provider selector", () => {
@@ -161,6 +200,23 @@ describe("SettingsPage", () => {
             },
           }),
         }),
+      })
+    );
+  });
+
+  it("saves base font size into appearance config", () => {
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByLabelText("Base Font Size"), {
+      target: { value: "18" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(setConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appearance: {
+          base_font_size: 18,
+        },
       })
     );
   });

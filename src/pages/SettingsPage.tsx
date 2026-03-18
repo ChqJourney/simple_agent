@@ -5,10 +5,22 @@ import { useConfigStore } from '../stores/configStore';
 import { useUIStore } from '../stores';
 import { ModelProfile, ProviderConfig } from '../types';
 import { useWebSocket } from '../contexts/WebSocketContext';
-import { normalizeBaseUrl, normalizeContextProviders, normalizeProviderConfig } from '../utils/config';
+import {
+  DEFAULT_RUNTIME_POLICY,
+  normalizeBaseFontSize,
+  normalizeBaseUrl,
+  normalizeContextProviders,
+  normalizeProviderConfig,
+} from '../utils/config';
 import { backendTestConfigUrl } from '../utils/backendEndpoint';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
+type ProfileName = 'primary' | 'secondary';
+
+interface ConnectionTestState {
+  status: TestStatus;
+  error: string | null;
+}
 
 function parseExtensionsInput(value: string): string[] {
   return value
@@ -21,19 +33,50 @@ function parseExtensionsInput(value: string): string[] {
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const { config, setConfig } = useConfigStore();
-  const { theme, setTheme } = useUIStore();
+  const { theme, setTheme, baseFontSize, setBaseFontSize } = useUIStore();
   const { sendConfig } = useWebSocket();
   const [draftConfig, setDraftConfig] = useState<Partial<ProviderConfig>>(config || {});
-  const [testStatus, setTestStatus] = useState<TestStatus>('idle');
-  const [testError, setTestError] = useState<string | null>(null);
+  const [draftBaseFontSize, setDraftBaseFontSize] = useState<number>(
+    normalizeBaseFontSize(config?.appearance?.base_font_size ?? baseFontSize)
+  );
+  const [connectionTests, setConnectionTests] = useState<Record<ProfileName, ConnectionTestState>>({
+    primary: { status: 'idle', error: null },
+    secondary: { status: 'idle', error: null },
+  });
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraftConfig(config || {});
-  }, [config]);
+    setDraftBaseFontSize(normalizeBaseFontSize(config?.appearance?.base_font_size ?? baseFontSize));
+  }, [baseFontSize, config]);
 
   const primaryProfile: Partial<ModelProfile> = draftConfig.profiles?.primary || draftConfig;
   const secondaryProfile: Partial<ModelProfile> = draftConfig.profiles?.secondary || {};
   const contextProviders = normalizeContextProviders(draftConfig.context_providers);
+  const resolvedRuntime = {
+    context_length: draftConfig.runtime?.context_length ?? DEFAULT_RUNTIME_POLICY.context_length,
+    max_output_tokens: draftConfig.runtime?.max_output_tokens ?? DEFAULT_RUNTIME_POLICY.max_output_tokens,
+    max_tool_rounds: draftConfig.runtime?.max_tool_rounds ?? DEFAULT_RUNTIME_POLICY.max_tool_rounds,
+    max_retries: draftConfig.runtime?.max_retries ?? DEFAULT_RUNTIME_POLICY.max_retries,
+  };
+
+  const setConnectionTestState = (profileName: ProfileName, status: TestStatus, error: string | null = null) => {
+    setConnectionTests((prev) => ({
+      ...prev,
+      [profileName]: { status, error },
+    }));
+  };
+
+  const getProfileForTest = (profileName: ProfileName): Partial<ModelProfile> => (
+    profileName === 'primary' ? primaryProfile : secondaryProfile
+  );
+
+  const isProfileTestable = (profile: Partial<ModelProfile>): boolean => {
+    if (!profile.provider || !profile.model) {
+      return false;
+    }
+    return profile.provider === 'ollama' || Boolean(profile.api_key);
+  };
 
   const updateProfile = (profileName: 'primary' | 'secondary', updates: Partial<ModelProfile>) => {
     const nextProfiles = {
@@ -55,23 +98,31 @@ export const SettingsPage: React.FC = () => {
     });
   };
 
-  const handleTest = async () => {
-    if (!primaryProfile.provider || !primaryProfile.model) return;
+  const handleTest = async (profileName: ProfileName) => {
+    const profile = getProfileForTest(profileName);
+    if (!profile.provider || !profile.model) {
+      setConnectionTestState(profileName, 'error', 'Provider and model are required');
+      return;
+    }
 
-    setTestStatus('testing');
-    setTestError(null);
+    if (profile.provider !== 'ollama' && !profile.api_key) {
+      setConnectionTestState(profileName, 'error', 'API key is required for this provider');
+      return;
+    }
+
+    setConnectionTestState(profileName, 'testing', null);
 
     try {
-      const baseUrl = normalizeBaseUrl(primaryProfile.provider, primaryProfile.base_url);
+      const baseUrl = normalizeBaseUrl(profile.provider, profile.base_url);
       const response = await fetch(backendTestConfigUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          provider: primaryProfile.provider,
-          model: primaryProfile.model,
-          api_key: primaryProfile.api_key,
+          provider: profile.provider,
+          model: profile.model,
+          api_key: profile.api_key,
           base_url: baseUrl,
         }),
       });
@@ -79,39 +130,35 @@ export const SettingsPage: React.FC = () => {
       const payload = await response.json().catch(() => ({}));
 
       if (response.ok && payload.ok) {
-        setTestStatus('success');
-      } else {
-        setTestStatus('error');
-        setTestError(payload.error || 'Connection test failed');
+        setConnectionTestState(profileName, 'success', null);
+        return;
       }
+      setConnectionTestState(profileName, 'error', payload.error || 'Connection test failed');
     } catch (error) {
-      setTestStatus('error');
-      setTestError(error instanceof Error ? error.message : 'Connection failed');
+      setConnectionTestState(profileName, 'error', error instanceof Error ? error.message : 'Connection failed');
     }
   };
 
   const handleSave = () => {
+    setSaveError(null);
+
     if (!primaryProfile.provider || !primaryProfile.model) {
-      setTestStatus('error');
-      setTestError('Provider and model are required');
+      setSaveError('Provider and model are required');
       return;
     }
 
     if (primaryProfile.provider !== 'ollama' && !primaryProfile.api_key) {
-      setTestStatus('error');
-      setTestError('API key is required for this provider');
+      setSaveError('API key is required for this provider');
       return;
     }
 
     if (secondaryProfile.provider && !secondaryProfile.model) {
-      setTestStatus('error');
-      setTestError('Secondary model is required when a secondary provider is selected');
+      setSaveError('Secondary model is required when a secondary provider is selected');
       return;
     }
 
     if (secondaryProfile.provider && secondaryProfile.provider !== 'ollama' && !secondaryProfile.api_key) {
-      setTestStatus('error');
-      setTestError('API key is required for the secondary provider');
+      setSaveError('API key is required for the secondary provider');
       return;
     }
 
@@ -147,14 +194,18 @@ export const SettingsPage: React.FC = () => {
           : {}),
       },
       runtime: {
-        context_length: draftConfig.runtime?.context_length,
-        max_output_tokens: draftConfig.runtime?.max_output_tokens,
-        max_tool_rounds: draftConfig.runtime?.max_tool_rounds,
-        max_retries: draftConfig.runtime?.max_retries,
+        context_length: resolvedRuntime.context_length,
+        max_output_tokens: resolvedRuntime.max_output_tokens,
+        max_tool_rounds: resolvedRuntime.max_tool_rounds,
+        max_retries: resolvedRuntime.max_retries,
+      },
+      appearance: {
+        base_font_size: normalizeBaseFontSize(draftBaseFontSize),
       },
       context_providers: contextProviders,
     });
 
+    setBaseFontSize(normalizeBaseFontSize(draftBaseFontSize));
     setConfig(normalizedConfig);
     sendConfig(normalizedConfig);
     navigate(-1);
@@ -197,25 +248,43 @@ export const SettingsPage: React.FC = () => {
                 Used for background helper tasks such as title generation. Falls back to the primary model when unset.
               </p>
             </div>
-            {primaryProfile.provider && primaryProfile.provider !== 'ollama' && (
-              <div className="flex items-center gap-3 pt-2">
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center gap-3">
                 <button
-                  onClick={handleTest}
-                  disabled={testStatus === 'testing'}
+                  onClick={() => handleTest('primary')}
+                  disabled={connectionTests.primary.status === 'testing' || !isProfileTestable(primaryProfile)}
                   className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
+                  {connectionTests.primary.status === 'testing' ? 'Testing Primary...' : 'Test Primary Connection'}
                 </button>
-                {testStatus === 'success' && (
-                  <span className="text-green-500 text-sm">Connected</span>
+                {connectionTests.primary.status === 'success' && (
+                  <span className="text-green-500 text-sm">Primary connected</span>
                 )}
-                {testStatus === 'error' && (
+                {connectionTests.primary.status === 'error' && (
                   <span className="text-red-500 text-sm">
-                    Failed{testError ? `: ${testError}` : ''}
+                    Primary failed{connectionTests.primary.error ? `: ${connectionTests.primary.error}` : ''}
                   </span>
                 )}
               </div>
-            )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => handleTest('secondary')}
+                  disabled={connectionTests.secondary.status === 'testing' || !isProfileTestable(secondaryProfile)}
+                  className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {connectionTests.secondary.status === 'testing' ? 'Testing Secondary...' : 'Test Secondary Connection'}
+                </button>
+                {connectionTests.secondary.status === 'success' && (
+                  <span className="text-green-500 text-sm">Secondary connected</span>
+                )}
+                {connectionTests.secondary.status === 'error' && (
+                  <span className="text-red-500 text-sm">
+                    Secondary failed{connectionTests.secondary.error ? `: ${connectionTests.secondary.error}` : ''}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -232,7 +301,7 @@ export const SettingsPage: React.FC = () => {
                 id="context-length"
                 type="number"
                 min={0}
-                value={draftConfig.runtime?.context_length ?? ''}
+                value={resolvedRuntime.context_length}
                 onChange={(e) =>
                   setDraftConfig({
                     ...draftConfig,
@@ -254,7 +323,7 @@ export const SettingsPage: React.FC = () => {
                 id="max-output-tokens"
                 type="number"
                 min={1}
-                value={draftConfig.runtime?.max_output_tokens ?? ''}
+                value={resolvedRuntime.max_output_tokens}
                 onChange={(e) =>
                   setDraftConfig({
                     ...draftConfig,
@@ -276,7 +345,7 @@ export const SettingsPage: React.FC = () => {
                 id="max-tool-rounds"
                 type="number"
                 min={1}
-                value={draftConfig.runtime?.max_tool_rounds ?? ''}
+                value={resolvedRuntime.max_tool_rounds}
                 onChange={(e) =>
                   setDraftConfig({
                     ...draftConfig,
@@ -298,7 +367,7 @@ export const SettingsPage: React.FC = () => {
                 id="max-retries"
                 type="number"
                 min={1}
-                value={draftConfig.runtime?.max_retries ?? ''}
+                value={resolvedRuntime.max_retries}
                 onChange={(e) =>
                   setDraftConfig({
                     ...draftConfig,
@@ -448,12 +517,13 @@ export const SettingsPage: React.FC = () => {
           <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
             Appearance
           </h2>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-gray-700 dark:text-gray-300">
+          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <label className="text-sm text-gray-700 dark:text-gray-300" htmlFor="theme">
                 Theme
               </label>
               <select
+                id="theme"
                 value={theme}
                 onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'system')}
                 className="px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white"
@@ -463,16 +533,41 @@ export const SettingsPage: React.FC = () => {
                 <option value="dark">Dark</option>
               </select>
             </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <label htmlFor="base-font-size" className="text-sm text-gray-700 dark:text-gray-300">
+                Base Font Size
+              </label>
+              <input
+                id="base-font-size"
+                type="number"
+                min={12}
+                max={20}
+                value={draftBaseFontSize}
+                onChange={(e) => {
+                  const nextValue = e.target.value ? Number(e.target.value) : baseFontSize;
+                  const normalizedSize = normalizeBaseFontSize(nextValue);
+                  setDraftBaseFontSize(normalizedSize);
+                  setBaseFontSize(normalizedSize);
+                }}
+                className="w-24 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white"
+              />
+            </div>
           </div>
         </section>
 
-        <div className="flex justify-end">
-          <button
-            onClick={handleSave}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-          >
-            Save
-          </button>
+        <div className="space-y-2">
+          {saveError && (
+            <p className="text-sm text-red-500">{saveError}</p>
+          )}
+          <div className="flex justify-end">
+            <button
+              onClick={handleSave}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+            >
+              Save
+            </button>
+          </div>
         </div>
       </main>
     </div>

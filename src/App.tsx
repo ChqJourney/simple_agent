@@ -9,6 +9,7 @@ import './index.css';
 function App() {
   const setPageLoading = useUIStore((state) => state.setPageLoading);
   const theme = useUIStore((state) => state.theme);
+  const baseFontSize = useUIStore((state) => state.baseFontSize);
 
   useEffect(() => {
     setPageLoading(false);
@@ -38,6 +39,10 @@ function App() {
       mediaQuery.removeEventListener('change', applyTheme);
     };
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${baseFontSize}px`;
+  }, [baseFontSize]);
 
   return (
     <BrowserRouter>

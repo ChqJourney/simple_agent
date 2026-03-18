@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { normalizeBaseFontSize } from '../utils/config';
 
 type RightPanelTab = 'filetree' | 'tasklist';
 
@@ -8,12 +9,14 @@ interface UIState {
   rightPanelCollapsed: boolean;
   rightPanelTab: RightPanelTab;
   theme: 'light' | 'dark' | 'system';
+  baseFontSize: number;
   isPageLoading: boolean;
   
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  setBaseFontSize: (size: number) => void;
   setPageLoading: (loading: boolean) => void;
 }
 
@@ -24,6 +27,7 @@ export const useUIStore = create<UIState>()(
       rightPanelCollapsed: false,
       rightPanelTab: 'filetree',
       theme: 'system',
+      baseFontSize: 16,
 
       toggleLeftPanel: () =>
         set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
@@ -34,6 +38,7 @@ export const useUIStore = create<UIState>()(
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
 
       setTheme: (theme) => set({ theme }),
+      setBaseFontSize: (size) => set({ baseFontSize: normalizeBaseFontSize(size) }),
 
       isPageLoading: false,
       setPageLoading: (loading) => set({ isPageLoading: loading }),
@@ -45,6 +50,7 @@ export const useUIStore = create<UIState>()(
         rightPanelCollapsed: state.rightPanelCollapsed,
         rightPanelTab: state.rightPanelTab,
         theme: state.theme,
+        baseFontSize: state.baseFontSize,
       }),
     }
   )

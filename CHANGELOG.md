@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added image attachment-aware messages and file-tree drag/drop insertion
 - Added file-tree highlighting for created and modified files from `file_write`
 - Added generated session titles with websocket sync and metadata persistence
+- Added split `Test Connection` controls in settings for primary/secondary model profiles
+- Added appearance setting `base_font_size` with frontend runtime application and backend config normalization support
 
 ### Changed
 
@@ -67,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgraded frontend session, chat, and workspace stores to consume structured runtime events and metadata updates
 - Made image drops use inline data URLs so browser-sourced images can reach the backend without filesystem paths
 - Updated README to document the current platform architecture, runtime config shape, run events, tools, skills, retrieval, multimodal input, and verification commands
+- Changed runtime-limit defaults to display explicit values in settings when unset (`64000 / 4000 / 8 / 3`)
 
 ### Fixed
 

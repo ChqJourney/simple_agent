@@ -158,6 +158,9 @@ Workspace
     "max_tool_rounds": 8,
     "max_retries": 3
   },
+  "appearance": {
+    "base_font_size": 16
+  },
   "context_providers": {
     "skills": {
       "local": {
@@ -207,9 +210,18 @@ Workspace
     "max_output_tokens": 4000,
     "max_tool_rounds": 8,
     "max_retries": 3
+  },
+  "appearance": {
+    "base_font_size": 16
   }
 }
 ```
+
+## Settings Updates (2026-03-18)
+
+- `Test Connection` is now split by profile: `Test Primary Connection` and `Test Secondary Connection`.
+- `Runtime Limits` now displays explicit defaults when users have not set custom values: `context_length=64000`, `max_output_tokens=4000`, `max_tool_rounds=8`, `max_retries=3`.
+- `Appearance` now includes `Base Font Size`, persisted via `appearance.base_font_size` and applied globally in the frontend runtime.
 
 ## Run Event 模型
 

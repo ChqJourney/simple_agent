@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { readDir } from '@tauri-apps/plugin-fs';
 import { useWorkspaceStore } from '../../stores';
 
 interface FileNode {
@@ -49,9 +50,9 @@ export const FileTree: React.FC = () => {
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
+  const treeGenerationRef = useRef(0);
 
   const readDirectory = async (dirPath: string): Promise<FileNode[]> => {
-    const { readDir } = await import('@tauri-apps/plugin-fs');
     const entries = await readDir(dirPath);
 
     return sortEntries(entries).map((entry) => ({
@@ -63,6 +64,7 @@ export const FileTree: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+    const generation = ++treeGenerationRef.current;
 
     const loadRootDirectory = async () => {
       if (!currentWorkspace?.path) {
@@ -78,16 +80,16 @@ export const FileTree: React.FC = () => {
 
       try {
         const nodes = await readDirectory(currentWorkspace.path);
-        if (!cancelled) {
+        if (!cancelled && treeGenerationRef.current === generation) {
           setTree(nodes);
         }
       } catch (error) {
         console.error('Failed to load directory:', error);
-        if (!cancelled) {
+        if (!cancelled && treeGenerationRef.current === generation) {
           setTree([]);
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && treeGenerationRef.current === generation) {
           setIsInitialLoading(false);
         }
       }
@@ -97,6 +99,9 @@ export const FileTree: React.FC = () => {
 
     return () => {
       cancelled = true;
+      if (treeGenerationRef.current === generation) {
+        treeGenerationRef.current += 1;
+      }
     };
   }, [currentWorkspace?.path]);
 
@@ -129,8 +134,11 @@ export const FileTree: React.FC = () => {
     });
 
     try {
+      const generation = treeGenerationRef.current;
       const children = await readDirectory(node.path);
-      setTree((prev) => attachChildren(prev, node.path, children));
+      if (treeGenerationRef.current === generation) {
+        setTree((prev) => attachChildren(prev, node.path, children));
+      }
     } catch (error) {
       console.error('Failed to load directory:', error);
     } finally {

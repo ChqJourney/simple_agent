@@ -64,6 +64,8 @@ async def lifespan(app: FastAPI):
             agent.interrupt()
         except Exception:
             pass
+    await cleanup_all_tasks()
+    await _close_runtime_llms()
 
 app = FastAPI(title="AI Agent Backend", lifespan=lifespan)
 
@@ -192,6 +194,13 @@ def _forget_task(task: asyncio.Task) -> None:
 
     if session_id and runtime_state.active_session_tasks.get(session_id) is task:
         runtime_state.active_session_tasks.pop(session_id, None)
+        agent = runtime_state.active_agents.pop(session_id, None)
+        llm = getattr(agent, "llm", None) if agent is not None else None
+        if llm is not None:
+            try:
+                asyncio.get_running_loop().create_task(_close_llm_instance(llm))
+            except RuntimeError:
+                logger.debug("No running loop available to close agent llm for session %s", session_id)
 
 
 def _origin_allowed(origin: Optional[str]) -> bool:
@@ -303,6 +312,18 @@ async def _release_reserved_session(session_id: str) -> None:
     async with state_lock:
         if runtime_state.active_session_tasks.get(session_id) is SESSION_TASK_RESERVED:
             runtime_state.active_session_tasks.pop(session_id, None)
+
+
+async def _run_title_task_with_cleanup(
+    session: Session,
+    llm: BaseLLM,
+    first_message: str,
+    send_callback: SendCallback,
+) -> None:
+    try:
+        await run_session_title_task(session, llm, first_message, send_callback)
+    finally:
+        await _close_llm_instance(llm)
 
 
 async def get_or_create_agent(
@@ -612,7 +633,7 @@ async def handle_user_message(
             title_llm = create_llm_for_profile(title_profile, runtime_policy)
             if callable(getattr(title_llm, "complete", None)):
                 title_task = asyncio.create_task(
-                    run_session_title_task(session, title_llm, normalized_content, send_callback)
+                    _run_title_task_with_cleanup(session, title_llm, normalized_content, send_callback)
                 )
 
         async with state_lock:

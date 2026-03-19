@@ -2,6 +2,8 @@ import { useCallback } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useChatStore } from '../stores/chatStore';
+import { useRunStore } from '../stores/runStore';
+import { useTaskStore } from '../stores/taskStore';
 import { v4 as uuidv4 } from 'uuid';
 import { loadSessionHistory } from '../utils/storage';
 
@@ -23,6 +25,8 @@ export function useSession(): UseSessionReturn {
   } = useSessionStore();
   const { currentWorkspace } = useWorkspaceStore();
   const { clearSession, loadSession: loadChatSession } = useChatStore();
+  const clearRunSession = useRunStore((state) => state.clearSession);
+  const clearSessionTasks = useTaskStore((state) => state.clearSessionTasks);
 
   const createSession = useCallback((): string => {
     const sessionId = uuidv4();
@@ -63,6 +67,8 @@ export function useSession(): UseSessionReturn {
 
     const nextSessionId = await removeSession(sessionId, workspacePath);
     clearSession(sessionId);
+    clearRunSession(sessionId);
+    clearSessionTasks(sessionId);
 
     if (!nextSessionId) {
       return null;
@@ -77,7 +83,7 @@ export function useSession(): UseSessionReturn {
     const messages = await loadSessionHistory(nextSession.workspace_path, nextSessionId);
     loadChatSession(nextSessionId, messages);
     return nextSessionId;
-  }, [clearSession, currentWorkspace?.path, loadChatSession, removeSession]);
+  }, [clearRunSession, clearSession, clearSessionTasks, currentWorkspace?.path, loadChatSession, removeSession]);
 
   const clearCurrentSession = useCallback(() => {
     if (currentSessionId) {

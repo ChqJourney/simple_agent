@@ -20,6 +20,7 @@ interface TaskState {
   upsertTask: (task: Task) => void;
   updateTaskStatus: (id: string, status: TaskStatus) => void;
   removeTask: (id: string) => void;
+  clearSessionTasks: (sessionId: string) => void;
   getTasksBySession: (sessionId: string) => Task[];
   clearTasks: () => void;
 }
@@ -56,6 +57,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   removeTask: (id) =>
     set((state) => ({
       tasks: state.tasks.filter((t) => t.id !== id),
+    })),
+
+  clearSessionTasks: (sessionId) =>
+    set((state) => ({
+      tasks: state.tasks.filter((t) => t.sessionId !== sessionId),
     })),
 
   getTasksBySession: (sessionId) =>

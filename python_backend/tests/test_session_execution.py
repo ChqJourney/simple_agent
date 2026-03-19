@@ -45,6 +45,14 @@ class TitleCapableLLM:
         }
 
 
+class ClosableLLM:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
 class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -144,6 +152,31 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
                 for message in self.messages
             )
         )
+
+    async def test_completed_task_releases_active_agent_and_closes_agent_llm(self) -> None:
+        closable_llm = ClosableLLM()
+        self.agent_a.llm = closable_llm
+
+        await backend_main.handle_user_message(
+            {
+                "session_id": "session-a",
+                "content": "alpha",
+                "workspace_path": self.temp_dir.name,
+            },
+            self.send_callback,
+            "conn-a",
+        )
+        await asyncio.sleep(0)
+
+        self.assertIn("session-a", backend_main.runtime_state.active_agents)
+
+        self.blocker.set()
+        if backend_main.runtime_state.pending_tasks:
+            await asyncio.gather(*backend_main.runtime_state.pending_tasks, return_exceptions=True)
+        await asyncio.sleep(0)
+
+        self.assertNotIn("session-a", backend_main.runtime_state.active_agents)
+        self.assertTrue(closable_llm.closed)
 
     async def test_cleanup_connection_tasks_only_cancels_owned_session_runs(self) -> None:
         await backend_main.handle_user_message(
@@ -485,6 +518,42 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
                 for message in self.messages
             )
         )
+
+    async def test_lifespan_shutdown_cancels_pending_tasks_and_closes_llms(self) -> None:
+        blocker = asyncio.Event()
+
+        async def wait_forever() -> None:
+            await blocker.wait()
+
+        current_llm = ClosableLLM()
+        agent_llm = ClosableLLM()
+        pending_task = asyncio.create_task(wait_forever())
+
+        self.agent_a.llm = agent_llm
+        backend_main.runtime_state.current_llm = current_llm
+        backend_main.runtime_state.pending_tasks = {pending_task}
+        backend_main.runtime_state.task_sessions = {pending_task: "session-a"}
+        backend_main.runtime_state.active_session_tasks = {"session-a": pending_task}
+        backend_main.runtime_state.active_agents = {"session-a": self.agent_a}
+        pending_task.add_done_callback(backend_main._forget_task)
+
+        try:
+            async with backend_main.lifespan(None):
+                pass
+
+            await asyncio.sleep(0)
+
+            self.assertTrue(self.agent_a.interrupted)
+            self.assertTrue(pending_task.cancelled())
+            self.assertTrue(current_llm.closed)
+            self.assertTrue(agent_llm.closed)
+        finally:
+            if not pending_task.done():
+                pending_task.cancel()
+                await asyncio.gather(pending_task, return_exceptions=True)
+            backend_main.runtime_state.pending_tasks.clear()
+            backend_main.runtime_state.task_sessions.clear()
+            backend_main.runtime_state.active_session_tasks.clear()
 
 
 if __name__ == "__main__":

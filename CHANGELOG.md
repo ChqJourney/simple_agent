@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added frontend regression test `src/hooks/useSession.test.tsx` for clearing chat/run/task state after session deletion
+- Added frontend regression coverage for stale workspace authorization responses in `src/pages/WorkspacePage.test.tsx`
+- Added frontend regression coverage for stale file-tree child directory loads in `src/components/Workspace/FileTree.test.tsx`
+- Added backend regression coverage for closing title-task LLM clients and releasing completed session agents in `python_backend.tests.test_model_router` and `python_backend.tests.test_session_execution`
+- Added Tauri unit coverage for sidecar `Terminated` / `Error` event logging in `src-tauri/src/lib.rs`
 - Added session-level execution mode switching (`Regular` / `Free`) with websocket sync and frontend selector support
 - Added tool approval scope actions in confirmation modal: `Always This Session` and `Always This Workspace`
 - Added persistent tool auto-approval policy storage in `~/.agent/tool-policies.json` with startup reload support
@@ -47,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Changed workspace preparation flow to ignore stale async authorization results after the active workspace changes
+- Changed frontend session deletion flow to clear run timeline and task state alongside chat state
+- Changed backend task cleanup to release completed per-session agents and close their LLM resources
+- Changed FastAPI lifespan shutdown to cancel pending tasks and close runtime LLM clients before exit
+- Changed file tree directory loading to guard against stale async child-directory responses after workspace switches
+- Changed Tauri sidecar event handling to surface abnormal `Terminated` / `Error` events in desktop logs
 - Changed execution tools (`shell_execute`, `python_execute`, `node_execute`) to emit bounded/truncation-aware output metadata and honor `capture_output` policy at runtime
 - Changed backend tool confirmation and execution-mode handlers to use stricter runtime payload normalization for malformed client fields
 - Refactored execution tool shared timeout/output shaping logic into `python_backend/tools/execution_common.py`
@@ -108,6 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 
+- Updated `README.md` with 2026-03-19 reliability notes for workspace loading, session cleanup, runtime cleanup, file tree guarding, and sidecar error logging
 - Updated `README.md` with tool-system updates for execution mode, scoped approvals, persisted policies, and execution output metadata
 - Updated `docs/tool-system-current-state.md` with current permission model (Regular/Free + persisted policies) and execution tool output fields
 - Rewrote `README.md` to reflect the current platform architecture, feature set, persistence model, runtime config, provider matrix, token-usage widget, and verification commands

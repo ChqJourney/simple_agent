@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspacePage } from "./WorkspacePage";
 import { useSessionStore, useUIStore, useWorkspaceStore } from "../stores";
@@ -7,6 +7,7 @@ import { scanSessions } from "../utils/storage";
 const navigateMock = vi.hoisted(() => vi.fn());
 const invokeMock = vi.hoisted(() => vi.fn());
 const sendWorkspaceMock = vi.hoisted(() => vi.fn());
+let currentWorkspaceId = "workspace-1";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock,
@@ -43,7 +44,7 @@ vi.mock("react-router-dom", async () => {
   return {
     ...actual,
     useNavigate: () => navigateMock,
-    useParams: () => ({ workspaceId: "workspace-1" }),
+    useParams: () => ({ workspaceId: currentWorkspaceId }),
   };
 });
 
@@ -52,6 +53,7 @@ const scanSessionsMock = vi.mocked(scanSessions);
 describe("WorkspacePage", () => {
   beforeEach(() => {
     localStorage.clear();
+    currentWorkspaceId = "workspace-1";
     navigateMock.mockReset();
     invokeMock.mockReset();
     sendWorkspaceMock.mockReset();
@@ -77,6 +79,13 @@ describe("WorkspacePage", () => {
           path: "C:/Users/patri/source/repos/../repos/repo",
           lastOpened: "2026-03-12T10:00:00.000Z",
           createdAt: "2026-03-12T09:00:00.000Z",
+        },
+        {
+          id: "workspace-2",
+          name: "repo-2",
+          path: "C:/Users/patri/source/repos/../repos/repo-2",
+          lastOpened: "2026-03-12T10:05:00.000Z",
+          createdAt: "2026-03-12T09:05:00.000Z",
         },
       ],
       currentWorkspace: null,
@@ -132,5 +141,65 @@ describe("WorkspacePage", () => {
     const { queryByText } = render(<WorkspacePage />);
 
     expect(queryByText("Locked: openai/gpt-4o")).toBeNull();
+  });
+
+  it("ignores stale workspace authorization results after the current workspace changes", async () => {
+    let resolveFirst: ((value: { canonical_path: string }) => void) | undefined;
+    let resolveSecond: ((value: { canonical_path: string }) => void) | undefined;
+    let firstPending = true;
+    let secondPending = true;
+
+    invokeMock.mockImplementation((_command, args: { selectedPath: string }) => {
+      if (firstPending && args.selectedPath === "C:/Users/patri/source/repos/../repos/repo") {
+        firstPending = false;
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+
+      if (secondPending && args.selectedPath === "C:/Users/patri/source/repos/../repos/repo-2") {
+        secondPending = false;
+        return new Promise((resolve) => {
+          resolveSecond = resolve;
+        });
+      }
+
+      return Promise.resolve({
+        canonical_path: args.selectedPath.includes("repo-2")
+          ? "C:/Users/patri/source/repos/repo-2"
+          : "C:/Users/patri/source/repos/repo",
+      });
+    });
+
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("authorize_workspace_path", {
+        selectedPath: "C:/Users/patri/source/repos/../repos/repo",
+      });
+    });
+
+    act(() => {
+      useWorkspaceStore.getState().setCurrentWorkspace(useWorkspaceStore.getState().workspaces[1] ?? null);
+    });
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("authorize_workspace_path", {
+        selectedPath: "C:/Users/patri/source/repos/../repos/repo-2",
+      });
+    });
+
+    resolveFirst?.({
+      canonical_path: "C:/Users/patri/source/repos/repo",
+    });
+    resolveSecond?.({
+      canonical_path: "C:/Users/patri/source/repos/repo-2",
+    });
+
+    await waitFor(() => {
+      expect(scanSessionsMock).toHaveBeenCalledWith("C:/Users/patri/source/repos/repo-2");
+    });
+
+    expect(scanSessionsMock).not.toHaveBeenCalledWith("C:/Users/patri/source/repos/repo");
   });
 });

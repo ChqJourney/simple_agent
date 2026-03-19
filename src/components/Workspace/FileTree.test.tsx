@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { FileTree } from "./FileTree";
@@ -43,5 +43,58 @@ describe("FileTree", () => {
 
     expect(screen.getByText("existing.txt").closest("div")?.className).toContain("ring-amber");
     expect(screen.getByText("new.txt").closest("div")?.className).toContain("ring-emerald");
+  });
+
+  it("ignores stale child directory loads after switching workspaces", async () => {
+    let resolveChildDir: ((value: Array<{ name: string; isDirectory: boolean }>) => void) | undefined;
+
+    readDirMock
+      .mockResolvedValueOnce([
+        { name: "src", isDirectory: true },
+      ])
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveChildDir = resolve;
+          })
+      )
+      .mockResolvedValueOnce([
+        { name: "workspace-2.txt", isDirectory: false },
+      ]);
+
+    render(<FileTree />);
+
+    await waitFor(() => {
+      expect(screen.getByText("src")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("src"));
+
+    act(() => {
+      useWorkspaceStore.setState((state) => ({
+        ...state,
+        currentWorkspace: {
+          id: "workspace-2",
+          name: "repo-2",
+          path: "C:/repo-2",
+          lastOpened: "2026-03-13T00:01:00.000Z",
+          createdAt: "2026-03-13T00:01:00.000Z",
+        },
+      }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("workspace-2.txt")).toBeTruthy();
+    });
+
+    await act(async () => {
+      resolveChildDir?.([
+        { name: "old-child.txt", isDirectory: false },
+      ]);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("old-child.txt")).toBeNull();
+    expect(screen.getByText("workspace-2.txt")).toBeTruthy();
   });
 });

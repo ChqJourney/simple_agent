@@ -238,9 +238,18 @@ Workspace
   - `stdout_truncated`
   - `stderr_truncated`
   - `captured_output`
-  - `output_max_bytes`
+- `output_max_bytes`
 - Tool argument validation now runs before tool execution for required fields and enum constraints.
 - See also: `docs/tool-system-current-state.md`.
+
+## Reliability Updates (2026-03-19)
+
+- Workspace loading now ignores stale authorization results after the active workspace changes, preventing old async responses from resetting the wrong session list.
+- Session deletion now clears associated chat, run-timeline, and task-panel state in the frontend instead of leaving stale per-session UI data behind.
+- Backend runtime cleanup now closes title-generation LLM clients, closes per-session agent LLM clients when runs finish, and performs task + LLM shutdown cleanup during FastAPI lifespan teardown.
+- File tree async directory loads are now guarded against workspace switches, so delayed child-directory responses from an old workspace cannot pollute the current tree.
+- Tauri sidecar process monitoring now logs `Terminated` and `Error` events instead of silently ignoring abnormal process exits.
+- Workspace path authorization intentionally remains cumulative across opened workspaces; this release does not change that permission model.
 
 ## Run Event 模型
 

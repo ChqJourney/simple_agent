@@ -84,6 +84,10 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
             }
             self.created_llm_configs.append(merged_config)
             class FakeLLM(dict):
+                def __init__(self, payload):
+                    super().__init__(payload)
+                    self.closed = False
+
                 async def complete(self, _messages):
                     return {
                         "choices": [
@@ -94,6 +98,9 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                             }
                         ]
                     }
+
+                async def aclose(self):
+                    self.closed = True
 
             return FakeLLM({
                 "provider": merged_config["provider"],
@@ -277,6 +284,23 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
         title_llm = self.title_task_calls[0]["llm"]
         self.assertEqual("primary", title_llm["profile_name"])
         self.assertEqual("gpt-4o", title_llm["model"])
+
+    async def test_session_title_closes_title_llm_after_task_finishes(self) -> None:
+        await backend_main.handle_user_message(
+            {
+                "session_id": "session-title-close",
+                "content": "Name this session",
+                "workspace_path": self.temp_dir.name,
+            },
+            self.send_callback,
+            "conn-1",
+        )
+        if backend_main.runtime_state.pending_tasks:
+            await asyncio.gather(*backend_main.runtime_state.pending_tasks, return_exceptions=True)
+
+        self.assertTrue(self.title_task_calls)
+        title_llm = self.title_task_calls[0]["llm"]
+        self.assertTrue(title_llm.closed)
 
 
 if __name__ == "__main__":

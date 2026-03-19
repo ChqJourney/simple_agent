@@ -42,6 +42,26 @@ fn authorize_workspace_path(
 
 pub struct PythonSidecar(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
+fn sidecar_event_log_entry(
+    event: &tauri_plugin_shell::process::CommandEvent,
+) -> Option<(bool, String)> {
+    use tauri_plugin_shell::process::CommandEvent;
+
+    match event {
+        CommandEvent::Stdout(line) => Some((false, format!("[Python] {}", String::from_utf8_lossy(line)))),
+        CommandEvent::Stderr(line) => Some((true, format!("[Python Error] {}", String::from_utf8_lossy(line)))),
+        CommandEvent::Error(error) => Some((true, format!("[Python Sidecar Error] {error}"))),
+        CommandEvent::Terminated(payload) => Some((
+            payload.code.unwrap_or_default() != 0 || payload.signal.is_some(),
+            format!(
+                "[Python sidecar terminated] code={:?} signal={:?}",
+                payload.code, payload.signal
+            ),
+        )),
+        _ => None,
+    }
+}
+
 fn with_sidecar_slot<T, F, R>(mutex: &Mutex<Option<T>>, action: F) -> Result<R, String>
 where
     F: FnOnce(&mut Option<T>) -> R,
@@ -235,16 +255,13 @@ pub fn run() {
                 }
 
                 tauri::async_runtime::spawn(async move {
-                    use tauri_plugin_shell::process::CommandEvent;
                     while let Some(event) = rx.recv().await {
-                        match event {
-                            CommandEvent::Stdout(line) => {
-                                println!("[Python] {}", String::from_utf8_lossy(&line));
+                        if let Some((is_error, message)) = sidecar_event_log_entry(&event) {
+                            if is_error {
+                                eprintln!("{message}");
+                            } else {
+                                println!("{message}");
                             }
-                            CommandEvent::Stderr(line) => {
-                                eprintln!("[Python Error] {}", String::from_utf8_lossy(&line));
-                            }
-                            _ => {}
                         }
                     }
                 });
@@ -269,13 +286,14 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        embedded_node_dir, embedded_python_dir, embedded_runtime_envs, with_sidecar_slot,
+        embedded_node_dir, embedded_python_dir, embedded_runtime_envs, sidecar_event_log_entry, with_sidecar_slot,
         EMBEDDED_NODE_ENV_VAR, EMBEDDED_PYTHON_ENV_VAR,
     };
     use std::{
         path::Path,
         sync::{Arc, Mutex},
     };
+    use tauri_plugin_shell::process::{CommandEvent, TerminatedPayload};
 
     #[test]
     fn with_sidecar_slot_updates_healthy_mutex() {
@@ -331,5 +349,29 @@ mod tests {
             resource_dir.join("runtimes").join("node").display().to_string(),
             envs[1].1
         );
+    }
+
+    #[test]
+    fn sidecar_event_log_entry_reports_termination_events() {
+        let event = CommandEvent::Terminated(TerminatedPayload {
+            code: Some(1),
+            signal: None,
+        });
+
+        let entry = sidecar_event_log_entry(&event).expect("termination events should log");
+
+        assert!(entry.0);
+        assert!(entry.1.contains("terminated"));
+        assert!(entry.1.contains("Some(1)"));
+    }
+
+    #[test]
+    fn sidecar_event_log_entry_reports_errors() {
+        let event = CommandEvent::Error("failed to read stdout".to_string());
+
+        let entry = sidecar_event_log_entry(&event).expect("error events should log");
+
+        assert!(entry.0);
+        assert!(entry.1.contains("failed to read stdout"));
     }
 }

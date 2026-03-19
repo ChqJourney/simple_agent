@@ -23,6 +23,7 @@ export const WorkspacePage: React.FC = () => {
   const [backendReady, setBackendReady] = useState(!IS_DEV);
   const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(null);
   const prevWorkspaceIdRef = useRef<string | null>(null);
+  const workspaceLoadRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (workspaceId && workspaceId !== prevWorkspaceIdRef.current) {
@@ -41,19 +42,41 @@ export const WorkspacePage: React.FC = () => {
     let cancelled = false;
 
     const loadWorkspaceData = async () => {
-      if (!currentWorkspace?.id || !currentWorkspace.path) {
+      const workspaceId = currentWorkspace?.id;
+      const workspacePath = currentWorkspace?.path;
+      const requestId = ++workspaceLoadRequestIdRef.current;
+      const isLatestRequest = () => workspaceLoadRequestIdRef.current === requestId;
+      const matchesWorkspaceSnapshot = () => {
+        const latestWorkspace = useWorkspaceStore.getState().currentWorkspace;
+        return latestWorkspace?.id === workspaceId && latestWorkspace?.path === workspacePath;
+      };
+
+      if (!workspaceId || !workspacePath) {
         return;
       }
 
       try {
         setWorkspaceAccessError(null);
         const authorizedWorkspace = await invoke<AuthorizedWorkspacePath>('authorize_workspace_path', {
-          selectedPath: currentWorkspace.path,
+          selectedPath: workspacePath,
         });
+        if (cancelled || !isLatestRequest() || !matchesWorkspaceSnapshot()) {
+          return;
+        }
         const authorizedPath = authorizedWorkspace.canonical_path;
 
-        if (authorizedPath !== currentWorkspace.path) {
-          syncWorkspacePath(currentWorkspace.id, authorizedPath);
+        if (authorizedPath !== workspacePath) {
+          syncWorkspacePath(workspaceId, authorizedPath);
+        }
+
+        const latestWorkspace = useWorkspaceStore.getState().currentWorkspace;
+        if (
+          cancelled ||
+          !isLatestRequest() ||
+          latestWorkspace?.id !== workspaceId ||
+          (latestWorkspace?.path !== workspacePath && latestWorkspace?.path !== authorizedPath)
+        ) {
+          return;
         }
 
         setCurrentSession(null);
@@ -78,6 +101,7 @@ export const WorkspacePage: React.FC = () => {
       cancelled = true;
     };
   }, [
+    workspaceId,
     currentWorkspace?.id,
     currentWorkspace?.path,
     loadSessionsFromDisk,

@@ -1,10 +1,31 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { WelcomePage, WorkspacePage, SettingsPage } from './pages';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { LoadingOverlay } from './components/common';
 import { useUIStore } from './stores';
 import './index.css';
+
+function RoutedContent() {
+  const location = useLocation();
+  const needsRealtimeBackend =
+    location.pathname === '/settings' || location.pathname.startsWith('/workspace/');
+
+  const routes = (
+    <Routes>
+      <Route path="/" element={<WelcomePage />} />
+      <Route path="/workspace/:workspaceId" element={<WorkspacePage />} />
+      <Route path="/settings" element={<SettingsPage />} />
+    </Routes>
+  );
+
+  return (
+    <>
+      {needsRealtimeBackend ? <WebSocketProvider>{routes}</WebSocketProvider> : routes}
+      <LoadingOverlay />
+    </>
+  );
+}
 
 function App() {
   const setPageLoading = useUIStore((state) => state.setPageLoading);
@@ -46,14 +67,7 @@ function App() {
 
   return (
     <BrowserRouter>
-      <WebSocketProvider>
-        <Routes>
-          <Route path="/" element={<WelcomePage />} />
-          <Route path="/workspace/:workspaceId" element={<WorkspacePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
-        <LoadingOverlay />
-      </WebSocketProvider>
+      <RoutedContent />
     </BrowserRouter>
   );
 }

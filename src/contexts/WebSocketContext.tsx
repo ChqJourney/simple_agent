@@ -36,6 +36,9 @@ interface WebSocketContextValue {
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 const TASK_STATUS_VALUES: Task['status'][] = ['pending', 'in_progress', 'completed', 'failed'];
+const LEGACY_NO_AUTH_TOKEN = '__legacy_no_auth__';
+const UNSUPPORTED_EXECUTION_MODE_ERROR = 'Unknown message type: set_execution_mode';
+const AUTH_REQUIRED_ERROR = 'Connection not authenticated. Send config with auth_token first.';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -110,6 +113,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const lastSentConfigKeyRef = useRef<string | null>(null);
   const authTokenRef = useRef<string | null>(null);
   const authTokenPromiseRef = useRef<Promise<string | null> | null>(null);
+  const executionModeSupportedRef = useRef(true);
+  const backendAuthenticatedRef = useRef(false);
+  const workspaceBoundRef = useRef(false);
+  const pendingWorkspacePathRef = useRef<string | null>(null);
+  const queuedMessagesRef = useRef<ClientMessage[]>([]);
   const config = useConfigStore((state) => state.config);
   const isConnected = connectionStatus === 'connected';
   const isTestMode = import.meta.env.MODE === 'test';
@@ -198,6 +206,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           store.setError(data.session_id, data.error || 'Agent reached max tool-call rounds');
           break;
         case 'error': {
+          if (typeof data.error === 'string' && data.error.includes(UNSUPPORTED_EXECUTION_MODE_ERROR)) {
+            executionModeSupportedRef.current = false;
+            console.warn('Backend does not support execution mode updates; disabling mode sync.');
+            break;
+          }
+          if (typeof data.error === 'string' && data.error.includes(AUTH_REQUIRED_ERROR)) {
+            backendAuthenticatedRef.current = false;
+            workspaceBoundRef.current = false;
+          }
           const fallbackSessionId = useSessionStore.getState().currentSessionId || undefined;
           const targetSessionId = data.session_id || fallbackSessionId;
           if (targetSessionId) {
@@ -214,9 +231,23 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           store.setInterrupted(data.session_id);
           break;
         case 'config_updated':
+          backendAuthenticatedRef.current = true;
+          workspaceBoundRef.current = false;
+          if (pendingWorkspacePathRef.current) {
+            wsService.send({
+              type: 'set_workspace',
+              workspace_path: pendingWorkspacePathRef.current,
+            });
+          }
           console.log('Config updated:', data.provider, data.model);
           break;
         case 'workspace_updated':
+          workspaceBoundRef.current = true;
+          if (queuedMessagesRef.current.length > 0) {
+            const queuedMessages = [...queuedMessagesRef.current];
+            queuedMessagesRef.current = [];
+            queuedMessages.forEach((message) => wsService.send(message));
+          }
           console.log('Workspace updated:', data.workspace_path);
           break;
         case 'execution_mode_updated':
@@ -239,9 +270,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
     wsService.onMessage(handleMessage);
     const cleanup = wsService.connect(
-      () => setConnectionStatus('connected'),
+      () => {
+        backendAuthenticatedRef.current = false;
+        workspaceBoundRef.current = false;
+        setConnectionStatus('connected');
+      },
       () => {
         lastSentConfigKeyRef.current = null;
+        backendAuthenticatedRef.current = false;
+        workspaceBoundRef.current = false;
         setConnectionStatus('disconnected');
       }
     );
@@ -260,7 +297,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     if (isTestMode) {
       return 'test-auth-token';
     }
-    if (authTokenRef.current) {
+    if (authTokenRef.current !== null) {
       return authTokenRef.current;
     }
     if (authTokenPromiseRef.current) {
@@ -270,6 +307,10 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     authTokenPromiseRef.current = (async () => {
       try {
         const response = await fetch(backendAuthTokenUrl);
+        if (response.status === 404) {
+          authTokenRef.current = LEGACY_NO_AUTH_TOKEN;
+          return LEGACY_NO_AUTH_TOKEN;
+        }
         if (!response.ok) {
           return null;
         }
@@ -289,10 +330,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     return authTokenPromiseRef.current;
   }, [isTestMode]);
 
-  useEffect(() => {
-    void fetchAuthToken();
-  }, [fetchAuthToken]);
-
   const sendConfig = useCallback((configOverride?: ProviderConfig) => {
     const sourceConfig = configOverride || config;
     if (!sourceConfig) {
@@ -303,21 +340,24 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     const configKey = JSON.stringify(runtimeConfig);
 
     const sendWithToken = (authToken: string | null) => {
-      if (!authToken) {
+      if (authToken === null) {
         return;
       }
       const payload: ClientWebSocketMessage = {
         type: 'config',
         ...runtimeConfig,
-        auth_token: authToken,
       };
+      if (authToken !== LEGACY_NO_AUTH_TOKEN) {
+        payload.auth_token = authToken;
+      }
       if (send(payload)) {
+        backendAuthenticatedRef.current = false;
         lastSentConfigKeyRef.current = configKey;
       }
     };
 
     const immediateToken = isTestMode ? 'test-auth-token' : authTokenRef.current;
-    if (immediateToken) {
+    if (immediateToken !== null) {
       sendWithToken(immediateToken);
       return;
     }
@@ -336,21 +376,24 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     const nextConfigKey = JSON.stringify(runtimeConfig);
     if (nextConfigKey !== lastSentConfigKeyRef.current) {
       const sendWithToken = (authToken: string | null) => {
-        if (!authToken) {
+        if (authToken === null) {
           return;
         }
         const payload: ClientWebSocketMessage = {
           type: 'config',
           ...runtimeConfig,
-          auth_token: authToken,
         };
+        if (authToken !== LEGACY_NO_AUTH_TOKEN) {
+          payload.auth_token = authToken;
+        }
         if (send(payload)) {
+          backendAuthenticatedRef.current = false;
           lastSentConfigKeyRef.current = nextConfigKey;
         }
       };
 
       const immediateToken = isTestMode ? 'test-auth-token' : authTokenRef.current;
-      if (immediateToken) {
+      if (immediateToken !== null) {
         sendWithToken(immediateToken);
       } else {
         void fetchAuthToken().then((token) => {
@@ -361,12 +404,20 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, [config, fetchAuthToken, isConnected, isTestMode, send]);
 
   const sendMessage = useCallback((sessionId: string, content: string, attachments?: Attachment[], workspacePath?: string) => {
-    const message: ClientWebSocketMessage = { type: 'message', session_id: sessionId, content };
+    const message: ClientMessage = { type: 'message', session_id: sessionId, content };
     if (attachments && attachments.length > 0) {
-      (message as ClientMessage).attachments = attachments;
+      message.attachments = attachments;
     }
     if (workspacePath) {
-      (message as ClientMessage).workspace_path = workspacePath;
+      message.workspace_path = workspacePath;
+      pendingWorkspacePathRef.current = workspacePath;
+      if (!workspaceBoundRef.current) {
+        queuedMessagesRef.current.push(message);
+        if (backendAuthenticatedRef.current) {
+          send({ type: 'set_workspace', workspace_path: workspacePath });
+        }
+        return;
+      }
     }
     send(message);
   }, [send]);
@@ -395,10 +446,18 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, [send]);
 
   const sendWorkspace = useCallback((workspacePath: string) => {
+    pendingWorkspacePathRef.current = workspacePath;
+    workspaceBoundRef.current = false;
+    if (!backendAuthenticatedRef.current) {
+      return;
+    }
     send({ type: 'set_workspace', workspace_path: workspacePath });
   }, [send]);
 
   const setExecutionMode = useCallback((sessionId: string, mode: ExecutionMode) => {
+    if (!executionModeSupportedRef.current) {
+      return false;
+    }
     return send({
       type: 'set_execution_mode',
       session_id: sessionId,

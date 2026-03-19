@@ -323,25 +323,11 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
       const metadataPath = `${sessionsDir}/${sessionId}.meta.json`;
 
       try {
-        const content = await tauriReadTextFile(sessionPath);
-        const lines = content.split('\n').filter(l => l.trim());
-
-        if (lines.length === 0) continue;
-
         let createdAt = new Date().toISOString();
         let updatedAt = new Date().toISOString();
         let title: string | undefined;
         let lockedModel: LockedModelRef | undefined;
-
-        const firstLine = JSON.parse(lines[0]);
-        const lastLine = JSON.parse(lines[lines.length - 1]);
-
-        if (firstLine.timestamp) {
-          createdAt = firstLine.timestamp;
-        }
-        if (lastLine.timestamp) {
-          updatedAt = lastLine.timestamp;
-        }
+        let hasCompleteMetadataTimestamps = false;
 
         if (await tauriExists(metadataPath)) {
           try {
@@ -374,8 +360,30 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
                 };
               }
             }
+
+            hasCompleteMetadataTimestamps = typeof metadata.created_at === 'string'
+              && typeof metadata.updated_at === 'string';
           } catch {
             // Ignore malformed metadata and fall back to the session transcript.
+          }
+        }
+
+        if (!hasCompleteMetadataTimestamps) {
+          const content = await tauriReadTextFile(sessionPath);
+          const lines = content.split('\n').filter(l => l.trim());
+
+          if (lines.length === 0) {
+            continue;
+          }
+
+          const firstLine = JSON.parse(lines[0]);
+          const lastLine = JSON.parse(lines[lines.length - 1]);
+
+          if (typeof firstLine.timestamp === 'string') {
+            createdAt = firstLine.timestamp;
+          }
+          if (typeof lastLine.timestamp === 'string') {
+            updatedAt = lastLine.timestamp;
           }
         }
 

@@ -63,6 +63,7 @@ function Probe() {
   const context = useWebSocket() as ReturnType<typeof useWebSocket> & {
     connectionStatus?: ConnectionStatus;
     setExecutionMode?: (sessionId: string, mode: "regular" | "free") => void;
+    sendMessage?: (sessionId: string, content: string, attachments?: unknown[], workspacePath?: string) => void;
   };
 
   return (
@@ -83,6 +84,13 @@ function Probe() {
         aria-label="set execution mode"
       >
         mode
+      </button>
+      <button
+        type="button"
+        onClick={() => context.sendMessage?.("session-a", "hello", undefined, "/workspace-a")}
+        aria-label="send workspace message"
+      >
+        send
       </button>
       <div data-testid="status">{context.connectionStatus ?? ""}</div>
     </>
@@ -443,6 +451,60 @@ describe("WebSocketProvider", () => {
       type: "set_execution_mode",
       session_id: "session-a",
       execution_mode: "free",
+    });
+  });
+
+  it("stops sending execution mode updates when backend reports unsupported message type", async () => {
+    websocketMockState.sendSucceeded = true;
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "error",
+      error: "Unknown message type: set_execution_mode",
+      session_id: "session-a",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "set execution mode" }));
+
+    expect(websocketMockState.sendMock).not.toHaveBeenCalled();
+  });
+
+  it("queues workspace messages until config and workspace handshake completes", async () => {
+    websocketMockState.sendSucceeded = true;
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "send workspace message" }));
+    expect(websocketMockState.sendMock).not.toHaveBeenCalled();
+
+    websocketMockState.messageHandler?.({
+      type: "config_updated",
+      provider: "openai",
+      model: "gpt-4o",
+    });
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(1, {
+      type: "set_workspace",
+      workspace_path: "/workspace-a",
+    });
+
+    websocketMockState.messageHandler?.({
+      type: "workspace_updated",
+      workspace_path: "/workspace-a",
+    });
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(2, {
+      type: "message",
+      session_id: "session-a",
+      content: "hello",
+      workspace_path: "/workspace-a",
     });
   });
 });

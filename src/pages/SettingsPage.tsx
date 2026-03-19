@@ -129,13 +129,27 @@ export const SettingsPage: React.FC = () => {
 
       const payload = await response.json().catch(() => ({}));
 
+      if (response.status === 404) {
+        setConnectionTestState(profileName, 'error', 'Backend endpoint /test-config not found. Please update backend build.');
+        return;
+      }
+
       if (response.ok && payload.ok) {
         setConnectionTestState(profileName, 'success', null);
         return;
       }
       setConnectionTestState(profileName, 'error', payload.error || 'Connection test failed');
     } catch (error) {
-      setConnectionTestState(profileName, 'error', error instanceof Error ? error.message : 'Connection failed');
+      const message = error instanceof Error ? error.message : 'Connection failed';
+      if (message.toLowerCase().includes('failed to fetch')) {
+        setConnectionTestState(
+          profileName,
+          'error',
+          `Cannot reach backend endpoint: ${backendTestConfigUrl}`
+        );
+        return;
+      }
+      setConnectionTestState(profileName, 'error', message);
     }
   };
 

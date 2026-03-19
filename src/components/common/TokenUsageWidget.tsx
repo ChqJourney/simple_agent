@@ -32,11 +32,11 @@ export const TokenUsageWidget: React.FC<TokenUsageWidgetProps> = ({ usage }) => 
 
   return (
     <div
-      className="flex h-10 w-10 items-center justify-center rounded-full"
+      className="flex h-8 w-8 items-center justify-center rounded-full"
       title={usage ? formatUsageTitle(usage) : undefined}
     >
-      <div className="relative h-10 w-10">
-        <svg className="h-10 w-10 -rotate-90" viewBox="0 0 40 40" aria-hidden="true">
+      <div className="relative h-8 w-8">
+        <svg className="h-8 w-8 -rotate-90" viewBox="0 0 40 40" aria-hidden="true">
           <circle
             cx="20"
             cy="20"
@@ -61,7 +61,7 @@ export const TokenUsageWidget: React.FC<TokenUsageWidgetProps> = ({ usage }) => 
             }}
           />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-gray-700 dark:text-gray-200">
+        <div className="absolute inset-0 flex items-center justify-center text-[8px] font-semibold text-gray-700 dark:text-gray-200">
           {percentage === null ? '--' : `${percentage}%`}
         </div>
       </div>

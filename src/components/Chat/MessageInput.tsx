@@ -243,8 +243,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               </svg>
             </button>
           )}
-          <div className="flex items-center justify-between border-t border-gray-200/80 px-4 py-3 dark:border-gray-700/80">
-            <label htmlFor="execution-mode-select" className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-600 dark:text-gray-300">
+          <div className="flex items-center border-gray-200/80 px-4 py-3 dark:border-gray-700/80">
+            <label htmlFor="execution-mode-select" className="text-xs font-semibold tracking-[0.12em] text-gray-600 dark:text-gray-300">
               Execution mode
             </label>
             <select
@@ -253,7 +253,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               value={executionMode}
               onChange={handleExecutionModeChange}
               disabled={isInputDisabled}
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 outline-none focus:border-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
+              className="rounded-lg ml-2 border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 outline-none focus:border-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
             >
               <option value="regular">Regular</option>
               <option value="free">Free</option>

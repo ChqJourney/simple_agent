@@ -46,6 +46,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline }) => {
       </div>
 
       <div className="flex items-center gap-3">
+        <TokenUsageWidget usage={latestUsage} />
+        <WSStatusIndicator />
+        <ModelDisplay />
         <button
           type="button"
           onClick={onOpenTimeline}
@@ -62,9 +65,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline }) => {
             <circle cx="17" cy="17.25" r="1.25" fill="currentColor" stroke="none" />
           </svg>
         </button>
-        <TokenUsageWidget usage={latestUsage} />
-        <WSStatusIndicator />
-        <ModelDisplay />
       </div>
 
       <div className="flex items-center gap-2">

@@ -52,7 +52,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
   };
 
   return (
-    <div>
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">Sessions</h3>
         <button
@@ -66,40 +66,42 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
         </button>
       </div>
 
-      {filteredSessions.length === 0 ? (
-        <p className="text-xs text-gray-400 dark:text-gray-500">No sessions yet</p>
-      ) : (
-        <ul className="space-y-1">
-          {filteredSessions.map((session) => (
-            <li key={session.session_id} className="group relative">
-              <button
-                onClick={() => handleSessionClick(session.session_id)}
-                className={`w-full text-left p-2 pr-8 rounded-lg text-sm transition-colors ${
-                  currentSessionId === session.session_id
-                    ? 'bg-blue-50 dark:bg-blue-900 text-blue-900 dark:text-blue-100'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100'
-                }`}
-              >
-                <div className="font-medium truncate">
-                  {session.title || truncateText(session.session_id, 20)}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {formatTimestamp(session.created_at)}
-                </div>
-              </button>
-              <button
-                onClick={(e) => handleDeleteClick(e, session.session_id)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900 text-red-500 dark:text-red-400 transition-opacity"
-                title="Delete session"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div data-testid="session-list-scroll" className="min-h-0 flex-1 overflow-y-auto pr-1">
+        {filteredSessions.length === 0 ? (
+          <p className="text-xs text-gray-400 dark:text-gray-500">No sessions yet</p>
+        ) : (
+          <ul className="space-y-1">
+            {filteredSessions.map((session) => (
+              <li key={session.session_id} className="group relative">
+                <button
+                  onClick={() => handleSessionClick(session.session_id)}
+                  className={`w-full text-left p-2 pr-8 rounded-lg text-sm transition-colors ${
+                    currentSessionId === session.session_id
+                      ? 'bg-blue-50 dark:bg-blue-900 text-blue-900 dark:text-blue-100'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100'
+                  }`}
+                >
+                  <div className="font-medium truncate">
+                    {session.title || truncateText(session.session_id, 20)}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    {formatTimestamp(session.created_at)}
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => handleDeleteClick(e, session.session_id)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900 text-red-500 dark:text-red-400 transition-opacity"
+                  title="Delete session"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

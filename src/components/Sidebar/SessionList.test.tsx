@@ -24,6 +24,13 @@ describe("SessionList", () => {
           updated_at: "2026-03-12T10:00:00.000Z",
           title: "Investigate runtime contracts",
         },
+        {
+          session_id: "session-b",
+          workspace_path: "/workspace-b",
+          created_at: "2026-03-12T11:00:00.000Z",
+          updated_at: "2026-03-12T11:00:00.000Z",
+          title: "Other workspace session",
+        },
       ],
       currentSessionId: "session-a",
     }));
@@ -33,5 +40,12 @@ describe("SessionList", () => {
     render(<SessionList workspacePath="/workspace-a" />);
 
     expect(screen.getByText("Investigate runtime contracts")).toBeTruthy();
+  });
+
+  it("filters sessions by workspace and renders a dedicated scroll container", () => {
+    render(<SessionList workspacePath="/workspace-a" />);
+
+    expect(screen.queryByText("Other workspace session")).toBeNull();
+    expect(screen.getByTestId("session-list-scroll")).toBeTruthy();
   });
 });

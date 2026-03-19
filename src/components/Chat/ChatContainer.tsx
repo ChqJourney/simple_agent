@@ -10,7 +10,6 @@ import { Attachment, ExecutionMode, PendingQuestion, ToolDecision, ToolDecisionS
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { PendingQuestionCard, ToolConfirmModal } from '../Tools';
-import { RunTimeline } from '../Run';
 
 const emptySession = {
   messages: [] as never[],
@@ -139,8 +138,6 @@ export const ChatContainer = () => {
 
   return (
     <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_45%)] dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_35%)]">
-      {currentSessionId && <RunTimeline sessionId={currentSessionId} />}
-
       <MessageList
         messages={messages}
         currentStreamingContent={streamingContent}

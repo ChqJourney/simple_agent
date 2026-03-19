@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useWorkspaceStore, useUIStore, useSessionStore } from '../stores';
 import { TopBar, LeftPanel, RightPanel } from '../components/Workspace';
 import { ChatContainer } from '../components/Chat';
+import { RunTimeline } from '../components/Run';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { backendHealthUrl, backendHttpBase } from '../utils/backendEndpoint';
 
@@ -19,9 +20,10 @@ export const WorkspacePage: React.FC = () => {
   const { workspaces, setCurrentWorkspace, currentWorkspace, syncWorkspacePath } = useWorkspaceStore();
   const { leftPanelCollapsed, rightPanelCollapsed, setPageLoading } = useUIStore();
   const { isConnected, sendWorkspace } = useWebSocket();
-  const { loadSessionsFromDisk, setCurrentSession } = useSessionStore();
+  const { loadSessionsFromDisk, setCurrentSession, currentSessionId } = useSessionStore();
   const [backendReady, setBackendReady] = useState(!IS_DEV);
   const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(null);
+  const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
   const prevWorkspaceIdRef = useRef<string | null>(null);
   const workspaceLoadRequestIdRef = useRef(0);
 
@@ -135,6 +137,21 @@ export const WorkspacePage: React.FC = () => {
     }
   }, [backendReady]);
 
+  useEffect(() => {
+    if (!isTimelineModalOpen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsTimelineModalOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isTimelineModalOpen]);
+
   if (!currentWorkspace) {
     return (
       <div className="flex h-screen items-center justify-center bg-white dark:bg-gray-900">
@@ -144,7 +161,7 @@ export const WorkspacePage: React.FC = () => {
   }
   return (
     <div className="flex h-screen flex-col bg-gray-100 dark:bg-gray-950">
-      <TopBar />
+      <TopBar onOpenTimeline={() => setIsTimelineModalOpen(true)} />
 
       <div className="flex flex-1 overflow-hidden">
         {!leftPanelCollapsed && (
@@ -181,6 +198,42 @@ export const WorkspacePage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {isTimelineModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/55 p-4 backdrop-blur-sm"
+          onClick={() => setIsTimelineModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Run timeline"
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Run timeline</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Review recent execution events for the active session.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTimelineModalOpen(false)}
+                className="rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                aria-label="Close run timeline"
+                title="Close run timeline"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 5l10 10M15 5L5 15" />
+                </svg>
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <RunTimeline sessionId={currentSessionId} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

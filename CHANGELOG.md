@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added workspace timeline modal access from the top bar with frontend coverage for modal open and empty-state rendering
+- Added frontend regression coverage for workspace sidebar session filtering, scroll ownership, and workspace summary metadata
 - Added frontend regression test `src/hooks/useSession.test.tsx` for clearing chat/run/task state after session deletion
 - Added frontend regression coverage for stale workspace authorization responses in `src/pages/WorkspacePage.test.tsx`
 - Added frontend regression coverage for stale file-tree child directory loads in `src/components/Workspace/FileTree.test.tsx`
@@ -52,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Changed the workspace composer so execution mode and send/stop controls render inside a single wider input surface with a taller textarea
+- Changed the workspace run timeline from an inline chat block to a top-bar-triggered modal
+- Changed the workspace sidebar header to show folder name, truncated absolute path, and filtered session count instead of model name
+- Changed the workspace session list to use its own scroll container when entries exceed the available rail height
 - Changed workspace preparation flow to ignore stale async authorization results after the active workspace changes
 - Changed frontend session deletion flow to clear run timeline and task state alongside chat state
 - Changed backend task cleanup to release completed per-session agents and close their LLM resources

@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspacePage } from "./WorkspacePage";
 import { useSessionStore, useUIStore, useWorkspaceStore } from "../stores";
@@ -23,13 +23,21 @@ vi.mock("../utils/storage", async () => {
 });
 
 vi.mock("../components/Workspace", () => ({
-  TopBar: () => <div>TopBar</div>,
+  TopBar: ({ onOpenTimeline }: { onOpenTimeline?: () => void }) => (
+    <button onClick={onOpenTimeline}>Open Timeline</button>
+  ),
   LeftPanel: () => <div>LeftPanel</div>,
   RightPanel: () => <div>RightPanel</div>,
 }));
 
 vi.mock("../components/Chat", () => ({
   ChatContainer: () => <div>ChatContainer</div>,
+}));
+
+vi.mock("../components/Run", () => ({
+  RunTimeline: ({ sessionId }: { sessionId?: string | null }) => (
+    <div>{sessionId ? `Timeline for ${sessionId}` : "No session selected"}</div>
+  ),
 }));
 
 vi.mock("../contexts/WebSocketContext", () => ({
@@ -141,6 +149,15 @@ describe("WorkspacePage", () => {
     const { queryByText } = render(<WorkspacePage />);
 
     expect(queryByText("Locked: openai/gpt-4o")).toBeNull();
+  });
+
+  it("opens the timeline modal from the top bar even when there is no current session", async () => {
+    render(<WorkspacePage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Timeline" }));
+
+    expect(screen.getByRole("dialog", { name: "Run timeline" })).toBeTruthy();
+    expect(screen.getByText("No session selected")).toBeTruthy();
   });
 
   it("ignores stale workspace authorization results after the current workspace changes", async () => {

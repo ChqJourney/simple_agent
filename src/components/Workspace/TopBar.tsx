@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useChatStore, useSessionStore, useUIStore, useWorkspaceStore } from '../../stores';
 import { WSStatusIndicator, ModelDisplay, TokenUsageWidget } from '../common';
 
-export const TopBar: React.FC = () => {
+interface TopBarProps {
+  onOpenTimeline?: () => void;
+}
+
+export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline }) => {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -42,6 +46,22 @@ export const TopBar: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onOpenTimeline}
+          className="rounded-xl p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          title="Open run timeline"
+          aria-label="Open run timeline"
+        >
+          <svg className="h-5 w-5 text-gray-600 dark:text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 6.75h14" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 17.25h14" />
+            <circle cx="8" cy="6.75" r="1.25" fill="currentColor" stroke="none" />
+            <circle cx="13" cy="12" r="1.25" fill="currentColor" stroke="none" />
+            <circle cx="17" cy="17.25" r="1.25" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
         <TokenUsageWidget usage={latestUsage} />
         <WSStatusIndicator />
         <ModelDisplay />

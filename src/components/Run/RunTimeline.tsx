@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useRunStore } from '../../stores/runStore';
 import { RunEventRecord } from '../../types';
 
 interface RunTimelineProps {
-  sessionId: string;
+  sessionId?: string | null;
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -62,13 +62,34 @@ function eventTone(eventType: string): string {
 
 export const RunTimeline: React.FC<RunTimelineProps> = ({ sessionId }) => {
   const session = useRunStore(
-    useShallow((state) => state.sessions[sessionId] || EMPTY_RUN_SESSION)
+    useShallow((state) => (sessionId ? state.sessions[sessionId] || EMPTY_RUN_SESSION : EMPTY_RUN_SESSION))
   );
-  const [isExpanded, setIsExpanded] = useState(false);
   const timelineEvents = useMemo(() => session.events.slice(-8), [session.events]);
 
+  if (!sessionId) {
+    return (
+      <div className="flex h-full min-h-56 items-center justify-center rounded-[1.5rem] border border-dashed border-gray-300 bg-gray-50/80 px-6 py-8 text-center dark:border-gray-700 dark:bg-gray-950/40">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">No session selected</h3>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            Select or create a session to see its run timeline here.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (session.events.length === 0) {
-    return null;
+    return (
+      <div className="flex h-full min-h-56 items-center justify-center rounded-[1.5rem] border border-dashed border-gray-300 bg-gray-50/80 px-6 py-8 text-center dark:border-gray-700 dark:bg-gray-950/40">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">No runs yet</h3>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            Start a run in this session and recent events will appear here.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   const latestEvent = session.events[session.events.length - 1];
@@ -76,36 +97,26 @@ export const RunTimeline: React.FC<RunTimelineProps> = ({ sessionId }) => {
   const latestDetails = formatEventDetails(latestEvent);
 
   return (
-    <div className="mx-5 mt-4 rounded-2xl border border-gray-200/70 bg-white/70 px-4 py-3 backdrop-blur md:mx-6 dark:border-gray-700/70 dark:bg-gray-900/60">
-      <button
-        type="button"
-        onClick={() => setIsExpanded((value) => !value)}
-        aria-expanded={isExpanded}
-        aria-label={isExpanded ? 'Collapse run timeline' : 'Expand run timeline'}
-        className="flex w-full items-center justify-between gap-3 text-left"
-      >
+    <div className="rounded-[1.5rem] border border-gray-200/80 bg-gray-50/80 p-5 dark:border-gray-700/80 dark:bg-gray-950/40">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
               Run Timeline
             </h2>
-            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+            <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300">
               {session.status}
             </span>
           </div>
-          <div className="mt-1 truncate text-sm font-medium text-gray-700 dark:text-gray-200">
+          <div className="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">
             {latestLabel}
             {latestDetails ? ` - ${latestDetails}` : ''}
           </div>
         </div>
+      </div>
 
-        <span className="shrink-0 text-xs text-blue-600 dark:text-blue-300">
-          {isExpanded ? 'Hide details' : 'Show details'}
-        </span>
-      </button>
-
-      {isExpanded && (
-        <div className="mt-3 space-y-2 border-t border-gray-200/70 pt-3 dark:border-gray-700/70">
+      <div className="mt-5 border-t border-gray-200/70 pt-4 dark:border-gray-800">
+        <div className="space-y-3">
           {timelineEvents.map((event) => {
             const label = EVENT_LABELS[event.event_type] || event.event_type;
             const details = formatEventDetails(event);
@@ -122,11 +133,17 @@ export const RunTimeline: React.FC<RunTimelineProps> = ({ sessionId }) => {
                     <div className="truncate text-xs text-gray-500 dark:text-gray-400">{details}</div>
                   )}
                 </div>
+                <div className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                  {new Date(event.timestamp).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </div>
               </div>
             );
           })}
         </div>
-      )}
+      </div>
     </div>
   );
 };

@@ -165,4 +165,12 @@ describe("ChatContainer", () => {
     expect(confirmToolMock).toHaveBeenCalledWith("tool-1", "approve_once", "session");
     expect(screen.getByRole("button", { name: "approve tool" })).toBeTruthy();
   });
+
+  it("does not render the run timeline inline above the chat anymore", () => {
+    render(<ChatContainer />);
+
+    expect(screen.queryByText("RunTimeline")).toBeNull();
+    expect(screen.getByText("MessageList")).toBeTruthy();
+    expect(screen.getByText("MessageInput")).toBeTruthy();
+  });
 });

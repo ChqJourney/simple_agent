@@ -28,7 +28,7 @@ interface WebSocketContextValue {
   sendMessage: (sessionId: string, content: string, attachments?: Attachment[], workspacePath?: string) => void;
   answerQuestion: (toolCallId: string, answer?: string, action?: 'submit' | 'dismiss') => boolean;
   sendConfig: (configOverride?: ProviderConfig) => void;
-  confirmTool: (toolCallId: string, decision: ToolDecision, scope?: ToolDecisionScope) => void;
+  confirmTool: (toolCallId: string, decision: ToolDecision, scope?: ToolDecisionScope) => boolean;
   interrupt: (sessionId: string) => void;
   sendWorkspace: (workspacePath: string) => void;
   setExecutionMode: (sessionId: string, mode: ExecutionMode) => boolean;
@@ -39,6 +39,11 @@ const TASK_STATUS_VALUES: Task['status'][] = ['pending', 'in_progress', 'complet
 const LEGACY_NO_AUTH_TOKEN = '__legacy_no_auth__';
 const UNSUPPORTED_EXECUTION_MODE_ERROR = 'Unknown message type: set_execution_mode';
 const AUTH_REQUIRED_ERROR = 'Connection not authenticated. Send config with auth_token first.';
+
+interface QueuedWorkspaceMessage {
+  workspacePath: string;
+  message: ClientMessage;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -117,7 +122,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const backendAuthenticatedRef = useRef(false);
   const workspaceBoundRef = useRef(false);
   const pendingWorkspacePathRef = useRef<string | null>(null);
-  const queuedMessagesRef = useRef<ClientMessage[]>([]);
+  const queuedMessagesRef = useRef<QueuedWorkspaceMessage[]>([]);
+  const queuedExecutionModesRef = useRef<Record<string, ExecutionMode>>({});
   const config = useConfigStore((state) => state.config);
   const isConnected = connectionStatus === 'connected';
   const isTestMode = import.meta.env.MODE === 'test';
@@ -233,6 +239,16 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         case 'config_updated':
           backendAuthenticatedRef.current = true;
           workspaceBoundRef.current = false;
+          for (const [sessionId, executionMode] of Object.entries(queuedExecutionModesRef.current)) {
+            const sent = wsService.send({
+              type: 'set_execution_mode',
+              session_id: sessionId,
+              execution_mode: executionMode,
+            });
+            if (sent) {
+              delete queuedExecutionModesRef.current[sessionId];
+            }
+          }
           if (pendingWorkspacePathRef.current) {
             wsService.send({
               type: 'set_workspace',
@@ -242,11 +258,35 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           console.log('Config updated:', data.provider, data.model);
           break;
         case 'workspace_updated':
-          workspaceBoundRef.current = true;
+          workspaceBoundRef.current = data.workspace_path === pendingWorkspacePathRef.current;
           if (queuedMessagesRef.current.length > 0) {
-            const queuedMessages = [...queuedMessagesRef.current];
-            queuedMessagesRef.current = [];
-            queuedMessages.forEach((message) => wsService.send(message));
+            const acknowledgedWorkspace = data.workspace_path;
+            const remainingMessages: QueuedWorkspaceMessage[] = [];
+
+            queuedMessagesRef.current.forEach((entry) => {
+              if (entry.workspacePath !== acknowledgedWorkspace) {
+                remainingMessages.push(entry);
+                return;
+              }
+
+              const sent = wsService.send(entry.message);
+              if (!sent) {
+                remainingMessages.push(entry);
+              }
+            });
+
+            queuedMessagesRef.current = remainingMessages;
+          }
+
+          if (
+            pendingWorkspacePathRef.current &&
+            data.workspace_path !== pendingWorkspacePathRef.current &&
+            backendAuthenticatedRef.current
+          ) {
+            wsService.send({
+              type: 'set_workspace',
+              workspace_path: pendingWorkspacePathRef.current,
+            });
           }
           console.log('Workspace updated:', data.workspace_path);
           break;
@@ -412,7 +452,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       message.workspace_path = workspacePath;
       pendingWorkspacePathRef.current = workspacePath;
       if (!workspaceBoundRef.current) {
-        queuedMessagesRef.current.push(message);
+        queuedMessagesRef.current.push({ workspacePath, message });
         if (backendAuthenticatedRef.current) {
           send({ type: 'set_workspace', workspace_path: workspacePath });
         }
@@ -432,7 +472,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, [send]);
 
   const confirmTool = useCallback((toolCallId: string, decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
-    send({
+    return send({
       type: 'tool_confirm',
       tool_call_id: toolCallId,
       decision,
@@ -458,11 +498,22 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     if (!executionModeSupportedRef.current) {
       return false;
     }
-    return send({
+    if (!backendAuthenticatedRef.current) {
+      queuedExecutionModesRef.current[sessionId] = mode;
+      return true;
+    }
+
+    const sent = send({
       type: 'set_execution_mode',
       session_id: sessionId,
       execution_mode: mode,
     });
+    if (!sent) {
+      queuedExecutionModesRef.current[sessionId] = mode;
+    } else {
+      delete queuedExecutionModesRef.current[sessionId];
+    }
+    return sent;
   }, [send]);
 
   return (

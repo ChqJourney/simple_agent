@@ -46,7 +46,11 @@ vi.mock("../Tools", async () => {
   const actual = await vi.importActual<typeof import("../Tools")>("../Tools");
   return {
     ...actual,
-    ToolConfirmModal: () => null,
+    ToolConfirmModal: ({ onDecision }: { onDecision: (decision: "approve_once" | "approve_always" | "reject") => void }) => (
+      <button type="button" onClick={() => onDecision("approve_once")} aria-label="approve tool">
+        approve tool
+      </button>
+    ),
   };
 });
 
@@ -128,5 +132,37 @@ describe("ChatContainer", () => {
     );
     expect((screen.getByRole("button", { name: "continue" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Dismiss" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("keeps tool approval visible when confirmation sending fails", () => {
+    confirmToolMock.mockReturnValue(false);
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [],
+          runEvents: [],
+          currentStreamingContent: "",
+          currentReasoningContent: "",
+          isStreaming: false,
+          assistantStatus: "tool_calling",
+          currentToolName: "file_write",
+          pendingToolConfirm: {
+            tool_call_id: "tool-1",
+            name: "file_write",
+            arguments: { path: "README.md" },
+          },
+          pendingQuestion: undefined,
+        },
+      },
+    });
+
+    render(<ChatContainer />);
+
+    expect(screen.getByRole("button", { name: "approve tool" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "approve tool" }));
+
+    expect(confirmToolMock).toHaveBeenCalledWith("tool-1", "approve_once", "session");
+    expect(screen.getByRole("button", { name: "approve tool" })).toBeTruthy();
   });
 });

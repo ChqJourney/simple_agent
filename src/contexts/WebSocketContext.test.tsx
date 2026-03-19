@@ -64,6 +64,7 @@ function Probe() {
     connectionStatus?: ConnectionStatus;
     setExecutionMode?: (sessionId: string, mode: "regular" | "free") => void;
     sendMessage?: (sessionId: string, content: string, attachments?: unknown[], workspacePath?: string) => void;
+    sendWorkspace?: (workspacePath: string) => void;
   };
 
   return (
@@ -91,6 +92,13 @@ function Probe() {
         aria-label="send workspace message"
       >
         send
+      </button>
+      <button
+        type="button"
+        onClick={() => context.sendWorkspace?.("/workspace-b")}
+        aria-label="bind workspace b"
+      >
+        bind-b
       </button>
       <div data-testid="status">{context.connectionStatus ?? ""}</div>
     </>
@@ -445,6 +453,12 @@ describe("WebSocketProvider", () => {
       </WebSocketProvider>
     );
 
+    websocketMockState.messageHandler?.({
+      type: "config_updated",
+      provider: "openai",
+      model: "gpt-4o",
+    });
+
     fireEvent.click(screen.getByRole("button", { name: "set execution mode" }));
 
     expect(websocketMockState.sendMock).toHaveBeenCalledWith({
@@ -501,6 +515,98 @@ describe("WebSocketProvider", () => {
       workspace_path: "/workspace-a",
     });
     expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(2, {
+      type: "message",
+      session_id: "session-a",
+      content: "hello",
+      workspace_path: "/workspace-a",
+    });
+  });
+
+  it("flushes queued execution mode only after auth, before the queued message runs", async () => {
+    websocketMockState.sendSucceeded = true;
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "set execution mode" }));
+    fireEvent.click(screen.getByRole("button", { name: "send workspace message" }));
+
+    expect(websocketMockState.sendMock).not.toHaveBeenCalled();
+
+    websocketMockState.messageHandler?.({
+      type: "config_updated",
+      provider: "openai",
+      model: "gpt-4o",
+    });
+
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(1, {
+      type: "set_execution_mode",
+      session_id: "session-a",
+      execution_mode: "free",
+    });
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(2, {
+      type: "set_workspace",
+      workspace_path: "/workspace-a",
+    });
+
+    websocketMockState.messageHandler?.({
+      type: "workspace_updated",
+      workspace_path: "/workspace-a",
+    });
+
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(3, {
+      type: "message",
+      session_id: "session-a",
+      content: "hello",
+      workspace_path: "/workspace-a",
+    });
+  });
+
+  it("only flushes queued messages for the workspace that was actually acknowledged", async () => {
+    websocketMockState.sendSucceeded = true;
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "send workspace message" }));
+
+    websocketMockState.messageHandler?.({
+      type: "config_updated",
+      provider: "openai",
+      model: "gpt-4o",
+    });
+
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(1, {
+      type: "set_workspace",
+      workspace_path: "/workspace-a",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "bind workspace b" }));
+
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(2, {
+      type: "set_workspace",
+      workspace_path: "/workspace-b",
+    });
+
+    websocketMockState.messageHandler?.({
+      type: "workspace_updated",
+      workspace_path: "/workspace-b",
+    });
+
+    expect(websocketMockState.sendMock).toHaveBeenCalledTimes(2);
+
+    websocketMockState.messageHandler?.({
+      type: "workspace_updated",
+      workspace_path: "/workspace-a",
+    });
+
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(3, {
       type: "message",
       session_id: "session-a",
       content: "hello",

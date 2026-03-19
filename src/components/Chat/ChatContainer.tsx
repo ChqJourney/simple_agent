@@ -108,8 +108,10 @@ export const ChatContainer = () => {
 
   const handleToolDecision = useCallback((decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
     if (!currentSessionId || !pendingToolConfirm) return;
-    confirmTool(pendingToolConfirm.tool_call_id, decision, scope);
-    useChatStore.getState().clearPendingToolConfirm(currentSessionId, pendingToolConfirm.tool_call_id);
+    const sent = confirmTool(pendingToolConfirm.tool_call_id, decision, scope);
+    if (sent) {
+      useChatStore.getState().clearPendingToolConfirm(currentSessionId, pendingToolConfirm.tool_call_id);
+    }
   }, [confirmTool, currentSessionId, pendingToolConfirm]);
 
   const handleInterrupt = useCallback(() => {

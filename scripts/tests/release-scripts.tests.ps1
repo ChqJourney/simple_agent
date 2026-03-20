@@ -33,9 +33,13 @@ function Assert-True {
 
 $projectRoot = Get-ProjectRoot
 $releaseVersion = "9.9.9"
-$portableFileName = Get-PortableArchiveFileName -Version $releaseVersion
+$portableFileName = Get-PortableArchiveFileName -Version $releaseVersion -Variant "full"
 $expectedPortableFileName = "{0}_{1}_windows_x64.zip" -f (Get-SafeArtifactName -Name (Get-AppName)), $releaseVersion
 Assert-Equal -Actual $portableFileName -Expected $expectedPortableFileName -Message "Portable archive name should be derived from release metadata."
+
+$noRuntimePortableFileName = Get-PortableArchiveFileName -Version $releaseVersion -Variant "no_runtime"
+$expectedNoRuntimePortableFileName = "{0}_{1}_windows_x64_no_runtime.zip" -f (Get-SafeArtifactName -Name (Get-AppName)), $releaseVersion
+Assert-Equal -Actual $noRuntimePortableFileName -Expected $expectedNoRuntimePortableFileName -Message "No-runtime portable archive name should be derived from release metadata."
 
 $releaseExecutable = Get-ReleaseExecutablePath
 $expectedExecutable = Join-Path $projectRoot ("src-tauri/target/release/{0}.exe" -f (Get-BinaryBaseName))
@@ -50,6 +54,10 @@ Assert-Equal -Actual $portableResourcesPath -Expected $expectedPortableResources
 $portableReleaseRoot = Get-PortableReleaseRoot -Version $releaseVersion
 $expectedPortableReleaseRoot = Join-Path $projectRoot "artifacts/release/$releaseVersion/portable"
 Assert-Equal -Actual $portableReleaseRoot -Expected $expectedPortableReleaseRoot -Message "Portable release root should live outside the frontend dist directory."
+
+$noRuntimePortableRoot = Get-PortableVariantRoot -Version $releaseVersion -Variant "no_runtime"
+$expectedNoRuntimePortableRoot = Join-Path $projectRoot "artifacts/release/$releaseVersion/portable/no_runtime"
+Assert-Equal -Actual $noRuntimePortableRoot -Expected $expectedNoRuntimePortableRoot -Message "No-runtime portable root should live under its dedicated variant directory."
 
 $legacyArtifactsRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("tauri-agent-legacy-release-" + [System.Guid]::NewGuid().ToString("N"))
 $legacyMarker = Join-Path $legacyArtifactsRoot "portable/stale.txt"

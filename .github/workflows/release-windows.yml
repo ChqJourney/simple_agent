@@ -1,0 +1,203 @@
+name: release-windows-portable
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Optional release version override, for example 0.1.1
+        required: false
+        type: string
+      vendor_release_tag:
+        description: Vendor release tag that contains the Windows runtime bundle
+        required: false
+        default: vendor-202603
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      DEFAULT_VENDOR_RELEASE_TAG: vendor-202603
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install backend test dependencies
+        shell: pwsh
+        run: python -m pip install -r python_backend/requirements.txt
+
+      - name: Run backend tests
+        shell: pwsh
+        run: python -m unittest discover -s python_backend/tests -v
+
+      - name: Run frontend tests
+        shell: pwsh
+        run: npm run test
+
+      - name: Run Rust tests
+        shell: pwsh
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Download vendor bundle from release assets
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $vendorTag = "${{ github.event.inputs.vendor_release_tag }}"
+          if ([string]::IsNullOrWhiteSpace($vendorTag)) {
+            $vendorTag = $env:DEFAULT_VENDOR_RELEASE_TAG
+          }
+
+          $apiHeaders = @{
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+
+          $release = Invoke-RestMethod -Headers $apiHeaders -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$vendorTag"
+          $zipAssets = @($release.assets | Where-Object { $_.name -like "*.zip" })
+
+          if ($zipAssets.Count -eq 0) {
+            throw "No zip asset was found in release tag '$vendorTag'."
+          }
+
+          if ($zipAssets.Count -gt 1) {
+            $assetNames = $zipAssets | ForEach-Object { $_.name }
+            throw "Multiple zip assets were found in release tag '$vendorTag': $($assetNames -join ', '). Keep exactly one zip asset or teach the workflow which asset to pick."
+          }
+
+          $asset = $zipAssets[0]
+          $downloadDir = Join-Path $env:RUNNER_TEMP "vendor-download"
+          $vendorRoot = Join-Path $env:RUNNER_TEMP "vendor"
+          $archivePath = Join-Path $downloadDir $asset.name
+
+          New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+          if (Test-Path -LiteralPath $vendorRoot) {
+            Remove-Item -LiteralPath $vendorRoot -Recurse -Force
+          }
+
+          $downloadHeaders = @{
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            Accept = "application/octet-stream"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+
+          Invoke-WebRequest -Headers $downloadHeaders -Uri $asset.url -OutFile $archivePath
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $vendorRoot -Force
+
+          "TAURI_AGENT_VENDOR_ROOT=$vendorRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "Using vendor release tag: $vendorTag"
+          "Resolved vendor root: $vendorRoot"
+
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          $releaseVersion = "${{ github.event.inputs.release_version }}"
+          if ([string]::IsNullOrWhiteSpace($releaseVersion) -and $env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("v")) {
+            $releaseVersion = $env:GITHUB_REF_NAME.Substring(1)
+          }
+
+          "RELEASE_VERSION=$releaseVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build portable release
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_VERSION)) {
+            ./scripts/release.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT
+          } else {
+            ./scripts/release.ps1 -Version $env:RELEASE_VERSION -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT
+          }
+
+      - name: Smoke test packaged backend
+        shell: pwsh
+        run: |
+          $portableZips = @(Get-ChildItem -Path artifacts/release -Recurse -Filter *.zip)
+          if ($portableZips.Count -lt 2) {
+            throw "Expected both runtime and no-runtime ZIP artifacts, found $($portableZips.Count)."
+          }
+
+          $runtimeZip = $portableZips | Where-Object { $_.Name -notlike "*_no_runtime.zip" } | Select-Object -First 1
+          $noRuntimeZip = $portableZips | Where-Object { $_.Name -like "*_no_runtime.zip" } | Select-Object -First 1
+
+          if ($null -eq $runtimeZip) {
+            throw "Runtime ZIP artifact was not created."
+          }
+
+          if ($null -eq $noRuntimeZip) {
+            throw "No-runtime ZIP artifact was not created."
+          }
+
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "portable-smoke"
+          if (Test-Path -LiteralPath $smokeRoot) {
+            Remove-Item -LiteralPath $smokeRoot -Recurse -Force
+          }
+
+          Expand-Archive -LiteralPath $runtimeZip.FullName -DestinationPath (Join-Path $smokeRoot "runtime") -Force
+          Expand-Archive -LiteralPath $noRuntimeZip.FullName -DestinationPath (Join-Path $smokeRoot "no-runtime") -Force
+
+          $backendExe = Get-ChildItem -Path (Join-Path $smokeRoot "runtime") -Recurse -Filter python_backend.exe | Select-Object -First 1
+          if ($null -eq $backendExe) {
+            throw "Packaged backend executable was not found after extracting $($runtimeZip.FullName)"
+          }
+
+          $noRuntimeRuntimes = Get-ChildItem -Path (Join-Path $smokeRoot "no-runtime") -Recurse -Directory -Filter runtimes | Select-Object -First 1
+          if ($null -ne $noRuntimeRuntimes) {
+            throw "No-runtime ZIP still contains embedded runtimes."
+          }
+
+          $process = Start-Process -FilePath $backendExe.FullName -PassThru
+          try {
+            $healthy = $false
+            for ($attempt = 0; $attempt -lt 15; $attempt++) {
+              Start-Sleep -Seconds 1
+              try {
+                $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8765/health"
+                if ($response.StatusCode -eq 200) {
+                  $healthy = $true
+                  break
+                }
+              }
+              catch {
+              }
+            }
+
+            if (-not $healthy) {
+              throw "Packaged backend did not become healthy on http://127.0.0.1:8765/health"
+            }
+          }
+          finally {
+            if ($null -ne $process -and -not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }
+
+      - name: Upload portable ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable-zips
+          path: artifacts/release/*/portable/*.zip
+          if-no-files-found: error

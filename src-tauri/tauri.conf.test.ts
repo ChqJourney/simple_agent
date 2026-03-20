@@ -3,8 +3,17 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("tauri.conf bundle configuration", () => {
-  it("declares the Windows backend sidecar in externalBin", () => {
+  it("keeps the base config free of Windows-only sidecar packaging", () => {
     const configPath = join(process.cwd(), "src-tauri", "tauri.conf.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8")) as {
+      bundle?: { externalBin?: string[] };
+    };
+
+    expect(config.bundle?.externalBin).toBeUndefined();
+  });
+
+  it("declares the Windows backend sidecar in the Windows override config", () => {
+    const configPath = join(process.cwd(), "src-tauri", "tauri.windows.conf.json");
     const config = JSON.parse(readFileSync(configPath, "utf-8")) as {
       bundle?: { externalBin?: string[] };
     };
@@ -12,8 +21,8 @@ describe("tauri.conf bundle configuration", () => {
     expect(config.bundle?.externalBin).toContain("binaries/python_backend");
   });
 
-  it("declares embedded runtimes as packaged resources", () => {
-    const configPath = join(process.cwd(), "src-tauri", "tauri.conf.json");
+  it("declares embedded runtimes as packaged resources in the Windows override config", () => {
+    const configPath = join(process.cwd(), "src-tauri", "tauri.windows.conf.json");
     const config = JSON.parse(readFileSync(configPath, "utf-8")) as {
       bundle?: { resources?: string[] | Record<string, string> };
     };
@@ -23,8 +32,8 @@ describe("tauri.conf bundle configuration", () => {
     );
   });
 
-  it("keeps the bundle target set to msi", () => {
-    const configPath = join(process.cwd(), "src-tauri", "tauri.conf.json");
+  it("keeps the Windows bundle target set to msi", () => {
+    const configPath = join(process.cwd(), "src-tauri", "tauri.windows.conf.json");
     const config = JSON.parse(readFileSync(configPath, "utf-8")) as {
       bundle?: { targets?: string | string[] };
     };

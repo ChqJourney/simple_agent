@@ -315,6 +315,8 @@ npm run tauri dev
 ```
 
 开发模式下，前端默认连接 `http://127.0.0.1:8765`。
+macOS 本地开发使用基础 Tauri 配置 `src-tauri/tauri.conf.json`，不会要求存在 Windows sidecar。
+Windows 发布专用的 sidecar / embedded runtime 打包配置放在 `src-tauri/tauri.windows.conf.json`。
 
 ## 构建
 
@@ -356,6 +358,125 @@ npm run build
 
 ```bash
 git diff --check
+```
+
+## Windows Portable Release
+
+- GitHub Actions 工作流位于 `.github/workflows/release-windows.yml`
+- 工作流会从当前仓库的 release asset 下载 vendor bundle，再调用 `scripts/release.ps1`
+- vendor bundle release tag 默认是 `vendor-202603`，也可以在手动触发 workflow 时覆盖
+- 发布会生成两份 ZIP：`*_windows_x64.zip` 为完整 runtime 版本
+- `*_windows_x64_no_runtime.zip`：不包含 embedded Python / Node runtime 的瘦身版本
+
+### 发布前提
+
+- 当前仓库远端：`git@github.com:ChqJourney/simple_agent.git`
+- vendor bundle 需要先上传到当前仓库 release，例如 `vendor-202603`
+- 当前 workflow 产物会出现在 GitHub Actions artifact `windows-portable-zips` 中；默认不会自动附加到应用 release
+
+### 维护 vendor bundle
+
+查看当前 vendor release：
+
+```bash
+gh release view vendor-202603 --repo ChqJourney/simple_agent
+```
+
+首次创建 vendor release：
+
+```bash
+gh release create vendor-202603 \
+  --repo ChqJourney/simple_agent \
+  --title "vendor-202603" \
+  --notes "Windows runtime bundle for portable packaging"
+```
+
+上传或覆盖 vendor zip：
+
+```bash
+gh release upload vendor-202603 /ABSOLUTE/PATH/vendor-windows-x64-202603.zip \
+  --repo ChqJourney/simple_agent \
+  --clobber
+```
+
+### 手动触发 GitHub Actions 发布
+
+指定分支、应用版本、vendor release tag：
+
+```bash
+gh workflow run release-windows.yml \
+  --repo ChqJourney/simple_agent \
+  --ref main \
+  -f release_version=0.1.0 \
+  -f vendor_release_tag=vendor-202603
+```
+
+如果只想沿用 `package.json` 当前版本，可以省略 `release_version`：
+
+```bash
+gh workflow run release-windows.yml \
+  --repo ChqJourney/simple_agent \
+  --ref main \
+  -f vendor_release_tag=vendor-202603
+```
+
+### 通过 Git tag 触发发布
+
+先确认工作区无脏改动：
+
+```bash
+git status
+```
+
+创建并推送版本 tag：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+说明：
+
+- 推送 `v*` tag 会自动触发 `release-windows.yml`
+- workflow 会把 `v0.1.0` 解析为应用版本 `0.1.0`
+- tag 触发时默认使用 `vendor-202603`
+
+### 查看执行状态
+
+列出最近的发布工作流运行：
+
+```bash
+gh run list --repo ChqJourney/simple_agent --workflow release-windows.yml
+```
+
+观察某次运行：
+
+```bash
+gh run watch <run-id> --repo ChqJourney/simple_agent
+```
+
+查看某次运行日志：
+
+```bash
+gh run view <run-id> --repo ChqJourney/simple_agent --log
+```
+
+### 下载发布产物
+
+下载某次运行的 artifact：
+
+```bash
+gh run download <run-id> \
+  --repo ChqJourney/simple_agent \
+  --name windows-portable-zips \
+  --dir ./artifacts-gh
+```
+
+下载后应能看到两份 ZIP：
+
+```text
+*_windows_x64.zip
+*_windows_x64_no_runtime.zip
 ```
 
 ## 关键目录

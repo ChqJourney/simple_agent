@@ -168,18 +168,20 @@ jobs:
       - name: Build portable release
         shell: pwsh
         run: |
-          $releaseArgs = @("-VendorRoot", $env:TAURI_AGENT_VENDOR_ROOT)
-          if ($env:TAURI_AGENT_VENDOR_MODE -eq "prebuilt_runtimes") {
-            $releaseArgs += "-SkipRuntimePrepare"
-          }
-          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_VERSION)) {
-            $releaseArgs += @("-Version", $env:RELEASE_VERSION)
-          }
+          $skipRuntimePrepare = ($env:TAURI_AGENT_VENDOR_MODE -eq "prebuilt_runtimes")
 
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_VERSION)) {
-            ./scripts/release.ps1 @releaseArgs
+            if ($skipRuntimePrepare) {
+              ./scripts/release.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT -SkipRuntimePrepare
+            } else {
+              ./scripts/release.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT
+            }
           } else {
-            ./scripts/release.ps1 @releaseArgs
+            if ($skipRuntimePrepare) {
+              ./scripts/release.ps1 -Version $env:RELEASE_VERSION -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT -SkipRuntimePrepare
+            } else {
+              ./scripts/release.ps1 -Version $env:RELEASE_VERSION -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT
+            }
           }
 
       - name: Smoke test packaged backend

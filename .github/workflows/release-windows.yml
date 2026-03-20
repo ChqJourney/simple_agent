@@ -58,10 +58,6 @@ jobs:
         shell: pwsh
         run: npm run test
 
-      - name: Run Rust tests
-        shell: pwsh
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
       - name: Download vendor bundle from release assets
         shell: pwsh
         env:
@@ -112,6 +108,14 @@ jobs:
           "TAURI_AGENT_VENDOR_ROOT=$vendorRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "Using vendor release tag: $vendorTag"
           "Resolved vendor root: $vendorRoot"
+
+      - name: Prepare Windows sidecar inputs
+        shell: pwsh
+        run: ./scripts/build-backend.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT
+
+      - name: Run Rust tests
+        shell: pwsh
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Resolve release version
         shell: pwsh

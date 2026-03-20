@@ -27,7 +27,6 @@ build
 .venv
 nul
 
-package-lock.json
 .vscode
 __pycache__
 .agent
@@ -36,4 +35,3 @@ binaries
 tmp/runtime-stage
 src-tauri/resources/runtimes
 artifacts
-

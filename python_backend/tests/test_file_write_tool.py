@@ -27,7 +27,7 @@ class FileWriteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('line-without-newline', target_path.read_text(encoding='utf-8'))
         self.assertEqual('file_write', result.output['event'])
         self.assertEqual('created', result.output['change'])
-        self.assertEqual(str(target_path), result.output['path'])
+        self.assertEqual(str(target_path.resolve()), str(Path(result.output['path']).resolve()))
 
         temp_dir.cleanup()
 

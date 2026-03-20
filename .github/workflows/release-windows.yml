@@ -17,7 +17,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -253,3 +253,25 @@ jobs:
           name: windows-portable-zips
           path: artifacts/release/*/portable/*.zip
           if-no-files-found: error
+
+      - name: Publish ZIP assets to GitHub Release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $tagName = $env:GITHUB_REF_NAME
+          $releaseTitle = $tagName
+          $zipFiles = @(Get-ChildItem -Path artifacts/release -Recurse -Filter *.zip)
+
+          if ($zipFiles.Count -lt 2) {
+            throw "Expected both portable ZIP artifacts before publishing the GitHub release."
+          }
+
+          gh release view $tagName --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tagName --repo $env:GITHUB_REPOSITORY --title $releaseTitle --generate-notes
+          }
+
+          $assetPaths = $zipFiles | ForEach-Object { $_.FullName }
+          gh release upload $tagName --repo $env:GITHUB_REPOSITORY --clobber $assetPaths

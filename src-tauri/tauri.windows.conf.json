@@ -1,14 +1,14 @@
 {
-    "$schema":  "https://schema.tauri.app/config/2",
-    "bundle":  {
-                   "active":  true,
-                   "targets":  "msi",
-                   "externalBin":  [
-                                       "binaries/python_backend"
-                                   ],
-                   "resources":  [
-                                     "resources/runtimes/python",
-                                     "resources/runtimes/node"
-                                 ]
-               }
+    "$schema": "https://schema.tauri.app/config/2",
+    "bundle": {
+        "active": true,
+        "targets": "msi",
+        "externalBin": [
+            "binaries/python_backend"
+        ],
+        "resources": [
+            "resources/runtimes/python",
+            "resources/runtimes/node"
+        ]
+    }
 }

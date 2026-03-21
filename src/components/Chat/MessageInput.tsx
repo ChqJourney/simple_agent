@@ -300,7 +300,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     <form onSubmit={handleSubmit} className="px-4 pb-4 pt-2 md:px-6 md:pb-6">
       <div
         data-testid="composer-shell"
-        className="relative rounded-[1.75rem] bg-white/92 p-3 shadow-lg shadow-gray-200/60 backdrop-blur dark:bg-gray-900/90 dark:shadow-black/20"
+        className="relative rounded-2xl bg-white/92 p-3 shadow-lg shadow-gray-200/60 backdrop-blur dark:bg-gray-900/90 dark:shadow-black/20"
         onDragEnter={handleComposerDragEnter}
         onDragOver={handleComposerDragOver}
         onDragLeave={handleComposerDragLeave}
@@ -333,7 +333,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           </div>
         )}
 
-        <div className={`relative overflow-hidden rounded-[1.5rem] border border-gray-200 bg-gray-50/90 dark:border-gray-700 dark:bg-gray-800/85 ${attachments.length > 0 || (canAttachImages && isImageDragActive) ? '' : 'mt-0'}`}>
+        <div className={`relative overflow-hidden rounded-xl border border-gray-200 bg-gray-50/90 dark:border-gray-700 dark:bg-gray-800/85 ${attachments.length > 0 || (canAttachImages && isImageDragActive) ? '' : 'mt-0'}`}>
           <textarea
             ref={textareaRef}
             value={content}
@@ -344,7 +344,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             placeholder={placeholder}
             disabled={isInputDisabled}
             rows={4}
-            className="min-h-[6.5rem] max-h-60 w-full resize-none bg-transparent px-4 py-4 pb-16 pr-20 text-gray-900 outline-none transition-colors placeholder:text-gray-500 dark:text-gray-100 dark:placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-70"
+            className="min-h-[4rem] max-h-60 w-full resize-none bg-transparent px-4 py-4 pb-16 pr-20 text-gray-900 outline-none transition-colors placeholder:text-gray-500 dark:text-gray-100 dark:placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-70"
           />
           {isStreaming ? (
             <button
@@ -365,7 +365,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               disabled={disabled || (!content.trim() && attachments.length === 0)}
               aria-label="Send message"
               title="Send message"
-              className="absolute bottom-3 right-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"
+              className="absolute bottom-3 right-3 flex h-8 w-20 items-center justify-center rounded-lg bg-slate-600 text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"
             >
               <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                 <path d="M3 10.5L16.5 3.5L13.5 16.5L9.75 11.25L3 10.5Z" strokeLinecap="round" strokeLinejoin="round" />
@@ -374,7 +374,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           )}
           <div className="flex items-center border-gray-200/80 px-4 py-3 dark:border-gray-700/80">
             <label htmlFor="execution-mode-select" className="text-xs font-semibold tracking-[0.12em] text-gray-600 dark:text-gray-300">
-              Execution mode
+              Approval
             </label>
             <select
               id="execution-mode-select"

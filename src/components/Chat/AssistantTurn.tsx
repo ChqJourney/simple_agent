@@ -213,7 +213,7 @@ export const AssistantTurn = ({
       )}
 
       {hasDetails && (
-        <div className={`${hasFormalContent ? '' : 'mt-2'} rounded-[1.5rem] border border-gray-200/80 bg-gray-50/85 p-4 dark:border-gray-700/80 dark:bg-gray-900/50`}>
+        <div className={`${hasFormalContent ? '' : 'mt-2'} rounded-xl border border-gray-200/80 bg-gray-50/85 p-4 dark:border-gray-700/80 dark:bg-gray-900/50`}>
           <button
             type="button"
             onClick={() => setIsExpanded((value) => !value)}

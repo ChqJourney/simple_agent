@@ -136,7 +136,7 @@ export const WelcomePage: React.FC = () => {
         <button
           onClick={handleCreateWorkspace}
           disabled={isCreating}
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-medium transition-colors mb-8"
+          className="px-6 py-3 bg-slate-600 hover:bg-slate-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition-colors mb-8"
         >
           {isCreating ? 'Creating...' : '+ New Workspace'}
         </button>

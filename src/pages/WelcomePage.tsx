@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigate } from 'react-router-dom';
 import { useUIStore, useWorkspaceStore } from '../stores';
-import { WorkspaceList, WorkspaceDrawer, Logo, DecorativePattern } from '../components/Welcome';
+import { WorkspaceList, WorkspaceDrawer, Logo } from '../components/Welcome';
 
 interface WorkspacePrepareExistingResult {
   status: 'existing';

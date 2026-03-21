@@ -6,6 +6,7 @@ import { ReasoningBlock } from '../Reasoning/ReasoningBlock';
 import { ToolCallDisplay, ToolCard } from '../Tools';
 import { MessageItem } from './MessageItem';
 import { AssistantStatusIndicator } from './AssistantStatusIndicator';
+import { CopyMessageButton } from './CopyMessageButton';
 
 interface AssistantTurnProps {
   messages: Message[];
@@ -116,8 +117,11 @@ function renderDetailMessage(message: Message) {
 
     return (
       <div className="rounded-2xl border border-gray-200/80 bg-white/70 p-4 dark:border-gray-700/80 dark:bg-gray-900/50">
-        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
-          Assistant activity
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
+            Assistant activity
+          </div>
+          {hasContent && <CopyMessageButton text={message.content || ''} />}
         </div>
         {hasContent && (
           <div className="prose prose-sm mt-3 max-w-none text-gray-900 leading-relaxed dark:prose-invert dark:text-gray-100">
@@ -175,6 +179,7 @@ export const AssistantTurn = ({
   const detailMessages = messages.filter((_, index) => index !== formalAssistantIndex);
   const hasFormalContent = Boolean(formalAssistantMessage) || Boolean(streamingContent);
   const hasDetails = detailMessages.length > 0 || Boolean(currentReasoningContent);
+  const copyableContent = streamingContent.trim() || formalAssistantMessage?.content?.trim() || '';
   const [isExpanded, setIsExpanded] = useState(isStreaming);
   const wasStreamingRef = useRef(isStreaming);
 
@@ -196,11 +201,14 @@ export const AssistantTurn = ({
           <span className="font-semibold text-xs text-gray-600 dark:text-gray-400">
             Assistant
           </span>
-          {formalAssistantMessage?.usage && (
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              {formalAssistantMessage.usage.total_tokens} tokens
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {formalAssistantMessage?.usage && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                {formalAssistantMessage.usage.total_tokens} tokens
+              </span>
+            )}
+            {copyableContent && <CopyMessageButton text={copyableContent} />}
+          </div>
         </div>
       )}
 

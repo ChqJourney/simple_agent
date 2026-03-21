@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from core.agent import Agent
 from core.user import Session, UserManager
 from llms.base import BaseLLM
+from llms.capabilities import get_supported_input_types
 from llms.deepseek import DeepSeekLLM
 from llms.openai import OpenAILLM
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
@@ -607,6 +608,27 @@ async def handle_user_message(
                 "error": "Failed to resolve active model profile for this session.",
             })
             return
+
+        has_image_attachments = isinstance(attachments, list) and any(
+            isinstance(attachment, dict) and attachment.get("kind") == "image"
+            for attachment in attachments
+        )
+        if has_image_attachments:
+            supported_input_types = get_supported_input_types(
+                str(active_profile.get("provider") or ""),
+                str(active_profile.get("model") or ""),
+            )
+            if "image" not in supported_input_types:
+                await _release_reserved_session(session_id)
+                await send_callback({
+                    "type": "error",
+                    "session_id": session_id,
+                    "error": (
+                        f"Model {active_profile.get('provider')}/{active_profile.get('model')} "
+                        "does not support image input."
+                    ),
+                })
+                return
 
         agent = await get_or_create_agent(session_id, active_profile, runtime_policy)
         if not agent:

@@ -36,7 +36,7 @@ vi.mock("./MessageList", () => ({
 }));
 
 vi.mock("./MessageInput", () => ({
-  MessageInput: (props: { disabled?: boolean; placeholder?: string }) => {
+  MessageInput: (props: { disabled?: boolean; placeholder?: string; supportsImageAttachments?: boolean }) => {
     messageInputPropsMock(props);
     return <div>{props.disabled ? "MessageInput disabled" : "MessageInput enabled"}</div>;
   },
@@ -215,6 +215,38 @@ describe("ChatContainer", () => {
       expect.objectContaining({
         disabled: false,
         placeholder: "Type your message...",
+      })
+    );
+  });
+
+  it("keeps image attachments enabled for supported models even before an API key is added", () => {
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o",
+        api_key: "",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o",
+            api_key: "",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+        },
+      } as never,
+    });
+
+    render(<ChatContainer />);
+
+    expect(messageInputPropsMock.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        disabled: true,
+        placeholder: "Add an API key before sending messages...",
+        supportsImageAttachments: true,
       })
     );
   });

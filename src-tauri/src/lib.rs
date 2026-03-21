@@ -68,6 +68,44 @@ fn delete_session_history(
     session_storage::delete_session_history(&app, &workspace_path, &session_id)
 }
 
+#[tauri::command]
+fn open_workspace_folder(selected_path: String) -> Result<(), String> {
+    let workspace_path = Path::new(&selected_path);
+    if !workspace_path.exists() {
+        return Err(format!("Workspace path does not exist: {selected_path}"));
+    }
+
+    if !workspace_path.is_dir() {
+        return Err(format!("Workspace path is not a directory: {selected_path}"));
+    }
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = std::process::Command::new("explorer");
+        command.arg(&selected_path);
+        command
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("open");
+        command.arg(&selected_path);
+        command
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(&selected_path);
+        command
+    };
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Failed to open workspace folder: {error}"))
+}
+
 pub struct PythonSidecar(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
 fn sidecar_event_log_entry(
@@ -238,7 +276,8 @@ pub fn run() {
             authorize_workspace_path,
             scan_workspace_sessions,
             read_session_history,
-            delete_session_history
+            delete_session_history,
+            open_workspace_folder
         ])
         .setup(|_app| {
             #[cfg(debug_assertions)]

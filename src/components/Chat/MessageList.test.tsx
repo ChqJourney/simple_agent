@@ -1,9 +1,18 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageList } from "./MessageList";
 import type { Message } from "../../types";
 
 describe("MessageList", () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn(),
+      },
+    });
+  });
+
   it("keeps the formal assistant content visible while collapsing round details by default", () => {
     const messages: Message[] = [
       {
@@ -72,5 +81,34 @@ describe("MessageList", () => {
 
     expect(screen.getByText("Need to inspect the repository first.")).toBeTruthy();
     expect(screen.getByText(/exit_code: 0/)).toBeTruthy();
+  });
+
+  it("copies visible user and assistant message bodies from the message list", async () => {
+    const writeTextMock = vi.mocked(navigator.clipboard.writeText);
+    const messages: Message[] = [
+      {
+        id: "user-1",
+        role: "user",
+        content: "Copy this user message",
+        status: "completed",
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "Copy this assistant reply",
+        status: "completed",
+      },
+    ];
+
+    render(<MessageList messages={messages} />);
+
+    const copyButtons = screen.getAllByRole("button", { name: "Copy message" });
+    fireEvent.click(copyButtons[0]);
+    fireEvent.click(copyButtons[1]);
+
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenNthCalledWith(1, "Copy this user message");
+      expect(writeTextMock).toHaveBeenNthCalledWith(2, "Copy this assistant reply");
+    });
   });
 });

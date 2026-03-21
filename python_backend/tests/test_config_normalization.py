@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -133,6 +134,66 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             backend_main.create_llm = original_create_llm
             backend_main.runtime_state = original_runtime_state
+
+    async def test_handle_user_message_rejects_image_attachments_for_text_only_model(self) -> None:
+        original_runtime_state = backend_main.runtime_state
+        original_user_manager = backend_main.user_manager
+        original_get_or_create_agent = backend_main.get_or_create_agent
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            messages = []
+
+            async def send_callback(message):
+                messages.append(message)
+
+            async def fail_get_or_create_agent(*_args, **_kwargs):
+                raise AssertionError("Text-only image requests should be rejected before agent creation")
+
+            try:
+                backend_main.runtime_state = backend_main.BackendRuntimeState(
+                    current_config=backend_main._normalize_provider_config(
+                        {
+                            'provider': 'deepseek',
+                            'model': 'deepseek-chat',
+                            'api_key': 'test-key',
+                            'base_url': 'https://api.deepseek.com',
+                            'enable_reasoning': False,
+                        }
+                    ),
+                    default_workspace=temp_dir,
+                )
+                backend_main.user_manager = backend_main.UserManager(Path(temp_dir) / "tool-policies.json")
+                backend_main.get_or_create_agent = fail_get_or_create_agent
+                await backend_main.user_manager.register_connection('connection-1', send_callback)
+
+                await backend_main.handle_user_message(
+                    {
+                        'session_id': 'session-1',
+                        'content': 'Describe this image',
+                        'attachments': [
+                            {
+                                'kind': 'image',
+                                'path': str(Path(temp_dir) / 'diagram.png'),
+                                'name': 'diagram.png',
+                            }
+                        ],
+                    },
+                    send_callback,
+                    'connection-1',
+                )
+
+                self.assertIn(
+                    {
+                        'type': 'error',
+                        'session_id': 'session-1',
+                        'error': 'Model deepseek/deepseek-chat does not support image input.',
+                    },
+                    messages,
+                )
+            finally:
+                backend_main.runtime_state = original_runtime_state
+                backend_main.user_manager = original_user_manager
+                backend_main.get_or_create_agent = original_get_or_create_agent
 
     def test_ollama_llm_normalizes_blank_and_v1_base_urls(self) -> None:
         blank = OllamaLLM({'model': 'qwen3:8b', 'base_url': '   '})

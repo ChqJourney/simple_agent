@@ -7,6 +7,7 @@ import { ReasoningBlock } from '../Reasoning/ReasoningBlock';
 import { ToolCallDisplay, ToolCard } from '../Tools';
 import { UserStatusIndicator } from './UserStatusIndicator';
 import { AssistantStatusIndicator } from './AssistantStatusIndicator';
+import { CopyMessageButton } from './CopyMessageButton';
 
 interface MessageItemProps {
   message: Message;
@@ -96,6 +97,8 @@ export const MessageItem = memo<MessageItemProps>(({
       (message.tool_calls && message.tool_calls.length > 0)
   );
   const hasReasoning = Boolean(reasoningContent);
+  const copyableContent = (isAssistant && isStreaming ? streamingContent : message.content)?.trim() || '';
+  const hasCopyableContent = copyableContent.length > 0;
 
   return (
     <div
@@ -110,11 +113,14 @@ export const MessageItem = memo<MessageItemProps>(({
           <span className="font-semibold text-xs text-gray-600 dark:text-gray-400">
             {isUser ? 'You' : 'Assistant'}
           </span>
-          {message.usage && (
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              {message.usage.total_tokens} tokens
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {message.usage && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                {message.usage.total_tokens} tokens
+              </span>
+            )}
+            {hasCopyableContent && <CopyMessageButton text={copyableContent} />}
+          </div>
         </div>
       )}
 

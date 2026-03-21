@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Attachment, ExecutionMode } from '../../types';
+import { isImagePath } from '../../utils/fileTypes';
+import { clearActiveDraggedFileDescriptors, getActiveDraggedFileDescriptors } from '../../utils/internalDragState';
 
 const FILE_TREE_DRAG_MIME = 'application/x-tauri-agent-file';
+const FILE_TREE_IMAGE_DRAG_MIME = 'application/x-tauri-agent-image';
 
 interface DraggedFileDescriptor {
   path: string;
@@ -18,6 +21,7 @@ interface MessageInputProps {
   disabled?: boolean;
   placeholder?: string;
   executionMode?: ExecutionMode;
+  supportsImageAttachments?: boolean;
 }
 
 function parseDraggedDescriptors(raw: string): DraggedFileDescriptor[] {
@@ -53,7 +57,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 async function fileToAttachment(file: File): Promise<Attachment | null> {
-  if (!file.type.startsWith('image/')) {
+  if (!isImageFile(file)) {
     return null;
   }
 
@@ -69,6 +73,53 @@ async function fileToAttachment(file: File): Promise<Attachment | null> {
   };
 }
 
+function isImageFile(file: File): boolean {
+  return file.type.startsWith('image/') || isImagePath(file.name);
+}
+
+function descriptorsToImageAttachments(descriptors: DraggedFileDescriptor[]): Attachment[] {
+  return descriptors
+    .filter((descriptor) => descriptor.isImage || isImagePath(descriptor.path))
+    .map((descriptor) => ({
+      kind: 'image' as const,
+      path: descriptor.path,
+      name: descriptor.name || descriptor.path.split(/[\\/]/).pop() || descriptor.path,
+      mime_type: undefined,
+    }));
+}
+
+function hasImagePayload(dataTransfer: DataTransfer): boolean {
+  const activeDescriptors = getActiveDraggedFileDescriptors();
+  if (activeDescriptors.some((descriptor) => descriptor.isImage || isImagePath(descriptor.path))) {
+    return true;
+  }
+
+  const dragTypes = Array.from(dataTransfer.types || []);
+  if (dragTypes.includes(FILE_TREE_IMAGE_DRAG_MIME)) {
+    return true;
+  }
+
+  const descriptors = parseDraggedDescriptors(dataTransfer.getData(FILE_TREE_DRAG_MIME));
+  if (descriptors.some((descriptor) => descriptor.isImage || isImagePath(descriptor.path))) {
+    return true;
+  }
+
+  if (Array.from(dataTransfer.items || []).some((item) => {
+    if (item.kind !== 'file') {
+      return false;
+    }
+    if (item.type.startsWith('image/')) {
+      return true;
+    }
+    const file = item.getAsFile?.();
+    return Boolean(file && isImageFile(file));
+  })) {
+    return true;
+  }
+
+  return Array.from(dataTransfer.files || []).some((file) => isImageFile(file));
+}
+
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
   onExecutionModeChange,
@@ -77,11 +128,15 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   disabled = false,
   placeholder = 'Type your message...',
   executionMode = 'regular',
+  supportsImageAttachments = false,
 }) => {
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isImageDragActive, setIsImageDragActive] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageDragDepthRef = useRef(0);
   const isInputDisabled = disabled || isStreaming;
+  const canAttachImages = supportsImageAttachments && !isStreaming;
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -89,6 +144,21 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [content]);
+
+  const resetImageDragState = () => {
+    imageDragDepthRef.current = 0;
+    setIsImageDragActive(false);
+  };
+
+  useEffect(() => {
+    if (!supportsImageAttachments && attachments.length > 0) {
+      setAttachments([]);
+    }
+    if (!supportsImageAttachments) {
+      resetImageDragState();
+      clearActiveDraggedFileDescriptors();
+    }
+  }, [attachments.length, supportsImageAttachments]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,31 +206,83 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     });
   };
 
-  const handlePromptDrop = (e: React.DragEvent<HTMLTextAreaElement>) => {
+  const handlePromptDrop = async (e: React.DragEvent<HTMLTextAreaElement>) => {
     e.preventDefault();
+    if (canAttachImages && hasImagePayload(e.dataTransfer)) {
+      resetImageDragState();
+      await appendDroppedImageAttachments(e.dataTransfer);
+      clearActiveDraggedFileDescriptors();
+      return;
+    }
+
     const descriptors = parseDraggedDescriptors(e.dataTransfer.getData(FILE_TREE_DRAG_MIME));
-    insertPathsIntoPrompt(descriptors.map((descriptor) => descriptor.path));
+    const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
+    insertPathsIntoPrompt(effectiveDescriptors.map((descriptor) => descriptor.path));
+    clearActiveDraggedFileDescriptors();
   };
 
-  const handleAttachmentDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-
-    const descriptors = parseDraggedDescriptors(e.dataTransfer.getData(FILE_TREE_DRAG_MIME));
-    const descriptorAttachments = descriptors
-      .filter((descriptor) => descriptor.isImage)
-      .map((descriptor) => ({
-        kind: 'image' as const,
-        path: descriptor.path,
-        name: descriptor.name || descriptor.path.split(/[\\/]/).pop() || descriptor.path,
-        mime_type: undefined,
-      }));
-
+  const appendDroppedImageAttachments = async (dataTransfer: DataTransfer) => {
+    const descriptors = parseDraggedDescriptors(dataTransfer.getData(FILE_TREE_DRAG_MIME));
+    const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
+    const descriptorAttachments = descriptorsToImageAttachments(effectiveDescriptors);
     const fileAttachments = (await Promise.all(
-      Array.from(e.dataTransfer.files || []).map((file) => fileToAttachment(file))
+      Array.from(dataTransfer.files || []).map((file) => fileToAttachment(file))
     ))
       .filter((attachment): attachment is Attachment => attachment !== null);
 
     appendImageAttachments([...descriptorAttachments, ...fileAttachments]);
+  };
+
+  const handleAttachmentDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resetImageDragState();
+    await appendDroppedImageAttachments(e.dataTransfer);
+    clearActiveDraggedFileDescriptors();
+  };
+
+  const handleComposerDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    if (!canAttachImages || !hasImagePayload(e.dataTransfer)) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    resetImageDragState();
+    await appendDroppedImageAttachments(e.dataTransfer);
+    clearActiveDraggedFileDescriptors();
+  };
+
+  const handleComposerDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!canAttachImages || !hasImagePayload(e.dataTransfer)) {
+      return;
+    }
+
+    e.preventDefault();
+    imageDragDepthRef.current += 1;
+    setIsImageDragActive(true);
+  };
+
+  const handleComposerDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!canAttachImages || !hasImagePayload(e.dataTransfer)) {
+      return;
+    }
+
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsImageDragActive(true);
+  };
+
+  const handleComposerDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!canAttachImages || !hasImagePayload(e.dataTransfer)) {
+      return;
+    }
+
+    e.preventDefault();
+    imageDragDepthRef.current = Math.max(0, imageDragDepthRef.current - 1);
+    if (imageDragDepthRef.current === 0) {
+      setIsImageDragActive(false);
+    }
   };
 
   const removeAttachment = (target: Attachment) => {
@@ -178,33 +300,40 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     <form onSubmit={handleSubmit} className="px-4 pb-4 pt-2 md:px-6 md:pb-6">
       <div
         data-testid="composer-shell"
-        className="rounded-[1.75rem] bg-white/92 p-3 shadow-lg shadow-gray-200/60 backdrop-blur dark:bg-gray-900/90 dark:shadow-black/20"
+        className="relative rounded-[1.75rem] bg-white/92 p-3 shadow-lg shadow-gray-200/60 backdrop-blur dark:bg-gray-900/90 dark:shadow-black/20"
+        onDragEnter={handleComposerDragEnter}
+        onDragOver={handleComposerDragOver}
+        onDragLeave={handleComposerDragLeave}
+        onDrop={(e) => void handleComposerDrop(e)}
       >
-        <div
-          aria-label="Image attachment drop zone"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleAttachmentDrop}
-          className="rounded-[1.25rem] border border-dashed border-blue-300 bg-blue-50/80 px-4 py-3 text-sm text-blue-700 transition-colors dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
-        >
-          <div className="font-medium">Drop images here</div>
-          <div className="text-xs opacity-80">Images are attached to the next user message.</div>
-          {attachments.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {attachments.map((attachment) => (
-                <button
-                  key={`${attachment.name}:${attachment.path}`}
-                  type="button"
-                  onClick={() => removeAttachment(attachment)}
-                  className="rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-700 shadow-sm transition-colors hover:bg-blue-100 dark:bg-blue-900/80 dark:text-blue-100 dark:hover:bg-blue-900"
-                >
-                  {attachment.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {canAttachImages && isImageDragActive && (
+          <div
+            aria-label="Image attachment drop zone"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => void handleAttachmentDrop(e)}
+            className="mb-3 rounded-[1.25rem] border border-dashed border-blue-300 bg-blue-50/90 px-4 py-4 text-sm text-blue-700 transition-colors dark:border-blue-700 dark:bg-blue-950/50 dark:text-blue-200"
+          >
+            <div className="font-medium">Drop images here</div>
+            <div className="text-xs opacity-80">Images are attached to the next user message.</div>
+          </div>
+        )}
 
-        <div className="relative mt-3 overflow-hidden rounded-[1.5rem] border border-gray-200 bg-gray-50/90 dark:border-gray-700 dark:bg-gray-800/85">
+        {attachments.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {attachments.map((attachment) => (
+              <button
+                key={`${attachment.name}:${attachment.path}`}
+                type="button"
+                onClick={() => removeAttachment(attachment)}
+                className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 shadow-sm transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-100 dark:hover:bg-blue-900"
+              >
+                {attachment.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className={`relative overflow-hidden rounded-[1.5rem] border border-gray-200 bg-gray-50/90 dark:border-gray-700 dark:bg-gray-800/85 ${attachments.length > 0 || (canAttachImages && isImageDragActive) ? '' : 'mt-0'}`}>
           <textarea
             ref={textareaRef}
             value={content}

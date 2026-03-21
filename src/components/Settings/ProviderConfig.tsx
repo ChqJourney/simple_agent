@@ -1,6 +1,6 @@
 import React from 'react';
 import { ProviderType, ProviderConfig } from '../../types';
-import { supportsReasoning } from '../../utils/modelCapabilities';
+import { getImageSupportStatus, ImageSupportStatus, supportsReasoning } from '../../utils/modelCapabilities';
 
 interface ProviderConfigProps {
   config: Partial<ProviderConfig>;
@@ -22,7 +22,31 @@ const MODELS: Record<ProviderType, string[]> = {
   ollama: ['llama3.1', 'llama3.2', 'qwen3:8b', 'mistral', 'codellama'],
 };
 
+function getImageSupportBadge(status: ImageSupportStatus): string {
+  switch (status) {
+    case 'supported':
+      return 'Images';
+    case 'unsupported':
+      return 'Text only';
+    default:
+      return 'Unknown';
+  }
+}
+
+function getImageSupportDescription(status: ImageSupportStatus): string {
+  switch (status) {
+    case 'supported':
+      return 'Image input is supported for this model.';
+    case 'unsupported':
+      return 'This model is treated as text-only and image input stays disabled.';
+    default:
+      return 'Image support is unknown, so the app keeps image input disabled by default.';
+  }
+}
+
 export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onChange, title }) => {
+  const provider = config.provider;
+
   const handleChange = (key: keyof ProviderConfig, value: string | boolean) => {
     onChange({ ...config, [key]: value });
   };
@@ -37,7 +61,6 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
   };
 
   const handleModelChange = (model: string) => {
-    const provider = config.provider;
     const reasoningEnabled = provider ? supportsReasoning(provider, model) : false;
     onChange({
       ...config,
@@ -46,7 +69,10 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
     });
   };
 
-  const showReasoningToggle = Boolean(config.provider && config.model && supportsReasoning(config.provider, config.model));
+  const showReasoningToggle = Boolean(provider && config.model && supportsReasoning(provider, config.model));
+  const selectedImageSupport = provider && config.model
+    ? getImageSupportStatus(provider, config.model)
+    : 'unknown';
 
   return (
     <div className="space-y-4">
@@ -74,7 +100,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
         </select>
       </div>
 
-      {config.provider && (
+      {provider && (
         <>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -87,12 +113,17 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             >
               <option value="">Select a model</option>
-              {MODELS[config.provider].map((m) => (
+              {MODELS[provider].map((m) => (
                 <option key={m} value={m}>
-                  {m}
+                  {`${m} · ${getImageSupportBadge(getImageSupportStatus(provider, m))}`}
                 </option>
               ))}
             </select>
+            {config.model && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {getImageSupportDescription(selectedImageSupport)}
+              </p>
+            )}
           </div>
 
           {config.provider !== 'ollama' && (

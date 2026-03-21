@@ -146,6 +146,18 @@ describe("SettingsPage", () => {
     expect(providerOptions).toContain("DeepSeek");
   });
 
+  it("shows image support status in the primary model list", () => {
+    render(<SettingsPage />);
+
+    const modelSelect = screen.getByLabelText("Primary Model Model") as HTMLSelectElement;
+    const modelOptions = Array.from(modelSelect.options).map((option) => option.textContent);
+
+    expect(modelOptions).toContain("gpt-4o · Images");
+    expect(modelOptions).toContain("gpt-4-turbo · Unknown");
+    expect(modelOptions).toContain("o1-preview · Text only");
+    expect(screen.getAllByText("Image input is supported for this model.").length).toBeGreaterThan(0);
+  });
+
   it("saves context provider settings through normalized config", () => {
     render(<SettingsPage />);
 
@@ -219,5 +231,31 @@ describe("SettingsPage", () => {
         },
       })
     );
+  });
+
+  it("allows saving a configured model before an API key is added", () => {
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getAllByPlaceholderText("Enter your API key")[0], {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(setConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai",
+        model: "gpt-4o",
+        api_key: "",
+        profiles: expect.objectContaining({
+          primary: expect.objectContaining({
+            provider: "openai",
+            model: "gpt-4o",
+            api_key: "",
+          }),
+        }),
+      })
+    );
+    expect(sendConfigMock).toHaveBeenCalled();
+    expect(navigateMock).toHaveBeenCalledWith(-1);
   });
 });

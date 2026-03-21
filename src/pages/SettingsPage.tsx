@@ -161,18 +161,8 @@ export const SettingsPage: React.FC = () => {
       return;
     }
 
-    if (primaryProfile.provider !== 'ollama' && !primaryProfile.api_key) {
-      setSaveError('API key is required for this provider');
-      return;
-    }
-
     if (secondaryProfile.provider && !secondaryProfile.model) {
       setSaveError('Secondary model is required when a secondary provider is selected');
-      return;
-    }
-
-    if (secondaryProfile.provider && secondaryProfile.provider !== 'ollama' && !secondaryProfile.api_key) {
-      setSaveError('API key is required for the secondary provider');
       return;
     }
 

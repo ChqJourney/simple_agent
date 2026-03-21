@@ -23,6 +23,12 @@ class ModelCapabilitiesTests(unittest.TestCase):
     def test_supported_input_types_default_to_text(self) -> None:
         self.assertEqual(['text'], get_supported_input_types('openai', 'o1-preview'))
 
+    def test_known_vision_models_allow_image_input(self) -> None:
+        self.assertEqual(['text', 'image'], get_supported_input_types('openai', 'gpt-4o'))
+
+    def test_unknown_models_stay_text_only(self) -> None:
+        self.assertEqual(['text'], get_supported_input_types('ollama', 'llama3.1'))
+
     def test_unsupported_models_are_coerced_off(self) -> None:
         normalized = coerce_reasoning_enabled({
             'provider': 'openai',

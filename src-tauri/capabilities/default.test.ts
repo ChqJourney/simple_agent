@@ -72,4 +72,13 @@ describe("default Tauri capability", () => {
       });
     });
   });
+
+  it("allows opening workspace folders through the opener plugin", () => {
+    const capabilityPath = join(process.cwd(), "src-tauri", "capabilities", "default.json");
+    const capability = JSON.parse(readFileSync(capabilityPath, "utf-8")) as {
+      permissions?: Array<string | { identifier: string; allow?: Array<{ path: string }> }>;
+    };
+
+    expect(capability.permissions).toContain("opener:allow-open-path");
+  });
 });

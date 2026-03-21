@@ -97,4 +97,30 @@ describe("FileTree", () => {
     expect(screen.queryByText("old-child.txt")).toBeNull();
     expect(screen.getByText("workspace-2.txt")).toBeTruthy();
   });
+
+  it("renders different icon kinds for different file types", async () => {
+    readDirMock.mockResolvedValueOnce([
+      { name: "src", isDirectory: true },
+      { name: "app.tsx", isDirectory: false },
+      { name: "package.json", isDirectory: false },
+      { name: "notes.md", isDirectory: false },
+      { name: "screenshot.png", isDirectory: false },
+    ]);
+
+    render(<FileTree />);
+
+    await waitFor(() => {
+      expect(screen.getByText("src")).toBeTruthy();
+      expect(screen.getByText("app.tsx")).toBeTruthy();
+      expect(screen.getByText("package.json")).toBeTruthy();
+      expect(screen.getByText("notes.md")).toBeTruthy();
+      expect(screen.getByText("screenshot.png")).toBeTruthy();
+    });
+
+    expect(screen.getByText("src").previousElementSibling?.getAttribute("data-icon-kind")).toBe("folder");
+    expect(screen.getByText("app.tsx").previousElementSibling?.getAttribute("data-icon-kind")).toBe("typescript");
+    expect(screen.getByText("package.json").previousElementSibling?.getAttribute("data-icon-kind")).toBe("json");
+    expect(screen.getByText("notes.md").previousElementSibling?.getAttribute("data-icon-kind")).toBe("markdown");
+    expect(screen.getByText("screenshot.png").previousElementSibling?.getAttribute("data-icon-kind")).toBe("image");
+  });
 });

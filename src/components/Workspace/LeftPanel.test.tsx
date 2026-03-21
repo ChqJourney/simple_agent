@@ -1,12 +1,18 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LeftPanel } from "./LeftPanel";
 import { useConfigStore } from "../../stores/configStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 
+const invokeMock = vi.hoisted(() => vi.fn());
+
 vi.mock("../Sidebar/SessionList", () => ({
   SessionList: () => <div>SessionList</div>,
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
 }));
 
 describe("LeftPanel", () => {
@@ -63,5 +69,17 @@ describe("LeftPanel", () => {
     expect(screen.getByTitle("C:/Users/patri/source/repos/tauri_agent")).toBeTruthy();
     expect(screen.getByText("2 sessions")).toBeTruthy();
     expect(screen.queryByText("gpt-4o")).toBeNull();
+  });
+
+  it("opens the current workspace folder from the left panel action", async () => {
+    render(<LeftPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open workspace folder" }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("open_workspace_folder", {
+        selectedPath: "C:/Users/patri/source/repos/tauri_agent",
+      });
+    });
   });
 });

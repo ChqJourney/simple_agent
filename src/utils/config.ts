@@ -99,7 +99,11 @@ export function hasRunnableConversationProfile(config?: ProviderConfig | null): 
   }
 
   const primaryProfile = config.profiles?.primary || config;
-  return hasConfiguredModelProfile(primaryProfile);
+  if (!hasConfiguredModelProfile(primaryProfile)) {
+    return false;
+  }
+
+  return primaryProfile.provider === 'ollama' || Boolean(primaryProfile.api_key?.trim());
 }
 
 function normalizePositiveInt(value: unknown, fallback: number): number {

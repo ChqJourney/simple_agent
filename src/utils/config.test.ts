@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeProviderConfig } from "./config";
+import { hasRunnableConversationProfile, normalizeProviderConfig } from "./config";
 
 describe("normalizeProviderConfig", () => {
   it("promotes flat config into a primary profile while preserving runtime metadata", () => {
@@ -68,5 +68,25 @@ describe("normalizeProviderConfig", () => {
     expect(normalized.base_url).toBe("https://api.deepseek.com");
     expect(normalized.profiles?.primary.provider).toBe("deepseek");
     expect(normalized.profiles?.primary.base_url).toBe("https://api.deepseek.com");
+  });
+
+  it("treats hosted providers without an API key as not runnable", () => {
+    expect(hasRunnableConversationProfile({
+      provider: "openai",
+      model: "gpt-4o",
+      api_key: "",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+    })).toBe(false);
+  });
+
+  it("treats ollama models as runnable without an API key", () => {
+    expect(hasRunnableConversationProfile({
+      provider: "ollama",
+      model: "llama3.2",
+      api_key: "",
+      base_url: "http://127.0.0.1:11434",
+      enable_reasoning: false,
+    })).toBe(true);
   });
 });

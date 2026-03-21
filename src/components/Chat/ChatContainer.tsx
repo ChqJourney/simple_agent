@@ -10,7 +10,8 @@ import { Attachment, ExecutionMode, PendingQuestion, ToolDecision, ToolDecisionS
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { PendingQuestionCard, ToolConfirmModal } from '../Tools';
-import { hasRunnableConversationProfile } from '../../utils/config';
+import { hasConfiguredModelProfile, hasRunnableConversationProfile } from '../../utils/config';
+import { supportsImageInput } from '../../utils/modelCapabilities';
 
 const emptySession = {
   messages: [] as never[],
@@ -31,8 +32,18 @@ export const ChatContainer = () => {
   const updateSession = useSessionStore((state) => state.updateSession);
   const [sessionExecutionModes, setSessionExecutionModes] = useState<Record<string, ExecutionMode>>({});
   const [draftExecutionMode, setDraftExecutionMode] = useState<ExecutionMode>('regular');
+  const primaryProfile = config?.profiles?.primary || config;
+  const hasConfiguredModel = hasConfiguredModelProfile(primaryProfile);
   const hasRunnableConfig = hasRunnableConversationProfile(config);
   const canSendMessage = isConnected && hasRunnableConfig && Boolean(currentWorkspace?.path);
+  const supportsImageAttachments = primaryProfile
+    ? supportsImageInput(primaryProfile.provider, primaryProfile.model)
+    : false;
+  const composerPlaceholder = !hasConfiguredModel
+    ? 'Configure a primary model before sending messages...'
+    : hasRunnableConfig
+      ? 'Type your message...'
+      : 'Add an API key before sending messages...';
 
   const {
     messages,
@@ -170,7 +181,8 @@ export const ChatContainer = () => {
         onInterrupt={handleInterrupt}
         isStreaming={isStreaming}
         disabled={!canSendMessage}
-        placeholder={hasRunnableConfig ? 'Type your message...' : 'Configure a primary model before sending messages...'}
+        supportsImageAttachments={supportsImageAttachments}
+        placeholder={composerPlaceholder}
       />
 
       {pendingToolConfirm && (

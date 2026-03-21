@@ -1,6 +1,7 @@
 use std::{path::Path, sync::Mutex};
 use tauri::Manager;
 
+mod session_storage;
 mod workspace_paths;
 
 const EMBEDDED_PYTHON_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_PYTHON";
@@ -17,8 +18,9 @@ fn prepare_workspace_path(
     selected_path: String,
     existing_paths: Vec<String>,
 ) -> Result<workspace_paths::WorkspacePrepareOutcome, String> {
-    let outcome = workspace_paths::prepare_workspace_path(Path::new(&selected_path), &existing_paths)
-        .map_err(|error| error.to_string())?;
+    let outcome =
+        workspace_paths::prepare_workspace_path(Path::new(&selected_path), &existing_paths)
+            .map_err(|error| error.to_string())?;
 
     let canonical_path = match &outcome {
         workspace_paths::WorkspacePrepareOutcome::Existing { canonical_path, .. }
@@ -40,6 +42,32 @@ fn authorize_workspace_path(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn scan_workspace_sessions(
+    app: tauri::AppHandle,
+    workspace_path: String,
+) -> Result<Vec<session_storage::SessionMetaPayload>, String> {
+    session_storage::scan_workspace_sessions(&app, &workspace_path)
+}
+
+#[tauri::command]
+fn read_session_history(
+    app: tauri::AppHandle,
+    workspace_path: String,
+    session_id: String,
+) -> Result<session_storage::SessionHistoryPayload, String> {
+    session_storage::read_session_history(&app, &workspace_path, &session_id)
+}
+
+#[tauri::command]
+fn delete_session_history(
+    app: tauri::AppHandle,
+    workspace_path: String,
+    session_id: String,
+) -> Result<(), String> {
+    session_storage::delete_session_history(&app, &workspace_path, &session_id)
+}
+
 pub struct PythonSidecar(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
 fn sidecar_event_log_entry(
@@ -48,8 +76,13 @@ fn sidecar_event_log_entry(
     use tauri_plugin_shell::process::CommandEvent;
 
     match event {
-        CommandEvent::Stdout(line) => Some((false, format!("[Python] {}", String::from_utf8_lossy(line)))),
-        CommandEvent::Stderr(line) => Some((true, format!("[Python Error] {}", String::from_utf8_lossy(line)))),
+        CommandEvent::Stdout(line) => {
+            Some((false, format!("[Python] {}", String::from_utf8_lossy(line))))
+        }
+        CommandEvent::Stderr(line) => Some((
+            true,
+            format!("[Python Error] {}", String::from_utf8_lossy(line)),
+        )),
         CommandEvent::Error(error) => Some((true, format!("[Python Sidecar Error] {error}"))),
         CommandEvent::Terminated(payload) => Some((
             payload.code.unwrap_or_default() != 0 || payload.signal.is_some(),
@@ -202,7 +235,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             prepare_workspace_path,
-            authorize_workspace_path
+            authorize_workspace_path,
+            scan_workspace_sessions,
+            read_session_history,
+            delete_session_history
         ])
         .setup(|_app| {
             #[cfg(debug_assertions)]
@@ -211,25 +247,30 @@ pub fn run() {
                 println!("[Dev Mode] cd python_backend && python main.py");
                 return Ok(());
             }
-            
+
             #[cfg(not(debug_assertions))]
             {
                 use tauri_plugin_shell::ShellExt;
-                
+
                 let shell = _app.shell();
-                let resource_dir = _app
-                    .path()
-                    .resource_dir()
-                    .map_err(|error| std::io::Error::other(format!("Failed to resolve Tauri resource directory: {error}")))?;
+                let resource_dir = _app.path().resource_dir().map_err(|error| {
+                    std::io::Error::other(format!(
+                        "Failed to resolve Tauri resource directory: {error}"
+                    ))
+                })?;
                 let sidecar_command = shell
                     .sidecar("python_backend")
-                    .map_err(|error| std::io::Error::other(format!("Failed to create Python sidecar command: {error}")))?
+                    .map_err(|error| {
+                        std::io::Error::other(format!(
+                            "Failed to create Python sidecar command: {error}"
+                        ))
+                    })?
                     .envs(embedded_runtime_envs(&resource_dir));
-                
-                let (mut rx, child) = sidecar_command
-                    .spawn()
-                    .map_err(|error| std::io::Error::other(format!("Failed to spawn Python sidecar: {error}")))?;
-                
+
+                let (mut rx, child) = sidecar_command.spawn().map_err(|error| {
+                    std::io::Error::other(format!("Failed to spawn Python sidecar: {error}"))
+                })?;
+
                 let sidecar = _app.state::<PythonSidecar>();
                 with_sidecar_slot(&sidecar.0, |slot| *slot = Some(child))
                     .map_err(std::io::Error::other)?;
@@ -265,7 +306,7 @@ pub fn run() {
                         }
                     }
                 });
-                
+
                 Ok(())
             }
         })
@@ -286,8 +327,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        embedded_node_dir, embedded_python_dir, embedded_runtime_envs, sidecar_event_log_entry, with_sidecar_slot,
-        EMBEDDED_NODE_ENV_VAR, EMBEDDED_PYTHON_ENV_VAR,
+        embedded_node_dir, embedded_python_dir, embedded_runtime_envs, sidecar_event_log_entry,
+        with_sidecar_slot, EMBEDDED_NODE_ENV_VAR, EMBEDDED_PYTHON_ENV_VAR,
     };
     use std::{
         path::Path,
@@ -299,7 +340,8 @@ mod tests {
     fn with_sidecar_slot_updates_healthy_mutex() {
         let state = Mutex::new(Some(1_u8));
 
-        let value = with_sidecar_slot(&state, |slot| slot.take()).expect("slot mutation should succeed");
+        let value =
+            with_sidecar_slot(&state, |slot| slot.take()).expect("slot mutation should succeed");
 
         assert_eq!(Some(1_u8), value);
     }
@@ -341,12 +383,20 @@ mod tests {
 
         assert_eq!(EMBEDDED_PYTHON_ENV_VAR, envs[0].0);
         assert_eq!(
-            resource_dir.join("runtimes").join("python").display().to_string(),
+            resource_dir
+                .join("runtimes")
+                .join("python")
+                .display()
+                .to_string(),
             envs[0].1
         );
         assert_eq!(EMBEDDED_NODE_ENV_VAR, envs[1].0);
         assert_eq!(
-            resource_dir.join("runtimes").join("node").display().to_string(),
+            resource_dir
+                .join("runtimes")
+                .join("node")
+                .display()
+                .to_string(),
             envs[1].1
         );
     }

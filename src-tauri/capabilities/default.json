@@ -10,6 +10,8 @@
     {
       "identifier": "fs:default",
       "allow": [
+        { "path": "$HOME" },
+        { "path": "$HOME/**" },
         { "path": "$APPDATA" },
         { "path": "$APPDATA/**" }
       ]
@@ -20,10 +22,50 @@
         { "path": "$APPDATA/**" }
       ]
     },
-    "fs:allow-read-dir",
-    "fs:allow-read-text-file",
-    "fs:allow-remove",
-    "fs:allow-exists",
-    "fs:allow-stat"
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        { "path": "$HOME" },
+        { "path": "$HOME/**" },
+        { "path": "$APPDATA" },
+        { "path": "$APPDATA/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        { "path": "$HOME" },
+        { "path": "$HOME/**" },
+        { "path": "$APPDATA" },
+        { "path": "$APPDATA/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        { "path": "$HOME" },
+        { "path": "$HOME/**" },
+        { "path": "$APPDATA" },
+        { "path": "$APPDATA/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        { "path": "$HOME" },
+        { "path": "$HOME/**" },
+        { "path": "$APPDATA" },
+        { "path": "$APPDATA/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-stat",
+      "allow": [
+        { "path": "$HOME" },
+        { "path": "$HOME/**" },
+        { "path": "$APPDATA" },
+        { "path": "$APPDATA/**" }
+      ]
+    }
   ]
 }

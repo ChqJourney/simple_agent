@@ -13,46 +13,18 @@ async function checkIsTauri(): Promise<boolean> {
   if (cachedIsTauri !== null) {
     return cachedIsTauri;
   }
-  try {
-    await import('@tauri-apps/plugin-fs');
-    cachedIsTauri = true;
-    return true;
-  } catch {
+  if (typeof window === 'undefined') {
     cachedIsTauri = false;
     return false;
   }
+  const tauriWindow = window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown } };
+  cachedIsTauri = typeof tauriWindow.__TAURI_INTERNALS__?.invoke === 'function';
+  return cachedIsTauri;
 }
 
-async function tauriExists(path: string): Promise<boolean> {
-  if (!(await checkIsTauri())) {
-    return false;
-  }
-  const { exists } = await import('@tauri-apps/plugin-fs');
-  return exists(path);
-}
-
-async function tauriReadDir(path: string) {
-  if (!(await checkIsTauri())) {
-    return [];
-  }
-  const { readDir } = await import('@tauri-apps/plugin-fs');
-  return readDir(path);
-}
-
-async function tauriReadTextFile(path: string) {
-  if (!(await checkIsTauri())) {
-    return '';
-  }
-  const { readTextFile } = await import('@tauri-apps/plugin-fs');
-  return readTextFile(path);
-}
-
-async function tauriRemove(path: string): Promise<void> {
-  if (!(await checkIsTauri())) {
-    return;
-  }
-  const { remove } = await import('@tauri-apps/plugin-fs');
-  await remove(path);
+async function tauriInvoke<T>(command: string, args: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(command, args);
 }
 
 export function formatTimestamp(isoString: string): string {
@@ -263,15 +235,19 @@ export async function loadSessionHistory(
   workspacePath: string,
   sessionId: string
 ): Promise<Message[]> {
-  const sessionPath = `${workspacePath}/.agent/sessions/${sessionId}.jsonl`;
-
   try {
-    const fileExists = await tauriExists(sessionPath);
-    if (!fileExists) {
+    if (!(await checkIsTauri())) {
       return [];
     }
 
-    const content = await tauriReadTextFile(sessionPath);
+    const { content } = await tauriInvoke<{ content: string | null }>('read_session_history', {
+      workspacePath,
+      sessionId,
+    });
+    if (!content) {
+      return [];
+    }
+
     const messages: Message[] = [];
     const toolNamesById = new Map<string, string>();
 
@@ -304,102 +280,14 @@ interface SessionMeta {
 }
 
 export async function scanSessions(workspacePath: string): Promise<SessionMeta[]> {
-  const sessionsDir = `${workspacePath}/.agent/sessions`;
-
   try {
-    const dirExists = await tauriExists(sessionsDir);
-    if (!dirExists) {
+    if (!(await checkIsTauri())) {
       return [];
     }
 
-    const entries = await tauriReadDir(sessionsDir);
-    const sessions: SessionMeta[] = [];
-
-    for (const entry of entries) {
-      if (!entry.isFile || !entry.name?.endsWith('.jsonl')) continue;
-
-      const sessionId = entry.name.replace('.jsonl', '');
-      const sessionPath = `${sessionsDir}/${entry.name}`;
-      const metadataPath = `${sessionsDir}/${sessionId}.meta.json`;
-
-      try {
-        let createdAt = new Date().toISOString();
-        let updatedAt = new Date().toISOString();
-        let title: string | undefined;
-        let lockedModel: LockedModelRef | undefined;
-        let hasCompleteMetadataTimestamps = false;
-
-        if (await tauriExists(metadataPath)) {
-          try {
-            const metadata = JSON.parse(await tauriReadTextFile(metadataPath)) as {
-              created_at?: unknown;
-              updated_at?: unknown;
-              title?: unknown;
-              locked_model?: unknown;
-            };
-            if (typeof metadata.created_at === 'string') {
-              createdAt = metadata.created_at;
-            }
-            if (typeof metadata.updated_at === 'string') {
-              updatedAt = metadata.updated_at;
-            }
-            if (typeof metadata.title === 'string') {
-              title = metadata.title;
-            }
-            if (metadata.locked_model && typeof metadata.locked_model === 'object') {
-              const candidate = metadata.locked_model as Partial<LockedModelRef>;
-              if (
-                typeof candidate.profile_name === 'string'
-                && typeof candidate.provider === 'string'
-                && typeof candidate.model === 'string'
-              ) {
-                lockedModel = {
-                  profile_name: candidate.profile_name,
-                  provider: candidate.provider,
-                  model: candidate.model,
-                };
-              }
-            }
-
-            hasCompleteMetadataTimestamps = typeof metadata.created_at === 'string'
-              && typeof metadata.updated_at === 'string';
-          } catch {
-            // Ignore malformed metadata and fall back to the session transcript.
-          }
-        }
-
-        if (!hasCompleteMetadataTimestamps) {
-          const content = await tauriReadTextFile(sessionPath);
-          const lines = content.split('\n').filter(l => l.trim());
-
-          if (lines.length === 0) {
-            continue;
-          }
-
-          const firstLine = JSON.parse(lines[0]);
-          const lastLine = JSON.parse(lines[lines.length - 1]);
-
-          if (typeof firstLine.timestamp === 'string') {
-            createdAt = firstLine.timestamp;
-          }
-          if (typeof lastLine.timestamp === 'string') {
-            updatedAt = lastLine.timestamp;
-          }
-        }
-
-        sessions.push({
-          session_id: sessionId,
-          workspace_path: workspacePath,
-          created_at: createdAt,
-          updated_at: updatedAt,
-          title,
-          locked_model: lockedModel,
-        });
-      } catch {
-        continue;
-      }
-    }
-
+    const sessions = await tauriInvoke<SessionMeta[]>('scan_workspace_sessions', {
+      workspacePath,
+    });
     return sessions.sort((a, b) => {
       const aTime = new Date(a.updated_at).getTime();
       const bTime = new Date(b.updated_at).getTime();
@@ -412,22 +300,15 @@ export async function scanSessions(workspacePath: string): Promise<SessionMeta[]
 }
 
 export async function deleteSessionHistory(workspacePath: string, sessionId: string): Promise<void> {
-  const sessionPath = `${workspacePath}/.agent/sessions/${sessionId}.jsonl`;
-  const metadataPath = `${workspacePath}/.agent/sessions/${sessionId}.meta.json`;
-
   try {
-    const fileExists = await tauriExists(sessionPath);
-    if (!fileExists) {
-      if (await tauriExists(metadataPath)) {
-        await tauriRemove(metadataPath);
-      }
+    if (!(await checkIsTauri())) {
       return;
     }
 
-    await tauriRemove(sessionPath);
-    if (await tauriExists(metadataPath)) {
-      await tauriRemove(metadataPath);
-    }
+    await tauriInvoke('delete_session_history', {
+      workspacePath,
+      sessionId,
+    });
   } catch (error) {
     console.error('Failed to delete session history:', error);
     throw error;

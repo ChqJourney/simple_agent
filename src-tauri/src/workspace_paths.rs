@@ -62,7 +62,13 @@ fn canonicalize_workspace_path(path: &Path) -> Result<PathBuf, WorkspacePrepareE
 
     std::fs::canonicalize(path)
         .map(normalize_canonical_path)
-        .map_err(|error| WorkspacePrepareError::CanonicalizeFailed(format!("{}: {}", stringify_path(path), error)))
+        .map_err(|error| {
+            WorkspacePrepareError::CanonicalizeFailed(format!(
+                "{}: {}",
+                stringify_path(path),
+                error
+            ))
+        })
 }
 
 fn canonicalize_existing_workspace(existing_path: &str) -> Option<String> {
@@ -78,7 +84,9 @@ pub fn prepare_workspace_path(
     let canonical_path = stringify_path(&canonicalize_workspace_path(selected_path)?);
 
     for (existing_index, existing_path) in existing_paths.iter().enumerate() {
-        if canonicalize_existing_workspace(existing_path).as_deref() == Some(canonical_path.as_str()) {
+        if canonicalize_existing_workspace(existing_path).as_deref()
+            == Some(canonical_path.as_str())
+        {
             return Ok(WorkspacePrepareOutcome::Existing {
                 canonical_path,
                 existing_index,
@@ -118,7 +126,11 @@ impl fmt::Display for WorkspacePrepareError {
                 write!(f, "Failed to resolve workspace path: {}", details)
             }
             WorkspacePrepareError::ScopeAuthorizationFailed(details) => {
-                write!(f, "Failed to authorize workspace directory access: {}", details)
+                write!(
+                    f,
+                    "Failed to authorize workspace directory access: {}",
+                    details
+                )
             }
         }
     }
@@ -147,7 +159,8 @@ mod tests {
         let existing_paths = vec![nested_dir.join("..").to_string_lossy().into_owned()];
         let selected_path = workspace_dir.join(".");
 
-        let outcome = prepare_workspace_path(&selected_path, &existing_paths).expect("workspace outcome");
+        let outcome =
+            prepare_workspace_path(&selected_path, &existing_paths).expect("workspace outcome");
 
         assert_eq!(
             outcome,

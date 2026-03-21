@@ -66,21 +66,41 @@ Workspace
 
 ### 模型与配置
 
-- OpenAI / DeepSeek / Qwen / Ollama provider
+- OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama provider
 - `primary` / `secondary` 多 profile 配置
+- Settings 页面会按 provider 记住最近一次保存的 `model / api_key / base_url`
+- provider 下拉会对已保存配置的 provider 标记 `Saved`
 - session 级 locked model 元数据
 - runtime 配置结构已统一到 `runtime` 字段
 - 当前实际生效情况：
   - `context_length` 已进入配置结构，并在设置页提供输入框
   - `max_tool_rounds` / `max_retries` 已接入后端 `Agent` 的实际执行限制
-  - `max_output_tokens` 已接入 OpenAI / DeepSeek / Qwen / Ollama provider 的请求参数
+  - `max_output_tokens` 已接入 OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama provider 的请求参数
   - 普通用户消息始终使用 `primary` profile 作为 conversation model
   - `secondary` profile 用于后台 helper task，例如 session title generation；未配置时回退到 `primary`
   - `locked model` 仍会持久化到 session metadata，但不再在 workspace chat UI 顶部单独展示
+  - `provider_memory` 仅用于前端设置页恢复 provider 对应的已保存配置，后端运行时不会依赖该字段
+
+### Provider Notes
+
+- `Kimi`
+  - 当前设置页默认提供 `kimi-k2.5`
+  - `kimi-k2.5` 会保留 `reasoning_content`，并在多轮对话中继续带回 assistant message
+  - `kimi-k2.5` 温度值不是自由配置：
+    - 思考模式：固定 `1.0`
+    - 非思考模式：固定 `0.6`
+- `GLM`
+  - 当前设置页默认提供 `glm-5` / `glm-4.7` / `glm-4.6` / `glm-4.6v`
+  - 图片输入当前按 `glm-4.6v` 开启
+- `MiniMax`
+  - 当前设置页默认提供 `MiniMax-M2.5` / `MiniMax-M2.7`
+  - 后端会把 provider 返回的 `reasoning_details` 归一化为现有系统使用的 `reasoning_content`
+  - 当前按文本模型处理，设置页不会为 MiniMax 打开 image input
 
 ### Token Usage
 
 - provider 完成响应后会统一回传标准化 usage
+- 后端会兼容不同 provider 的 usage 字段别名，例如 `prompt_tokens/input_tokens`、`completion_tokens/output_tokens`
 - 当前 usage 结构包含：
   - `prompt_tokens`
   - `completion_tokens`
@@ -152,6 +172,18 @@ Workspace
       "enable_reasoning": false
     }
   },
+  "provider_memory": {
+    "openai": {
+      "model": "gpt-4o-mini",
+      "api_key": "YOUR_KEY",
+      "base_url": "https://api.openai.com/v1"
+    },
+    "kimi": {
+      "model": "kimi-k2.5",
+      "api_key": "YOUR_KIMI_KEY",
+      "base_url": "https://api.moonshot.cn/v1"
+    }
+  },
   "runtime": {
     "context_length": 64000,
     "max_output_tokens": 4000,
@@ -177,6 +209,12 @@ Workspace
   }
 }
 ```
+
+说明：
+
+- `profiles.primary/secondary` 决定当前真正参与运行的模型
+- `provider_memory` 只用于前端设置页在切换 provider 时恢复该 provider 最近一次保存的 `model / api_key / base_url`
+- 后端收到 `config` 时会忽略 `provider_memory`
 
 ### DeepSeek 配置示例
 

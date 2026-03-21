@@ -963,7 +963,7 @@ async def test_config(data: Dict[str, Any]):
                     "max_tokens": 1,
                 }
                 if provider == "kimi" and str(model).strip().lower().startswith("kimi-k2.5"):
-                    chat_payload["temperature"] = 1.0
+                    chat_payload["temperature"] = 1.0 if config.get("enable_reasoning") else 0.6
                 chat_response = await client.post(chat_url, headers=chat_headers, json=chat_payload)
                 if chat_response.is_success:
                     return {"ok": True}

@@ -13,7 +13,7 @@
         "windows": [
             {
                 "label": "main",
-                "title": "tauri_agent",
+                "title": "Work Agent - Task based AI Assistant",
                 "width": 1024,
                 "height": 768,
                 "minWidth": 800,

@@ -83,6 +83,7 @@ class LLMRuntimeLimitTests(unittest.TestCase):
                 "api_key": "test-key",
                 "base_url": "https://api.moonshot.cn/v1",
                 "max_output_tokens": 144,
+                "enable_reasoning": True,
             }
         )
 
@@ -90,6 +91,22 @@ class LLMRuntimeLimitTests(unittest.TestCase):
 
         self.assertEqual(144, kwargs["max_tokens"])
         self.assertEqual(1.0, kwargs["temperature"])
+
+    def test_kimi_non_reasoning_request_uses_fixed_non_thinking_temperature(self) -> None:
+        llm = KimiLLM(
+            {
+                "provider": "kimi",
+                "model": "kimi-k2.5",
+                "api_key": "test-key",
+                "base_url": "https://api.moonshot.cn/v1",
+                "max_output_tokens": 144,
+                "enable_reasoning": False,
+            }
+        )
+
+        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
+
+        self.assertEqual(0.6, kwargs["temperature"])
 
     def test_glm_request_includes_max_output_tokens(self) -> None:
         llm = GLMLLM(

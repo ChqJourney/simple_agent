@@ -176,6 +176,7 @@ export const SettingsPage: React.FC = () => {
           model: profile.model,
           api_key: profile.api_key,
           base_url: baseUrl,
+          enable_reasoning: profile.enable_reasoning ?? false,
         }),
       });
 

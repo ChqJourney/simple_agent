@@ -29,7 +29,7 @@ flowchart LR
 
     Backend --> Runtime["Runtime State<br/>config / provider bundle / active agents"]
     Backend --> Agent["Agent Loop"]
-    Agent --> LLM["LLM Providers<br/>OpenAI / DeepSeek / Qwen / Ollama"]
+    Agent --> LLM["LLM Providers<br/>OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama"]
     Agent --> Tools["Tool Registry<br/>file/shell/python/node/todo/question"]
     Agent --> Context["Context Providers<br/>Local Skills / Workspace Retrieval"]
     Agent --> Persist["Workspace Persistence<br/>.agent/sessions / .agent/logs"]
@@ -97,7 +97,7 @@ flowchart LR
 | Profile 路由 | `python_backend/runtime/router.py` | 决定 conversation/background profile、session lock 检查 | config、session metadata | profile 选择结果 |
 | Context Provider 注册 | `python_backend/runtime/provider_registry.py` | 构建 skill provider 与 retrieval provider bundle | normalized config | `ContextProviderBundle` |
 | 运行事件 | `python_backend/runtime/events.py` `python_backend/runtime/logs.py` | 定义并写入 run_event | Agent loop 阶段事件 | `.agent/logs/*.jsonl` |
-| LLM Provider | `python_backend/llms/*.py` | 对接 OpenAI 兼容 API、usage 收集、reasoning 能力约束 | messages、tools、runtime policy | 流式 chunk / completion |
+| LLM Provider | `python_backend/llms/*.py` | 对接 OpenAI 兼容 API、provider 特定 reasoning/usage 适配、Kimi 温度约束 | messages、tools、runtime policy | 流式 chunk / completion |
 | Tool 系统 | `python_backend/tools/*.py` | 文件、执行、任务、提问等工具 | tool call arguments | ToolResult |
 | Context Providers | `python_backend/skills/*` `python_backend/retrieval/*` | 本地技能加载、工作区检索 | 用户 query、workspace path | 附加到 system prompt 的上下文 |
 
@@ -105,7 +105,8 @@ flowchart LR
 
 | 功能域 | 实现位置 | 说明 |
 | --- | --- | --- |
-| 多 Provider 配置 | `src/pages/SettingsPage.tsx` `python_backend/runtime/config.py` | 支持 OpenAI / DeepSeek / Qwen / Ollama，前后端各自做 normalize |
+| 多 Provider 配置 | `src/pages/SettingsPage.tsx` `python_backend/runtime/config.py` | 支持 OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama，前后端各自做 normalize |
+| Provider 配置记忆 | `src/pages/SettingsPage.tsx` `src/utils/config.ts` | 前端持久化 `provider_memory`，切换 provider 时恢复上次保存的 `model / api_key / base_url` |
 | 主/辅模型 profile | `src/types/index.ts` `python_backend/runtime/router.py` | `primary` 负责主对话，`secondary` 负责标题生成等后台任务 |
 | 会话锁模 | `src/components/Chat/ChatContainer.tsx` `python_backend/main.py` | 首次发送消息时锁定 session 的 provider/model，后续必须匹配 |
 | 流式文本与 reasoning | `src/contexts/WebSocketContext.tsx` `python_backend/core/agent.py` | 分别消费 `token` 与 `reasoning_token`，最后由 `reasoning_complete` 收束 |
@@ -381,7 +382,7 @@ Tool 系统当前注册了以下内置工具：
 
 | type | 主要字段 | 后端处理函数 | 作用 |
 | --- | --- | --- | --- |
-| `config` | provider/model/profiles/runtime/context_providers | `handle_config` | 注入运行时配置 |
+| `config` | provider/model/profiles/provider_memory?/runtime/context_providers | `handle_config` | 注入运行时配置 |
 | `message` | session_id/content/attachments?/workspace_path? | `handle_user_message` | 发起一次 agent 运行 |
 | `tool_confirm` | tool_call_id/decision/scope/approved | `handle_tool_confirm` | 工具审批结果 |
 | `question_response` | tool_call_id/answer/action | `handle_question_response` | 对 `ask_question` 的答复 |
@@ -443,6 +444,18 @@ Tool 系统当前注册了以下内置工具：
       "model": "gpt-4.1-mini"
     }
   },
+  "provider_memory": {
+    "openai": {
+      "model": "gpt-4o-mini",
+      "api_key": "YOUR_KEY",
+      "base_url": "https://api.openai.com/v1"
+    },
+    "kimi": {
+      "model": "kimi-k2.5",
+      "api_key": "YOUR_KIMI_KEY",
+      "base_url": "https://api.moonshot.cn/v1"
+    }
+  },
   "runtime": {
     "context_length": 64000,
     "max_output_tokens": 4000,
@@ -463,6 +476,12 @@ Tool 系统当前注册了以下内置工具：
   }
 }
 ```
+
+补充说明：
+
+- `profiles.primary/secondary` 是后端真正参与运行的配置
+- `provider_memory` 是前端设置页的辅助持久化字段，用于在切换 provider 时恢复该 provider 最近保存的 `model / api_key / base_url`
+- 后端标准化配置时不会依赖 `provider_memory`
 
 ### 8.6 会话与运行事件契约
 
@@ -515,7 +534,7 @@ Tool 系统当前注册了以下内置工具：
 | WebSocket 消息类型 | `src/types/index.ts` | `python_backend/main.py` 各 handler 与 send payload | 语义一致，字段命名整体对齐 |
 | `LockedModelRef` | `src/types/index.ts` | `python_backend/runtime/contracts.py` | 结构一致 |
 | `run_event` | `RunEventRecord` | `RunEvent` | 字段一一对应 |
-| provider config 逻辑模型 | `ProviderConfig` | `normalize_runtime_config()` 输出结构 | 逻辑一致 |
+| provider config 逻辑模型 | `ProviderConfig` | `normalize_runtime_config()` 输出结构 | 运行时主结构一致；`provider_memory` 为前端辅助字段 |
 | token usage | `TokenUsage` | `BaseLLM._set_latest_usage()` | 字段一致，支持 `reasoning_tokens/context_length` |
 
 ### 9.2 需要理解“不是原样直传”的部分

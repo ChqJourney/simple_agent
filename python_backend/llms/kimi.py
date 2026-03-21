@@ -30,6 +30,11 @@ class KimiLLM(BaseLLM):
     def _requires_k2_5_constraints(self) -> bool:
         return self.model.strip().lower().startswith("kimi-k2.5")
 
+    def _get_temperature(self) -> Optional[float]:
+        if not self._requires_k2_5_constraints():
+            return None
+        return 1.0 if self.enable_reasoning else 0.6
+
     def _prepare_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         prepared: List[Dict[str, Any]] = []
         for message in messages:
@@ -60,8 +65,9 @@ class KimiLLM(BaseLLM):
         }
         if stream:
             kwargs["stream_options"] = {"include_usage": True}
-        if self._requires_k2_5_constraints():
-            kwargs["temperature"] = 1.0
+        temperature = self._get_temperature()
+        if temperature is not None:
+            kwargs["temperature"] = temperature
         max_output_tokens = self._get_max_output_tokens()
         if max_output_tokens is not None:
             kwargs["max_tokens"] = max_output_tokens

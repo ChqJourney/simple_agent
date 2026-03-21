@@ -91,6 +91,22 @@ class ProviderReasoningRequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({'thinking': {'type': 'enabled'}}, kwargs.get('extra_body'))
         self.assertEqual(1.0, kwargs.get('temperature'))
 
+    async def test_kimi_non_reasoning_model_uses_fixed_non_thinking_temperature(self) -> None:
+        llm = KimiLLM({
+            'model': 'kimi-k2.5',
+            'api_key': 'test-key',
+            'base_url': 'https://api.moonshot.cn/v1',
+            'enable_reasoning': False,
+        })
+        llm.client.chat.completions.create = AsyncMock(return_value=empty_stream())
+
+        async for _ in llm.stream([{'role': 'user', 'content': 'hello'}], None):
+            pass
+
+        kwargs = llm.client.chat.completions.create.await_args.kwargs
+        self.assertEqual({'thinking': {'type': 'disabled'}}, kwargs.get('extra_body'))
+        self.assertEqual(0.6, kwargs.get('temperature'))
+
     async def test_glm_reasoning_model_sends_thinking_and_tool_stream(self) -> None:
         llm = GLMLLM({
             'model': 'glm-4.6',

@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigate } from 'react-router-dom';
 import { useUIStore, useWorkspaceStore } from '../stores';
-import { WorkspaceList } from '../components/Welcome/WorkspaceList';
-import { WorkspaceDrawer } from '../components/Welcome/WorkspaceDrawer';
+import { WorkspaceList, WorkspaceDrawer, Logo, DecorativePattern } from '../components/Welcome';
 
 interface WorkspacePrepareExistingResult {
   status: 'existing';
@@ -95,6 +94,7 @@ export const WelcomePage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
+      {/* <DecorativePattern /> */}
       <header className="fixed top-0 left-0 right-0 h-14 flex items-center justify-between px-4 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
         <button
           onClick={() => setIsDrawerOpen(true)}
@@ -117,13 +117,17 @@ export const WelcomePage: React.FC = () => {
         </button>
       </header>
 
-      <main className="flex flex-col items-center justify-center min-h-screen px-4 pt-14">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            AI Agent
-          </h1>
+      <main className="flex flex-col items-center justify-center min-h-screen px-4">
+        <div className="text-center mb-12">
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <Logo size={48} />
+            <h1 className="text-4xl font-bold text-gray-900 dark:text-white">
+              Work Agent
+            </h1>
+          </div>
           <p className="text-lg text-gray-600 dark:text-gray-400">
-            Your AI Assistant
+            Your AI Assistant for File System Tasks and Beyond, <br />
+            not just answering questions but also taking actions on your behalf.
           </p>
         </div>
 

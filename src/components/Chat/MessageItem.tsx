@@ -139,7 +139,7 @@ export const MessageItem = memo<MessageItemProps>(({
           )}
 
           {message.attachments && message.attachments.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
               {message.attachments.map((attachment) => (
                 <span
                   key={`${attachment.name}:${attachment.path}`}

@@ -40,4 +40,20 @@ describe("tauri.conf bundle configuration", () => {
 
     expect(config.bundle?.targets).toBe("msi");
   });
+
+  it("allows the Vite HMR websocket in the dev CSP only", () => {
+    const configPath = join(process.cwd(), "src-tauri", "tauri.conf.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8")) as {
+      app?: {
+        security?: {
+          csp?: string | null;
+          devCsp?: string | null;
+        };
+      };
+    };
+
+    expect(config.app?.security?.csp).not.toContain("ws://localhost:1421");
+    expect(config.app?.security?.devCsp).toContain("ws://localhost:1421");
+    expect(config.app?.security?.devCsp).toContain("ws://127.0.0.1:1421");
+  });
 });

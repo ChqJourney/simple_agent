@@ -20,7 +20,7 @@ export default defineConfig(async () => {
             host,
             port: 1421,
           }
-        : false,
+        : undefined,
       watch: {
         ignored: ["**/src-tauri/**"],
       },
@@ -46,4 +46,3 @@ export default defineConfig(async () => {
     },
   };
 });
-

@@ -22,7 +22,8 @@
             }
         ],
         "security": {
-            "csp": "default-src \u0027self\u0027; script-src \u0027self\u0027; style-src \u0027self\u0027 \u0027unsafe-inline\u0027; img-src \u0027self\u0027 data: blob:; connect-src \u0027self\u0027 http://127.0.0.1:8765 ws://127.0.0.1:8765 http://localhost:8765 ws://localhost:8765"
+            "csp": "default-src \u0027self\u0027; script-src \u0027self\u0027; style-src \u0027self\u0027 \u0027unsafe-inline\u0027; img-src \u0027self\u0027 data: blob:; connect-src \u0027self\u0027 http://127.0.0.1:8765 ws://127.0.0.1:8765 http://localhost:8765 ws://localhost:8765",
+            "devCsp": "default-src \u0027self\u0027; script-src \u0027self\u0027; style-src \u0027self\u0027 \u0027unsafe-inline\u0027; img-src \u0027self\u0027 data: blob:; connect-src \u0027self\u0027 http://127.0.0.1:8765 ws://127.0.0.1:8765 http://localhost:8765 ws://localhost:8765 ws://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1421 ws://localhost:1421"
         }
     },
     "bundle": {

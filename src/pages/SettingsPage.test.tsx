@@ -55,7 +55,7 @@ describe("SettingsPage", () => {
         runtime: {
           context_length: 64000,
           max_output_tokens: 4000,
-          max_tool_rounds: 8,
+          max_tool_rounds: 20,
           max_retries: 3,
         },
         context_providers: {
@@ -133,7 +133,7 @@ describe("SettingsPage", () => {
 
     expect((screen.getByLabelText("Context Length") as HTMLInputElement).value).toBe("64000");
     expect((screen.getByLabelText("Max Output Tokens") as HTMLInputElement).value).toBe("4000");
-    expect((screen.getByLabelText("Max Tool Rounds") as HTMLInputElement).value).toBe("8");
+    expect((screen.getByLabelText("Max Tool Rounds") as HTMLInputElement).value).toBe("20");
     expect((screen.getByLabelText("Max Retries") as HTMLInputElement).value).toBe("3");
   });
 

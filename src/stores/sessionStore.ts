@@ -26,6 +26,20 @@ interface SessionState {
   ensureSession: (workspacePath: string) => void;
 }
 
+function getSessionSortTimestamp(session: SessionMeta): number {
+  const updatedAt = new Date(session.updated_at).getTime();
+  if (Number.isFinite(updatedAt)) {
+    return updatedAt;
+  }
+
+  const createdAt = new Date(session.created_at).getTime();
+  return Number.isFinite(createdAt) ? createdAt : 0;
+}
+
+function sortSessionsByUpdatedAt(sessions: SessionMeta[]): SessionMeta[] {
+  return [...sessions].sort((left, right) => getSessionSortTimestamp(right) - getSessionSortTimestamp(left));
+}
+
 export const useSessionStore = create<SessionState>()(
   persist(
     (set, get) => ({
@@ -42,14 +56,22 @@ export const useSessionStore = create<SessionState>()(
           return { currentSessionId: session.session_id };
         }
         return {
-          sessions: [...state.sessions, session],
+          sessions: sortSessionsByUpdatedAt([...state.sessions, session]),
           currentSessionId: session.session_id,
         };
       }),
 
       updateSession: (sessionId, updates) => set((state) => ({
-        sessions: state.sessions.map(s =>
-          s.session_id === sessionId ? { ...s, ...updates } : s
+        sessions: sortSessionsByUpdatedAt(
+          state.sessions.map((session) =>
+            session.session_id === sessionId
+              ? {
+                  ...session,
+                  ...updates,
+                  updated_at: updates.updated_at ?? new Date().toISOString(),
+                }
+              : session
+          )
         ),
       })),
 
@@ -75,7 +97,7 @@ export const useSessionStore = create<SessionState>()(
           };
 
           set({
-            sessions: [...remainingSessions, replacementSession],
+            sessions: sortSessionsByUpdatedAt([...remainingSessions, replacementSession]),
             currentSessionId: replacementSessionId,
           });
 
@@ -83,7 +105,7 @@ export const useSessionStore = create<SessionState>()(
         }
 
         set({
-          sessions: remainingSessions,
+          sessions: sortSessionsByUpdatedAt(remainingSessions),
           currentSessionId: nextSessionId,
         });
 
@@ -91,7 +113,7 @@ export const useSessionStore = create<SessionState>()(
       },
 
       getSessionsByWorkspace: (workspacePath) => {
-        return get().sessions.filter(s => s.workspace_path === workspacePath);
+        return sortSessionsByUpdatedAt(get().sessions.filter(s => s.workspace_path === workspacePath));
       },
 
       ensureSession: (workspacePath) => {
@@ -103,12 +125,12 @@ export const useSessionStore = create<SessionState>()(
           const now = new Date().toISOString();
 
           set({
-            sessions: [...state.sessions, {
+            sessions: sortSessionsByUpdatedAt([...state.sessions, {
               session_id: sessionId,
               workspace_path: workspacePath,
               created_at: now,
               updated_at: now,
-            }],
+            }]),
             currentSessionId: sessionId,
           });
         }
@@ -135,7 +157,8 @@ export const useSessionStore = create<SessionState>()(
           const existingIds = new Set(mergedSessions.map(s => s.session_id));
           const newSessions = diskSessions.filter(s => !existingIds.has(s.session_id));
           mergedSessions.push(...newSessions);
-          const workspaceSessions = mergedSessions.filter(s => s.workspace_path === workspacePath);
+          const sortedSessions = sortSessionsByUpdatedAt(mergedSessions);
+          const workspaceSessions = sortedSessions.filter(s => s.workspace_path === workspacePath);
           const hasCurrentWorkspaceSession = workspaceSessions.some(
             s => s.session_id === state.currentSessionId
           );
@@ -149,7 +172,7 @@ export const useSessionStore = create<SessionState>()(
             nextCurrentSessionId !== state.currentSessionId
           ) {
             set({
-              sessions: mergedSessions,
+              sessions: sortedSessions,
               currentSessionId: nextCurrentSessionId,
             });
           }

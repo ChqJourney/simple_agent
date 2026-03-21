@@ -24,12 +24,20 @@ def _validate_embedded_executable(path: Path, runtime_name: str) -> Path:
     return path
 
 
+def _embedded_executable_path(root: Path, executable_name: str) -> Path:
+    raw_root = str(root)
+    if "\\" in raw_root and "/" not in raw_root:
+        trimmed_root = raw_root.rstrip("\\")
+        return Path(f"{trimmed_root}\\{executable_name}")
+    return root / executable_name
+
+
 def get_python_executable() -> Path:
     embedded_root = _configured_root(EMBEDDED_PYTHON_ENV_VAR)
     if embedded_root is None:
         return Path(sys.executable)
 
-    return _validate_embedded_executable(embedded_root / "python.exe", "python")
+    return _validate_embedded_executable(_embedded_executable_path(embedded_root, "python.exe"), "python")
 
 
 def get_pip_command() -> list[str]:
@@ -42,7 +50,7 @@ def get_node_executable() -> Path:
     if embedded_root is None:
         return Path("node")
 
-    return _validate_embedded_executable(embedded_root / "node.exe", "node")
+    return _validate_embedded_executable(_embedded_executable_path(embedded_root, "node.exe"), "node")
 
 
 def get_npm_command() -> list[str]:
@@ -50,7 +58,7 @@ def get_npm_command() -> list[str]:
     if embedded_root is None:
         return ["npm"]
 
-    command = embedded_root / "npm.cmd"
+    command = _embedded_executable_path(embedded_root, "npm.cmd")
     return [str(_validate_embedded_executable(command, "node"))]
 
 
@@ -59,5 +67,5 @@ def get_npx_command() -> list[str]:
     if embedded_root is None:
         return ["npx"]
 
-    command = embedded_root / "npx.cmd"
+    command = _embedded_executable_path(embedded_root, "npx.cmd")
     return [str(_validate_embedded_executable(command, "node"))]

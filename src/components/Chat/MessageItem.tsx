@@ -15,6 +15,7 @@ interface MessageItemProps {
   reasoningContent?: string;
   assistantStatus?: AssistantStatus;
   currentToolName?: string;
+  hideHeader?: boolean;
 }
 
 export const MessageItem = memo<MessageItemProps>(({
@@ -24,6 +25,7 @@ export const MessageItem = memo<MessageItemProps>(({
   reasoningContent = '',
   assistantStatus,
   currentToolName,
+  hideHeader = false,
 }) => {
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
@@ -37,7 +39,7 @@ export const MessageItem = memo<MessageItemProps>(({
       const tone = message.toolMessage.decision === 'reject' ? 'danger' : 'success';
 
       return (
-        <div className="max-w-[80%]">
+        <div className="w-full">
           <ToolCard summary={toolSummary} tone={tone} collapsible={true}>
             <div className="text-xs leading-5">
               <div>scope: {message.toolMessage.scope}</div>
@@ -52,7 +54,7 @@ export const MessageItem = memo<MessageItemProps>(({
 
     if (message.toolMessage?.kind === 'result') {
       return (
-        <div className="max-w-[80%]">
+        <div className="w-full">
           <ToolCard summary={toolSummary} collapsible={true}>
             <pre className="overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
               {message.toolMessage.details}
@@ -63,7 +65,7 @@ export const MessageItem = memo<MessageItemProps>(({
     }
 
     return (
-      <div className="max-w-[80%]">
+      <div className="w-full">
         <ToolCard summary={toolSummary} collapsible={Boolean(message.content)}>
           {message.content && (
             <pre className="overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
@@ -77,7 +79,7 @@ export const MessageItem = memo<MessageItemProps>(({
 
   if (isReasoning) {
     return (
-      <div className="max-w-[80%]">
+      <div className="w-full">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
             Assistant
@@ -97,22 +99,24 @@ export const MessageItem = memo<MessageItemProps>(({
 
   return (
     <div
-      className={`max-w-[80%] ${
+      className={`${
         isUser
-          ? 'ml-auto text-right'
-          : ''
+          ? 'ml-auto max-w-[80%] text-right'
+          : 'w-full max-w-none'
       }`}
     >
-      <div className={`mb-2 flex items-center ${isUser ? 'justify-end gap-2' : 'justify-between'}`}>
-        <span className="font-semibold text-xs text-gray-600 dark:text-gray-400">
-          {isUser ? 'You' : 'Assistant'}
-        </span>
-        {message.usage && (
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {message.usage.total_tokens} tokens
+      {!hideHeader && (
+        <div className={`mb-2 flex items-center ${isUser ? 'justify-end gap-2' : 'justify-between'}`}>
+          <span className="font-semibold text-xs text-gray-600 dark:text-gray-400">
+            {isUser ? 'You' : 'Assistant'}
           </span>
-        )}
-      </div>
+          {message.usage && (
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              {message.usage.total_tokens} tokens
+            </span>
+          )}
+        </div>
+      )}
 
       {hasReasoning && <ReasoningBlock content={reasoningContent} />}
 

@@ -14,7 +14,7 @@ DEFAULT_BASE_URLS = {
 DEFAULT_RUNTIME_POLICY = {
     "context_length": 64000,
     "max_output_tokens": 4000,
-    "max_tool_rounds": 8,
+    "max_tool_rounds": 20,
     "max_retries": 3,
 }
 
@@ -139,8 +139,7 @@ def _normalize_profile(
         return None
 
     provider = str(data.get("provider") or fallback_provider or "openai").strip().lower() or "openai"
-    default_model = "gpt-4" if provider == "openai" else ""
-    model = str(data.get("model") or default_model).strip()
+    model = str(data.get("model") or "").strip()
 
     if not model:
         return None
@@ -180,6 +179,8 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
     )
     if primary_profile is None:
         primary_profile = _normalize_profile(data, role="primary", fallback_provider="openai")
+    if primary_profile is None:
+        raise ValueError("Primary model configuration requires both provider and model.")
 
     secondary_profile = None
     if isinstance(secondary_input, dict):

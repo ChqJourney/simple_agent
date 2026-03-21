@@ -15,6 +15,6 @@ def append_run_event(workspace_path: str, session_id: str, event: RunEvent) -> N
 
     try:
         with log_path.open("a", encoding="utf-8") as file:
-            file.write(json.dumps(event.model_dump(mode="json")) + "\n")
+            file.write(json.dumps(event.model_dump(mode="json"), ensure_ascii=False) + "\n")
     except Exception as exc:
         logger.error("Failed to append run event log: %s", exc)

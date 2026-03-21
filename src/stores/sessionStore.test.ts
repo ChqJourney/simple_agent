@@ -73,6 +73,34 @@ describe("sessionStore", () => {
     expect(useSessionStore.getState().sessions[0]?.locked_model?.model).toBe("gpt-4o-mini");
   });
 
+  it("moves the most recently updated session to the front", () => {
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "/workspace-a",
+          created_at: "2026-03-12T10:00:00.000Z",
+          updated_at: "2026-03-12T10:00:00.000Z",
+        },
+        {
+          session_id: "session-b",
+          workspace_path: "/workspace-a",
+          created_at: "2026-03-12T11:00:00.000Z",
+          updated_at: "2026-03-12T11:00:00.000Z",
+        },
+      ],
+    }));
+
+    useSessionStore.getState().updateSession("session-a", {
+      title: "Now active",
+      updated_at: "2026-03-12T12:00:00.000Z",
+    });
+
+    expect(useSessionStore.getState().sessions[0]?.session_id).toBe("session-a");
+    expect(useSessionStore.getState().sessions[1]?.session_id).toBe("session-b");
+  });
+
   it("hydrates title metadata from disk for an existing session", async () => {
     useSessionStore.setState((state) => ({
       ...state,

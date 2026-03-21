@@ -16,6 +16,9 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
   const filteredSessions = workspacePath
     ? sessions.filter(s => s.workspace_path === workspacePath)
     : sessions;
+  const sortedSessions = [...filteredSessions].sort(
+    (left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()
+  );
 
   const handleNewSession = () => {
     createSession();
@@ -67,11 +70,11 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
       </div>
 
       <div data-testid="session-list-scroll" className="min-h-0 flex-1 overflow-y-auto pr-1">
-        {filteredSessions.length === 0 ? (
+        {sortedSessions.length === 0 ? (
           <p className="text-xs text-gray-400 dark:text-gray-500">No sessions yet</p>
         ) : (
           <ul className="space-y-1">
-            {filteredSessions.map((session) => (
+            {sortedSessions.map((session) => (
               <li key={session.session_id} className="group relative">
                 <button
                   onClick={() => handleSessionClick(session.session_id)}
@@ -85,7 +88,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
                     {session.title || truncateText(session.session_id, 20)}
                   </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">
-                    {formatTimestamp(session.created_at)}
+                    {formatTimestamp(session.updated_at)}
                   </div>
                 </button>
                 <button

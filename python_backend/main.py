@@ -20,7 +20,7 @@ from llms.deepseek import DeepSeekLLM
 from llms.openai import OpenAILLM
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 from llms.qwen import QwenLLM
-from runtime.config import get_primary_profile_config, normalize_runtime_config
+from runtime.config import DEFAULT_RUNTIME_POLICY, get_primary_profile_config, normalize_runtime_config
 from runtime.provider_registry import ContextProviderBundle, ContextProviderRegistry
 from runtime.router import (
     lock_ref_from_profile,
@@ -343,7 +343,11 @@ async def get_or_create_agent(
                 user_manager=user_manager,
                 skill_provider=runtime_state.current_context_bundle.skill_provider,
                 retrieval_provider=runtime_state.current_context_bundle.retrieval_provider,
-                max_tool_rounds=_runtime_policy_value(effective_runtime_policy, "max_tool_rounds", 10),
+                max_tool_rounds=_runtime_policy_value(
+                    effective_runtime_policy,
+                    "max_tool_rounds",
+                    DEFAULT_RUNTIME_POLICY["max_tool_rounds"],
+                ),
                 max_retries=_runtime_policy_value(effective_runtime_policy, "max_retries", 3),
             )
             runtime_state.active_agents[session_id] = agent

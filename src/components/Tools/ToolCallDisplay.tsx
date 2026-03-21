@@ -5,18 +5,23 @@ import { ToolCard } from './ToolCard';
 
 interface ToolCallDisplayProps {
   toolCall: ToolCall;
+  collapsible?: boolean;
   result?: {
     success: boolean;
     output: unknown;
   };
 }
 
-export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, result }) => {
+export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
+  toolCall,
+  collapsible = true,
+  result,
+}) => {
   const summary = `请求执行 ${toolCall.name}`;
   const category = getToolCategoryLabel(toolCall.name);
 
   return (
-    <ToolCard summary={summary} collapsible={true} badges={[category]}>
+    <ToolCard summary={summary} collapsible={collapsible} badges={[category]}>
       <div className="text-xs text-gray-600 dark:text-gray-400">
         <div className="font-medium">Arguments</div>
         <pre className="mt-1 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">

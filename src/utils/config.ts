@@ -18,7 +18,7 @@ export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
 export const DEFAULT_RUNTIME_POLICY: Required<RuntimePolicy> = {
   context_length: 64000,
   max_output_tokens: 4000,
-  max_tool_rounds: 8,
+  max_tool_rounds: 20,
   max_retries: 3,
 };
 
@@ -79,6 +79,27 @@ function normalizeProfileConfig(profile: ModelProfile, profileName: string): Mod
     input_type: supportedInputTypes.includes(inputType) ? inputType : 'text',
     profile_name: profile.profile_name || profileName,
   };
+}
+
+export function hasConfiguredModelProfile(
+  profile?: Partial<ModelProfile> | null
+): profile is ModelProfile {
+  return Boolean(
+    profile
+    && typeof profile.provider === 'string'
+    && profile.provider.trim()
+    && typeof profile.model === 'string'
+    && profile.model.trim()
+  );
+}
+
+export function hasRunnableConversationProfile(config?: ProviderConfig | null): boolean {
+  if (!config) {
+    return false;
+  }
+
+  const primaryProfile = config.profiles?.primary || config;
+  return hasConfiguredModelProfile(primaryProfile);
 }
 
 function normalizePositiveInt(value: unknown, fallback: number): number {

@@ -81,7 +81,7 @@ class Session:
     def _append_to_file(self, message: Message) -> None:
         try:
             with self.file_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(message.model_dump(), default=str) + "\n")
+                f.write(json.dumps(message.model_dump(), default=str, ensure_ascii=False) + "\n")
         except Exception as e:
             logger.error(f"Failed to append message to file: {e}")
 

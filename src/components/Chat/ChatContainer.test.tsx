@@ -11,6 +11,7 @@ const confirmToolMock = vi.hoisted(() => vi.fn());
 const interruptMock = vi.hoisted(() => vi.fn());
 const setExecutionModeMock = vi.hoisted(() => vi.fn());
 const createSessionMock = vi.hoisted(() => vi.fn(() => "session-a"));
+const messageInputPropsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../contexts/WebSocketContext", () => ({
   useWebSocket: () => ({
@@ -35,7 +36,10 @@ vi.mock("./MessageList", () => ({
 }));
 
 vi.mock("./MessageInput", () => ({
-  MessageInput: () => <div>MessageInput</div>,
+  MessageInput: (props: { disabled?: boolean; placeholder?: string }) => {
+    messageInputPropsMock(props);
+    return <div>{props.disabled ? "MessageInput disabled" : "MessageInput enabled"}</div>;
+  },
 }));
 
 vi.mock("../Run", () => ({
@@ -63,6 +67,7 @@ describe("ChatContainer", () => {
     interruptMock.mockReset();
     setExecutionModeMock.mockReset();
     createSessionMock.mockClear();
+    messageInputPropsMock.mockReset();
     useConfigStore.setState({ config: null as never });
     useWorkspaceStore.setState((state) => ({
       ...state,
@@ -171,6 +176,48 @@ describe("ChatContainer", () => {
 
     expect(screen.queryByText("RunTimeline")).toBeNull();
     expect(screen.getByText("MessageList")).toBeTruthy();
-    expect(screen.getByText("MessageInput")).toBeTruthy();
+    expect(screen.getByText("MessageInput disabled")).toBeTruthy();
+  });
+
+  it("disables the composer when no runnable model config is available", () => {
+    render(<ChatContainer />);
+
+    expect(messageInputPropsMock.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        disabled: true,
+        placeholder: "Configure a primary model before sending messages...",
+      })
+    );
+  });
+
+  it("enables the composer when a primary model is configured", () => {
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o-mini",
+            api_key: "test-key",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+        },
+      } as never,
+    });
+
+    render(<ChatContainer />);
+
+    expect(messageInputPropsMock.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        disabled: false,
+        placeholder: "Type your message...",
+      })
+    );
   });
 });

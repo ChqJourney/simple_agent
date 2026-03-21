@@ -34,7 +34,7 @@ class RuntimeContractTests(unittest.TestCase):
             {
                 "context_length": 64000,
                 "max_output_tokens": 4000,
-                "max_tool_rounds": 8,
+                "max_tool_rounds": 20,
                 "max_retries": 3,
             },
             normalized["runtime"],

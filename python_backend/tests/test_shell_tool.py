@@ -35,6 +35,7 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, result.output["exit_code"])
         self.assertIn("hello-from-shell", result.output["stdout"])
         self.assertEqual("", result.output["stderr"])
+        self.assertIn("runner", result.output)
 
     async def test_shell_tool_truncates_large_outputs(self) -> None:
         fake_subprocess = AsyncMock(
@@ -74,6 +75,27 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.output["stdout_truncated"])
         self.assertFalse(result.output["stderr_truncated"])
         self.assertFalse(result.output["captured_output"])
+
+    def test_prefers_powershell_on_windows_when_available(self) -> None:
+        with patch("tools.shell_execute.os.name", "nt"), patch("tools.shell_execute.shutil.which") as which_mock:
+            which_mock.side_effect = lambda command: command if command == "pwsh" else None
+
+            runner = ShellExecuteTool._resolve_shell_runner("ls")
+
+        self.assertEqual("exec", runner["mode"])
+        self.assertEqual("pwsh", runner["runner"])
+        self.assertEqual(
+            ["pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "ls"],
+            runner["argv"],
+        )
+
+    def test_falls_back_to_cmd_shell_on_windows_when_powershell_is_unavailable(self) -> None:
+        with patch("tools.shell_execute.os.name", "nt"), patch("tools.shell_execute.shutil.which", return_value=None):
+            runner = ShellExecuteTool._resolve_shell_runner("dir")
+
+        self.assertEqual("shell", runner["mode"])
+        self.assertEqual("cmd", runner["runner"])
+        self.assertEqual("dir", runner["command"])
 
 
 if __name__ == "__main__":

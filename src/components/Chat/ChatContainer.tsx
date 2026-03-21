@@ -10,6 +10,7 @@ import { Attachment, ExecutionMode, PendingQuestion, ToolDecision, ToolDecisionS
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { PendingQuestionCard, ToolConfirmModal } from '../Tools';
+import { hasRunnableConversationProfile } from '../../utils/config';
 
 const emptySession = {
   messages: [] as never[],
@@ -30,6 +31,8 @@ export const ChatContainer = () => {
   const updateSession = useSessionStore((state) => state.updateSession);
   const [sessionExecutionModes, setSessionExecutionModes] = useState<Record<string, ExecutionMode>>({});
   const [draftExecutionMode, setDraftExecutionMode] = useState<ExecutionMode>('regular');
+  const hasRunnableConfig = hasRunnableConversationProfile(config);
+  const canSendMessage = isConnected && hasRunnableConfig && Boolean(currentWorkspace?.path);
 
   const {
     messages,
@@ -58,6 +61,10 @@ export const ChatContainer = () => {
   );
 
   const handleSend = useCallback((content: string, attachments?: Attachment[]) => {
+    if (!canSendMessage) {
+      return;
+    }
+
     let sessionId = currentSessionId;
 
     if (!sessionId) {
@@ -72,6 +79,7 @@ export const ChatContainer = () => {
           provider: primaryProfile.provider,
           model: primaryProfile.model,
         },
+        updated_at: new Date().toISOString(),
       });
     }
 
@@ -87,7 +95,7 @@ export const ChatContainer = () => {
     useChatStore.getState().clearPendingQuestion(sessionId);
     useChatStore.getState().addUserMessage(sessionId, content, attachments);
     sendMessage(sessionId, content, attachments, currentWorkspace?.path);
-  }, [config, currentSessionId, createSession, draftExecutionMode, sendMessage, currentWorkspace?.path, sessionExecutionModes, setExecutionMode, updateSession]);
+  }, [canSendMessage, config, currentSessionId, createSession, draftExecutionMode, sendMessage, currentWorkspace?.path, sessionExecutionModes, setExecutionMode, updateSession]);
 
   const handleExecutionModeChange = useCallback((mode: ExecutionMode) => {
     setDraftExecutionMode(mode);
@@ -161,7 +169,8 @@ export const ChatContainer = () => {
         onExecutionModeChange={handleExecutionModeChange}
         onInterrupt={handleInterrupt}
         isStreaming={isStreaming}
-        disabled={!isConnected}
+        disabled={!canSendMessage}
+        placeholder={hasRunnableConfig ? 'Type your message...' : 'Configure a primary model before sending messages...'}
       />
 
       {pendingToolConfirm && (

@@ -25,6 +25,13 @@ describe("SessionList", () => {
           title: "Investigate runtime contracts",
         },
         {
+          session_id: "session-c",
+          workspace_path: "/workspace-a",
+          created_at: "2026-03-12T09:00:00.000Z",
+          updated_at: "2026-03-12T12:00:00.000Z",
+          title: "Most recent workspace session",
+        },
+        {
           session_id: "session-b",
           workspace_path: "/workspace-b",
           created_at: "2026-03-12T11:00:00.000Z",
@@ -47,5 +54,16 @@ describe("SessionList", () => {
 
     expect(screen.queryByText("Other workspace session")).toBeNull();
     expect(screen.getByTestId("session-list-scroll")).toBeTruthy();
+  });
+
+  it("sorts workspace sessions by the most recent update first", () => {
+    render(<SessionList workspacePath="/workspace-a" />);
+
+    const listText = screen.getByTestId("session-list-scroll").textContent || "";
+    expect(listText.indexOf("Most recent workspace session")).toBeGreaterThanOrEqual(0);
+    expect(listText.indexOf("Investigate runtime contracts")).toBeGreaterThanOrEqual(0);
+    expect(listText.indexOf("Most recent workspace session")).toBeLessThan(
+      listText.indexOf("Investigate runtime contracts")
+    );
   });
 });

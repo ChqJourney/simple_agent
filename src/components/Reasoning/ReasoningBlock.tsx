@@ -2,12 +2,29 @@ import React, { useState } from 'react';
 
 interface ReasoningBlockProps {
   content: string;
+  collapsible?: boolean;
+  defaultExpanded?: boolean;
 }
 
-export const ReasoningBlock: React.FC<ReasoningBlockProps> = ({ content }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+export const ReasoningBlock: React.FC<ReasoningBlockProps> = ({
+  content,
+  collapsible = true,
+  defaultExpanded = false,
+}) => {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   if (!content) return null;
+
+  if (!collapsible) {
+    return (
+      <div className="text-gray-500 dark:text-gray-400">
+        <div className="text-sm font-medium">Thinking</div>
+        <div className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+          {content}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="text-gray-500 dark:text-gray-400">

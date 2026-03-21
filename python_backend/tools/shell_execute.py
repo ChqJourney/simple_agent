@@ -1,4 +1,6 @@
 import asyncio
+import os
+import shutil
 from pathlib import Path
 from typing import Any, Optional
 
@@ -30,6 +32,38 @@ class ShellExecuteTool(BaseTool):
         "required": ["command"],
     }
 
+    @staticmethod
+    def _resolve_shell_runner(command: str) -> dict[str, Any]:
+        if os.name != "nt":
+            shell_path = os.environ.get("SHELL", "")
+            shell_name = Path(shell_path).name if shell_path else "default_shell"
+            return {
+                "mode": "shell",
+                "runner": shell_name,
+                "command": command,
+            }
+
+        for candidate in ("pwsh", "powershell"):
+            if shutil.which(candidate):
+                return {
+                    "mode": "exec",
+                    "runner": candidate,
+                    "argv": [
+                        candidate,
+                        "-NoLogo",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        command,
+                    ],
+                }
+
+        return {
+            "mode": "shell",
+            "runner": "cmd",
+            "command": command,
+        }
+
     async def execute(
         self,
         command: str,
@@ -49,12 +83,22 @@ class ShellExecuteTool(BaseTool):
 
         normalized_timeout = normalize_timeout(timeout_seconds, self.policy.timeout_seconds)
         cwd = str(Path(workspace_path).resolve()) if workspace_path else None
-        process = await asyncio.create_subprocess_shell(
-            command,
-            cwd=cwd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        shell_runner = self._resolve_shell_runner(command)
+
+        if shell_runner["mode"] == "exec":
+            process = await asyncio.create_subprocess_exec(
+                *shell_runner["argv"],
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        else:
+            process = await asyncio.create_subprocess_shell(
+                shell_runner["command"],
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=normalized_timeout)
@@ -78,6 +122,7 @@ class ShellExecuteTool(BaseTool):
 
         output = {
             "command": command,
+            "runner": shell_runner["runner"],
             "exit_code": exit_code,
             **format_process_output(
                 stdout=stdout,

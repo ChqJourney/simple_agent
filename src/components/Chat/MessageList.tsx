@@ -1,6 +1,7 @@
-import { memo, useRef, useEffect } from 'react';
+import { Fragment, memo, useRef, useEffect } from 'react';
 import { Message, AssistantStatus } from '../../types';
 import { MessageItem } from './MessageItem';
+import { AssistantTurn } from './AssistantTurn';
 
 interface MessageListProps {
   messages: Message[];
@@ -27,42 +28,26 @@ export const MessageList = memo<MessageListProps>(({
     }
   }, [messages, currentStreamingContent, currentReasoningContent]);
 
-  const lastAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant');
-  const completedAssistantMessageId = !isStreaming && assistantStatus === 'completed'
-    ? lastAssistantMessage?.id
-    : undefined;
+  const groups: Array<{ user?: Message; assistantMessages: Message[] }> = [];
+  let currentGroup: { user?: Message; assistantMessages: Message[] } | null = null;
 
-  const renderedMessages: React.ReactNode[] = [];
-
-  for (let index = 0; index < messages.length; index += 1) {
-    const message = messages[index];
-
-    if (message.role === 'reasoning') {
-      const nextMessage = messages[index + 1];
-
-      if (nextMessage?.role === 'assistant') {
-        renderedMessages.push(
-          <MessageItem
-            key={nextMessage.id}
-            message={nextMessage}
-            reasoningContent={message.content || ''}
-            assistantStatus={nextMessage.id === completedAssistantMessageId ? 'completed' : undefined}
-            currentToolName={nextMessage.id === completedAssistantMessageId ? currentToolName : undefined}
-          />
-        );
-        index += 1;
-        continue;
+  messages.forEach((message) => {
+    if (message.role === 'user') {
+      if (currentGroup) {
+        groups.push(currentGroup);
       }
+      currentGroup = { user: message, assistantMessages: [] };
+      return;
     }
 
-    renderedMessages.push(
-      <MessageItem
-        key={message.id}
-        message={message}
-        assistantStatus={message.id === completedAssistantMessageId ? 'completed' : undefined}
-        currentToolName={message.id === completedAssistantMessageId ? currentToolName : undefined}
-      />
-    );
+    if (!currentGroup) {
+      currentGroup = { assistantMessages: [] };
+    }
+    currentGroup.assistantMessages.push(message);
+  });
+
+  if (currentGroup) {
+    groups.push(currentGroup);
   }
 
   return (
@@ -74,19 +59,33 @@ export const MessageList = memo<MessageListProps>(({
       )}
 
       <div className="space-y-5">
-        {renderedMessages}
+        {groups.map((group, index) => {
+          const isLastGroup = index === groups.length - 1;
+          const isActiveTurn = isLastGroup && (isStreaming || assistantStatus === 'completed');
 
-        {isStreaming && (
-          <MessageItem
-            message={{
-              id: 'streaming',
-              role: 'assistant',
-              content: '',
-              status: 'streaming',
-            }}
+          return (
+            <Fragment key={group.user?.id || `assistant-turn-${index}`}>
+              {group.user && <MessageItem message={group.user} />}
+              {(group.assistantMessages.length > 0 || (isStreaming && isLastGroup)) && (
+                <AssistantTurn
+                  messages={group.assistantMessages}
+                  isStreaming={isStreaming && isLastGroup}
+                  streamingContent={isActiveTurn ? currentStreamingContent : ''}
+                  currentReasoningContent={isActiveTurn ? currentReasoningContent : ''}
+                  assistantStatus={isActiveTurn ? assistantStatus : undefined}
+                  currentToolName={isActiveTurn ? currentToolName : undefined}
+                />
+              )}
+            </Fragment>
+          );
+        })}
+
+        {groups.length === 0 && isStreaming && (
+          <AssistantTurn
+            messages={[]}
             isStreaming={true}
             streamingContent={currentStreamingContent}
-            reasoningContent={currentReasoningContent}
+            currentReasoningContent={currentReasoningContent}
             assistantStatus={assistantStatus}
             currentToolName={currentToolName}
           />

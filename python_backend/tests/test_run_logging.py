@@ -10,7 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.agent import Agent
-from core.user import Session, UserManager
+from core.user import Message, Session, UserManager
 from runtime.events import RunEvent
 from runtime.logs import append_run_event
 from tools.base import ToolRegistry
@@ -106,6 +106,32 @@ class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertTrue(any(entry["event_type"] == "retry_scheduled" for entry in log_entries))
         self.assertTrue(any(entry["event_type"] == "run_completed" for entry in log_entries))
+
+    async def test_logs_and_session_history_preserve_unicode_text(self) -> None:
+        session = Session("session-unicode", self.temp_dir.name)
+        session.add_message(Message(role="user", content="帮我计算125的3次方"))
+
+        append_run_event(
+            self.temp_dir.name,
+            "session-unicode",
+            RunEvent(
+                event_type="run_started",
+                session_id="session-unicode",
+                run_id="run-1",
+                payload={"prompt": "帮我计算125的3次方"},
+            ),
+        )
+
+        session_path = Path(self.temp_dir.name) / ".agent" / "sessions" / "session-unicode.jsonl"
+        log_path = Path(self.temp_dir.name) / ".agent" / "logs" / "session-unicode.jsonl"
+
+        session_raw = session_path.read_text(encoding="utf-8")
+        log_raw = log_path.read_text(encoding="utf-8")
+
+        self.assertIn("帮我计算125的3次方", session_raw)
+        self.assertNotIn("\\u5e2e", session_raw)
+        self.assertIn("帮我计算125的3次方", log_raw)
+        self.assertNotIn("\\u5e2e", log_raw)
 
     async def test_session_rejects_path_traversal_session_ids(self) -> None:
         with self.assertRaises(ValueError):

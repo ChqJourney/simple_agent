@@ -1,5 +1,6 @@
 import sys
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -24,6 +25,25 @@ class FakeProcess:
 
 
 class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
+    def _patch_subprocess(self, command: str, fake_process: FakeProcess) -> ExitStack:
+        stack = ExitStack()
+        shell_runner = ShellExecuteTool._resolve_shell_runner(command)
+        if shell_runner["mode"] == "exec":
+            stack.enter_context(
+                patch(
+                    "tools.shell_execute.asyncio.create_subprocess_exec",
+                    AsyncMock(return_value=fake_process),
+                )
+            )
+        else:
+            stack.enter_context(
+                patch(
+                    "tools.shell_execute.asyncio.create_subprocess_shell",
+                    AsyncMock(return_value=fake_process),
+                )
+            )
+        return stack
+
     async def test_shell_tool_returns_structured_output(self) -> None:
         result = await ShellExecuteTool().execute(
             tool_call_id="shell-1",
@@ -38,11 +58,10 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("runner", result.output)
 
     async def test_shell_tool_truncates_large_outputs(self) -> None:
-        fake_subprocess = AsyncMock(
-            return_value=FakeProcess(stdout=(b"x" * 80000), stderr=b"", returncode=0)
-        )
-
-        with patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_subprocess):
+        with self._patch_subprocess(
+            "echo long-output",
+            FakeProcess(stdout=(b"x" * 80000), stderr=b"", returncode=0),
+        ):
             result = await ShellExecuteTool().execute(
                 tool_call_id="shell-large-output",
                 command="echo long-output",
@@ -57,13 +76,13 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_shell_tool_respects_capture_output_policy(self) -> None:
-        fake_subprocess = AsyncMock(
-            return_value=FakeProcess(stdout=b"secret", stderr=b"warn", returncode=0)
-        )
         tool = ShellExecuteTool()
         tool.policy.capture_output = False
 
-        with patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_subprocess):
+        with self._patch_subprocess(
+            "echo secret",
+            FakeProcess(stdout=b"secret", stderr=b"warn", returncode=0),
+        ):
             result = await tool.execute(
                 tool_call_id="shell-no-capture",
                 command="echo secret",

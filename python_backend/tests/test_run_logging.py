@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -149,6 +150,57 @@ class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
                     payload={},
                 ),
             )
+
+    async def test_append_run_event_retries_transient_failures(self) -> None:
+        event = RunEvent(
+            event_type="run_started",
+            session_id="session-retry",
+            run_id="run-1",
+            payload={},
+        )
+        log_path = Path(self.temp_dir.name) / ".agent" / "logs" / "session-retry.jsonl"
+        original_open = Path.open
+        attempts = {"count": 0}
+
+        def flaky_open(path_obj, *args, **kwargs):
+            if path_obj == log_path and attempts["count"] < 2:
+                attempts["count"] += 1
+                raise OSError("temporary write failure")
+            return original_open(path_obj, *args, **kwargs)
+
+        with patch("runtime.logs.Path.open", autospec=True, side_effect=flaky_open), patch(
+            "runtime.logs.time.sleep",
+            autospec=True,
+        ) as sleep_mock:
+            append_run_event(self.temp_dir.name, "session-retry", event)
+
+        self.assertEqual(2, attempts["count"])
+        self.assertEqual(2, sleep_mock.call_count)
+        log_entries = [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertEqual(1, len(log_entries))
+        self.assertEqual("run_started", log_entries[0]["event_type"])
+
+    async def test_append_run_event_gives_up_without_raising_after_retries(self) -> None:
+        event = RunEvent(
+            event_type="run_started",
+            session_id="session-failure",
+            run_id="run-1",
+            payload={},
+        )
+        log_path = Path(self.temp_dir.name) / ".agent" / "logs" / "session-failure.jsonl"
+
+        with patch("runtime.logs.Path.open", autospec=True, side_effect=OSError("disk full")), patch(
+            "runtime.logs.time.sleep",
+            autospec=True,
+        ) as sleep_mock:
+            append_run_event(self.temp_dir.name, "session-failure", event)
+
+        self.assertFalse(log_path.exists())
+        self.assertEqual(2, sleep_mock.call_count)
 
 
 if __name__ == "__main__":

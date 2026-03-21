@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AssistantStatus, Attachment, Message, PendingQuestion, RunEventRecord, TokenUsage, ToolCall, ToolDecision, ToolDecisionScope } from '../types';
+import { AssistantStatus, Attachment, Message, PendingQuestion, TokenUsage, ToolCall, ToolDecision, ToolDecisionScope } from '../types';
 import {
   createToolDecisionSummary,
   createToolResultSummary,
@@ -8,7 +8,6 @@ import {
 
 interface SessionState {
   messages: Message[];
-  runEvents: RunEventRecord[];
   latestUsage?: TokenUsage;
   currentStreamingContent: string;
   currentReasoningContent: string;
@@ -21,7 +20,6 @@ interface SessionState {
 
 interface ChatState {
   sessions: Record<string, SessionState>;
-  addRunEvent: (sessionId: string, event: RunEventRecord) => void;
   addToken: (sessionId: string, token: string) => void;
   addReasoningToken: (sessionId: string, token: string) => void;
   setReasoningComplete: (sessionId: string) => void;
@@ -60,7 +58,6 @@ interface ChatState {
 
 const createEmptySession = (): SessionState => ({
   messages: [],
-  runEvents: [],
   latestUsage: undefined,
   currentStreamingContent: '',
   currentReasoningContent: '',
@@ -73,19 +70,6 @@ const createEmptySession = (): SessionState => ({
 
 export const useChatStore = create<ChatState>((set) => ({
   sessions: {},
-
-  addRunEvent: (sessionId, event) => set((state) => {
-    const session = state.sessions[sessionId] || createEmptySession();
-    return {
-      sessions: {
-        ...state.sessions,
-        [sessionId]: {
-          ...session,
-          runEvents: [...session.runEvents, event],
-        },
-      },
-    };
-  }),
 
   addToken: (sessionId, token) => set((state) => {
     const session = state.sessions[sessionId] || createEmptySession();
@@ -614,7 +598,6 @@ export const useChatStore = create<ChatState>((set) => ({
           ...(state.sessions[sessionId] || createEmptySession()),
           messages,
           latestUsage,
-          runEvents: state.sessions[sessionId]?.runEvents || [],
           currentStreamingContent: '',
           currentReasoningContent: '',
           isStreaming: false,

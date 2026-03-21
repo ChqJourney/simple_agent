@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderConfig } from "../types";
+import { useRunStore } from "../stores/runStore";
 import { useConfigStore } from "../stores/configStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useTaskStore } from "../stores/taskStore";
@@ -212,8 +213,7 @@ describe("WebSocketProvider", () => {
     });
 
     await waitFor(async () => {
-      const { useChatStore } = await import("../stores/chatStore");
-      expect(useChatStore.getState().sessions["session-a"]?.runEvents).toHaveLength(1);
+      expect(useRunStore.getState().sessions["session-a"]?.events).toHaveLength(1);
     });
   });
 

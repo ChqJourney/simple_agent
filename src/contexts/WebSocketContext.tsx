@@ -300,7 +300,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           useSessionStore.getState().updateSession(data.session_id, { locked_model: data.locked_model });
           break;
         case 'run_event':
-          store.addRunEvent(data.session_id, data.event);
           runStore.addEvent(data.session_id, data.event);
           break;
         default:

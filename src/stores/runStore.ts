@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { RunEventRecord } from '../types';
 
 export type RunLifecycleStatus = 'idle' | 'running' | 'completed' | 'failed' | 'interrupted';
+const MAX_EVENTS_PER_SESSION = 100;
 
 interface RunSessionState {
   events: RunEventRecord[];
@@ -41,12 +42,13 @@ export const useRunStore = create<RunState>((set) => ({
 
   addEvent: (sessionId, event) => set((state) => {
     const session = state.sessions[sessionId] || createEmptyRunSession();
+    const events = [...session.events, event].slice(-MAX_EVENTS_PER_SESSION);
 
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
-          events: [...session.events, event],
+          events,
           currentRunId: event.run_id,
           status: deriveStatus(event.event_type, session.status),
         },

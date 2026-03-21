@@ -64,7 +64,6 @@ describe("useSession", () => {
       sessions: {
         "session-a": {
           messages: [],
-          runEvents: [],
           currentStreamingContent: "",
           currentReasoningContent: "",
           isStreaming: false,
@@ -75,7 +74,6 @@ describe("useSession", () => {
         },
         "session-b": {
           messages: [],
-          runEvents: [],
           currentStreamingContent: "",
           currentReasoningContent: "",
           isStreaming: false,

@@ -6,21 +6,6 @@ describe("chatStore run events", () => {
     useChatStore.setState({ sessions: {} });
   });
 
-  it("stores structured run events per session", () => {
-    useChatStore.getState().addRunEvent("session-a", {
-      event_type: "run_started",
-      session_id: "session-a",
-      run_id: "run-1",
-      payload: {
-        source: "test",
-      },
-      timestamp: "2026-03-13T09:00:00.000Z",
-    });
-
-    expect(useChatStore.getState().sessions["session-a"]?.runEvents).toHaveLength(1);
-    expect(useChatStore.getState().sessions["session-a"]?.runEvents[0]?.event_type).toBe("run_started");
-  });
-
   it("stores and clears pending questions per session", () => {
     useChatStore.getState().setPendingQuestion("session-a", {
       tool_call_id: "question-1",

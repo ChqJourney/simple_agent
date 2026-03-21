@@ -83,7 +83,6 @@ describe("ChatContainer", () => {
       sessions: {
         "session-a": {
           messages: [],
-          runEvents: [],
           currentStreamingContent: "",
           currentReasoningContent: "",
           isStreaming: false,
@@ -145,7 +144,6 @@ describe("ChatContainer", () => {
       sessions: {
         "session-a": {
           messages: [],
-          runEvents: [],
           currentStreamingContent: "",
           currentReasoningContent: "",
           isStreaming: false,

@@ -23,7 +23,7 @@
 flowchart LR
     User["用户"] --> UI["React UI<br/>pages / components / stores"]
     UI --> WS["WebSocketContext + wsService"]
-    UI --> Tauri["Tauri Commands<br/>prepare_workspace_path<br/>authorize_workspace_path"]
+    UI --> Tauri["Tauri Commands<br/>prepare_workspace_path<br/>authorize_workspace_path<br/>scan_workspace_sessions<br/>read_session_history"]
     WS --> Backend["Python Backend<br/>FastAPI / WebSocket"]
     Tauri --> Backend
 
@@ -74,7 +74,7 @@ flowchart LR
 | 聊天 UI | `src/components/Chat/*` | 消息流渲染、输入框、流式输出、interrupt | chat store、WebSocket actions | 消息发送、reasoning/tool 展示 |
 | 工具交互 UI | `src/components/Tools/*` | ToolConfirmModal、PendingQuestionCard、ToolCallDisplay | tool_confirm_request / question_request | 审批、答复回传 |
 | 运行观测 UI | `src/components/Run/RunTimeline.tsx` | 渲染 `run_event` 为时间线 | run store、chat store | run 过程可视化 |
-| 本地读取工具 | `src/utils/storage.ts` | 从 `.agent` 目录读取 session/log 派生 UI 数据 | Tauri FS API | Session 列表、历史消息恢复 |
+| 本地读取工具 | `src/utils/storage.ts` | 通过 Tauri command 恢复 session 列表与历史，并派生 UI 数据 | Tauri invoke | Session 列表、历史消息恢复 |
 
 ### 3.3 Tauri 模块地图
 
@@ -83,6 +83,7 @@ flowchart LR
 | 应用入口 | `src-tauri/src/main.rs` | 启动 Tauri 主程序 |
 | 桌面壳层 | `src-tauri/src/lib.rs` | 注册命令、插件、发布态 sidecar 管理、关闭时回收 sidecar |
 | 工作区路径授权 | `src-tauri/src/workspace_paths.rs` | 规范化路径、去重判断、给 Tauri FS scope 动态放行 |
+| 会话磁盘桥接 | `src-tauri/src/session_storage.rs` | 在已授权 workspace 下扫描/读取/删除 `.agent/sessions` |
 | 能力配置 | `src-tauri/capabilities/default.json` | 声明默认 FS/Dialog/Shell/Opener 能力 |
 
 ### 3.4 Python 后端模块地图
@@ -113,6 +114,7 @@ flowchart LR
 | 交互式提问 | `src/components/Tools/PendingQuestionCard.tsx` `python_backend/core/agent.py` | `ask_question` 工具通过 WebSocket 向用户发问并等待回答 |
 | Run Timeline | `src/components/Run/RunTimeline.tsx` `python_backend/runtime/events.py` | run_event 同时写入前端和磁盘日志 |
 | 工作区文件联动 | `src/utils/storage.ts` `src/components/Workspace/FileTree.tsx` | 前端经 Tauri 读取工作区文件；`file_write` 成功后高亮变更文件 |
+| Session 历史恢复 | `src/utils/storage.ts` `src-tauri/src/session_storage.rs` | session list / transcript 通过 Tauri command 读取，不再直接走前端 `plugin-fs` |
 | 任务面板 | `src/stores/taskStore.ts` `python_backend/tools/todo_task.py` | `todo_task` 结果转成前端任务树 |
 | 会话标题生成 | `python_backend/runtime/session_titles.py` `src/stores/sessionStore.ts` | 首条文本消息触发后台标题任务，结果以 `session_title_updated` 回传 |
 | Token Usage Widget | `src/components/common/TokenUsageWidget.tsx` `python_backend/llms/base.py` | 后端从 provider usage 归一化后，前端显示最近一次 session usage |
@@ -174,8 +176,9 @@ sequenceDiagram
 
 1. Welcome 页面通过 Tauri `prepare_workspace_path` 做路径规范化和去重判断
 2. 进入 Workspace 页面后再次调用 `authorize_workspace_path`
-3. Rust 层把该目录加入 Tauri FS scope，前端后续才能通过 plugin-fs 读取该目录
-4. 前端再发送 WebSocket `set_workspace`，让后端把连接绑定到当前 workspace
+3. Rust 层把该目录加入 Tauri FS scope，供文件树等通用工作区访问使用
+4. session list / history 恢复通过 Tauri command 再次复用该授权读取 `.agent/sessions`
+5. 前端再发送 WebSocket `set_workspace`，让后端把连接绑定到当前 workspace
 
 #### C. 会话创建与锁模
 
@@ -264,7 +267,7 @@ flowchart TD
 前端不是完全依赖内存状态，存在两类恢复来源：
 
 - 浏览器持久化：`workspaceStore`、`sessionStore`、`configStore` 通过 Zustand `persist` 保存
-- 工作区磁盘恢复：`src/utils/storage.ts` 通过 Tauri FS 读取 `.agent/sessions/*.jsonl` 与 `*.meta.json`
+- 工作区磁盘恢复：`src/utils/storage.ts` 通过 Tauri command 读取 `.agent/sessions/*.jsonl` 与 `*.meta.json`
 
 其中最关键的一点是：
 
@@ -370,6 +373,9 @@ Tool 系统当前注册了以下内置工具：
 | --- | --- | --- | --- | --- |
 | `prepare_workspace_path` | WelcomePage | `selected_path` `existing_paths` | `existing` 或 `created` + `canonical_path` | 新建/打开工作区前去重与路径规范化 |
 | `authorize_workspace_path` | WorkspacePage | `selected_path` | `canonical_path` | 将工作区加入 Tauri FS scope |
+| `scan_workspace_sessions` | `storage.ts` | `workspace_path` | session metadata 列表 | 扫描 `.agent/sessions` 恢复 sidebar session list |
+| `read_session_history` | `storage.ts` | `workspace_path` `session_id` | `content` | 读取单个 session transcript 用于消息恢复 |
+| `delete_session_history` | `storage.ts` | `workspace_path` `session_id` | `void` | 删除 session transcript 与 metadata |
 
 ### 8.2 前端 -> Python Backend WebSocket 消息
 
@@ -440,7 +446,7 @@ Tool 系统当前注册了以下内置工具：
   "runtime": {
     "context_length": 64000,
     "max_output_tokens": 4000,
-    "max_tool_rounds": 8,
+    "max_tool_rounds": 20,
     "max_retries": 3
   },
   "context_providers": {
@@ -554,8 +560,10 @@ flowchart TD
     Agent --> Meta["sessions/<id>.meta.json"]
     Agent --> RunLog["logs/<id>.jsonl"]
 
-    SessionJsonl --> FEHistory["src/utils/storage.ts<br/>loadSessionHistory()"]
-    Meta --> FEScan["src/utils/storage.ts<br/>scanSessions()"]
+    SessionJsonl --> TauriSession["src-tauri/src/session_storage.rs<br/>read_session_history()"]
+    Meta --> TauriSessionScan["src-tauri/src/session_storage.rs<br/>scan_workspace_sessions()"]
+    TauriSession --> FEHistory["src/utils/storage.ts<br/>loadSessionHistory()"]
+    TauriSessionScan --> FEScan["src/utils/storage.ts<br/>scanSessions()"]
     RunLog --> Timeline["RunTimeline（当前主要来自实时 run_event）"]
 
     FEHistory --> ChatStore["chatStore.loadSession()"]

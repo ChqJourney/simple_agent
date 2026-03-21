@@ -155,7 +155,7 @@ Workspace
   "runtime": {
     "context_length": 64000,
     "max_output_tokens": 4000,
-    "max_tool_rounds": 8,
+    "max_tool_rounds": 20,
     "max_retries": 3
   },
   "appearance": {
@@ -208,7 +208,7 @@ Workspace
   "runtime": {
     "context_length": 128000,
     "max_output_tokens": 4000,
-    "max_tool_rounds": 8,
+    "max_tool_rounds": 20,
     "max_retries": 3
   },
   "appearance": {
@@ -220,7 +220,7 @@ Workspace
 ## Settings Updates (2026-03-18)
 
 - `Test Connection` is now split by profile: `Test Primary Connection` and `Test Secondary Connection`.
-- `Runtime Limits` now displays explicit defaults when users have not set custom values: `context_length=64000`, `max_output_tokens=4000`, `max_tool_rounds=8`, `max_retries=3`.
+- `Runtime Limits` now displays explicit defaults when users have not set custom values: `context_length=64000`, `max_output_tokens=4000`, `max_tool_rounds=20`, `max_retries=3`.
 - `Appearance` now includes `Base Font Size`, persisted via `appearance.base_font_size` and applied globally in the frontend runtime.
 
 ## Tool System Updates (2026-03-18)
@@ -245,6 +245,7 @@ Workspace
 ## Reliability Updates (2026-03-19)
 
 - Workspace loading now ignores stale authorization results after the active workspace changes, preventing old async responses from resetting the wrong session list.
+- Session list scanning and history reload now go through Tauri Rust commands for authorized `.agent/sessions` access, instead of direct frontend `plugin-fs` reads.
 - Session deletion now clears associated chat, run-timeline, and task-panel state in the frontend instead of leaving stale per-session UI data behind.
 - Backend runtime cleanup now closes title-generation LLM clients, closes per-session agent LLM clients when runs finish, and performs task + LLM shutdown cleanup during FastAPI lifespan teardown.
 - File tree async directory loads are now guarded against workspace switches, so delayed child-directory responses from an old workspace cannot pollute the current tree.
@@ -290,6 +291,7 @@ agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agen
 - assistant 消息会在有数据时持久化 `usage`，用于重新加载后恢复 chat token 信息和 header widget
 - `*.meta.json` 保存 title、locked model 等会话元数据
 - `logs/*.jsonl` 保存结构化 run event
+- 桌面端恢复 session list / history 时，会先通过 Tauri Rust 命令复用当前 workspace 授权，再读取 `.agent/sessions`
 
 ## 本地开发
 

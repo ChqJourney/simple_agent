@@ -7,6 +7,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from llms.deepseek import DeepSeekLLM
+from llms.glm import GLMLLM
+from llms.kimi import KimiLLM
+from llms.minimax import MiniMaxLLM
 from llms.ollama import OllamaLLM
 from llms.openai import OpenAILLM
 from llms.qwen import QwenLLM
@@ -71,6 +74,52 @@ class LLMRuntimeLimitTests(unittest.TestCase):
         kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
 
         self.assertEqual(256, kwargs["max_tokens"])
+
+    def test_kimi_request_includes_max_output_tokens_and_k2_5_temperature(self) -> None:
+        llm = KimiLLM(
+            {
+                "provider": "kimi",
+                "model": "kimi-k2.5",
+                "api_key": "test-key",
+                "base_url": "https://api.moonshot.cn/v1",
+                "max_output_tokens": 144,
+            }
+        )
+
+        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
+
+        self.assertEqual(144, kwargs["max_tokens"])
+        self.assertEqual(1.0, kwargs["temperature"])
+
+    def test_glm_request_includes_max_output_tokens(self) -> None:
+        llm = GLMLLM(
+            {
+                "provider": "glm",
+                "model": "glm-4.6",
+                "api_key": "test-key",
+                "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                "max_output_tokens": 88,
+            }
+        )
+
+        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
+
+        self.assertEqual(88, kwargs["max_tokens"])
+
+    def test_minimax_request_includes_max_output_tokens(self) -> None:
+        llm = MiniMaxLLM(
+            {
+                "provider": "minimax",
+                "model": "MiniMax-M2.5",
+                "api_key": "test-key",
+                "base_url": "https://api.minimaxi.com/v1",
+                "max_output_tokens": 72,
+            }
+        )
+
+        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
+
+        self.assertEqual(72, kwargs["max_tokens"])
 
 
 if __name__ == "__main__":

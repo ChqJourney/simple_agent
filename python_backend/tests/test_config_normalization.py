@@ -9,6 +9,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import main as backend_main
 from llms.deepseek import DeepSeekLLM
+from llms.glm import GLMLLM
+from llms.kimi import KimiLLM
+from llms.minimax import MiniMaxLLM
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 
 
@@ -213,6 +216,42 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsInstance(llm, DeepSeekLLM)
+
+    def test_create_llm_for_profile_supports_kimi(self) -> None:
+        llm = backend_main.create_llm_for_profile(
+            {
+                'provider': 'kimi',
+                'model': 'kimi-k2.5',
+                'api_key': 'test-key',
+                'base_url': 'https://api.moonshot.cn/v1',
+            }
+        )
+
+        self.assertIsInstance(llm, KimiLLM)
+
+    def test_create_llm_for_profile_supports_glm(self) -> None:
+        llm = backend_main.create_llm_for_profile(
+            {
+                'provider': 'glm',
+                'model': 'glm-4.6',
+                'api_key': 'test-key',
+                'base_url': 'https://open.bigmodel.cn/api/paas/v4',
+            }
+        )
+
+        self.assertIsInstance(llm, GLMLLM)
+
+    def test_create_llm_for_profile_supports_minimax(self) -> None:
+        llm = backend_main.create_llm_for_profile(
+            {
+                'provider': 'minimax',
+                'model': 'MiniMax-M2.5',
+                'api_key': 'test-key',
+                'base_url': 'https://api.minimaxi.com/v1',
+            }
+        )
+
+        self.assertIsInstance(llm, MiniMaxLLM)
 
 
 if __name__ == '__main__':

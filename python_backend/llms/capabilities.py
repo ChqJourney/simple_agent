@@ -12,6 +12,14 @@ OPENAI_REASONING_PREFIXES = (
     'o4',
     'gpt-5',
 )
+KIMI_REASONING_PREFIXES = (
+    'kimi-k2.5',
+)
+GLM_REASONING_PREFIXES = (
+    'glm-5',
+    'glm-4.7',
+    'glm-4.6',
+)
 QWEN_REASONING_PREFIXES = (
     'qwen3',
     'qwq',
@@ -19,6 +27,7 @@ QWEN_REASONING_PREFIXES = (
 DEEPSEEK_REASONING_PREFIXES = (
     'deepseek-reasoner',
 )
+MINIMAX_REASONING_PREFIXES = tuple()
 OLLAMA_REASONING_PREFIXES = (
     'qwen3',
     'deepseek-r1',
@@ -30,9 +39,16 @@ OPENAI_VISION_PREFIXES = (
     'gpt-4.1',
     'gpt-5',
 )
+KIMI_VISION_PREFIXES = (
+    'kimi-k2.5',
+)
+GLM_VISION_PREFIXES = (
+    'glm-4.6v',
+)
 QWEN_VISION_PREFIXES = (
     'qvq',
 )
+MINIMAX_VISION_PREFIXES = tuple()
 OLLAMA_VISION_PREFIXES = tuple()
 DEFAULT_CONTEXT_LENGTH_PREFIXES = {
     'openai': {
@@ -46,6 +62,17 @@ DEFAULT_CONTEXT_LENGTH_PREFIXES = {
     'deepseek': {
         'deepseek-chat': 128000,
         'deepseek-reasoner': 128000,
+    },
+    'kimi': {
+        'kimi-k2.5': 256000,
+    },
+    'glm': {
+        'glm-5': 128000,
+        'glm-4.7': 128000,
+        'glm-4.6': 128000,
+    },
+    'minimax': {
+        'minimax-m2': 200000,
     },
 }
 
@@ -68,8 +95,14 @@ def supports_reasoning(provider: str, model: str) -> bool:
 
     if normalized_provider == 'openai':
         return _matches_prefix(normalized_model, OPENAI_REASONING_PREFIXES)
+    if normalized_provider == 'kimi':
+        return _matches_prefix(normalized_model, KIMI_REASONING_PREFIXES)
+    if normalized_provider == 'glm':
+        return _matches_prefix(normalized_model, GLM_REASONING_PREFIXES)
     if normalized_provider == 'deepseek':
         return _matches_prefix(normalized_model, DEEPSEEK_REASONING_PREFIXES)
+    if normalized_provider == 'minimax':
+        return _matches_prefix(normalized_model, MINIMAX_REASONING_PREFIXES)
     if normalized_provider == 'qwen':
         return _matches_prefix(normalized_model, QWEN_REASONING_PREFIXES)
     if normalized_provider == 'ollama':
@@ -83,7 +116,15 @@ def get_supported_input_types(provider: str, model: str) -> List[str]:
 
     if normalized_provider == 'openai' and _matches_prefix(normalized_model, OPENAI_VISION_PREFIXES):
         return IMAGE_AND_TEXT_INPUT_TYPES.copy()
+    if normalized_provider == 'kimi' and _matches_prefix(normalized_model, KIMI_VISION_PREFIXES):
+        return IMAGE_AND_TEXT_INPUT_TYPES.copy()
+    if normalized_provider == 'glm' and _matches_prefix(normalized_model, GLM_VISION_PREFIXES):
+        return IMAGE_AND_TEXT_INPUT_TYPES.copy()
     if normalized_provider == 'deepseek':
+        return TEXT_ONLY_INPUT_TYPES.copy()
+    if normalized_provider == 'minimax':
+        if _matches_prefix(normalized_model, MINIMAX_VISION_PREFIXES):
+            return IMAGE_AND_TEXT_INPUT_TYPES.copy()
         return TEXT_ONLY_INPUT_TYPES.copy()
     if normalized_provider == 'qwen' and _matches_prefix(normalized_model, QWEN_VISION_PREFIXES):
         return IMAGE_AND_TEXT_INPUT_TYPES.copy()

@@ -18,6 +18,9 @@ from core.user import Session, UserManager
 from llms.base import BaseLLM
 from llms.capabilities import get_supported_input_types
 from llms.deepseek import DeepSeekLLM
+from llms.glm import GLMLLM
+from llms.kimi import KimiLLM
+from llms.minimax import MiniMaxLLM
 from llms.openai import OpenAILLM
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 from llms.qwen import QwenLLM
@@ -171,6 +174,12 @@ def create_llm_for_profile(profile: Dict[str, Any], runtime_policy: Optional[Dic
         return OpenAILLM(profile_config)
     if provider == "deepseek":
         return DeepSeekLLM(profile_config)
+    if provider == "kimi":
+        return KimiLLM(profile_config)
+    if provider == "glm":
+        return GLMLLM(profile_config)
+    if provider == "minimax":
+        return MiniMaxLLM(profile_config)
     if provider == "qwen":
         return QwenLLM(profile_config)
     if provider == "ollama":
@@ -886,7 +895,7 @@ async def test_config(data: Dict[str, Any]):
     if not raw_provider:
         return JSONResponse(status_code=400, content={"ok": False, "error": "Missing provider"})
 
-    if raw_provider not in ("openai", "deepseek", "qwen", "ollama"):
+    if raw_provider not in ("openai", "deepseek", "kimi", "glm", "minimax", "qwen", "ollama"):
         return JSONResponse(status_code=400, content={"ok": False, "error": f"Unsupported provider: {raw_provider}"})
 
     config = _normalize_provider_config({**data, "provider": raw_provider})
@@ -953,6 +962,8 @@ async def test_config(data: Dict[str, Any]):
                     "stream": False,
                     "max_tokens": 1,
                 }
+                if provider == "kimi" and str(model).strip().lower().startswith("kimi-k2.5"):
+                    chat_payload["temperature"] = 1.0
                 chat_response = await client.post(chat_url, headers=chat_headers, json=chat_payload)
                 if chat_response.is_success:
                     return {"ok": True}

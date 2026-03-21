@@ -8,6 +8,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from llms.openai import OpenAILLM
+from llms.glm import GLMLLM
+from llms.kimi import KimiLLM
+from llms.minimax import MiniMaxLLM
 from llms.ollama import OllamaLLM
 from llms.qwen import QwenLLM
 
@@ -15,6 +18,15 @@ from llms.qwen import QwenLLM
 async def empty_stream():
     if False:
         yield None
+
+
+class DummyTool:
+    name = "lookup"
+    description = "Lookup data"
+    parameters = {
+        "type": "object",
+        "properties": {},
+    }
 
 
 class ProviderReasoningRequestTests(unittest.IsolatedAsyncioTestCase):
@@ -62,6 +74,71 @@ class ProviderReasoningRequestTests(unittest.IsolatedAsyncioTestCase):
 
         kwargs = llm.client.chat.completions.create.await_args.kwargs
         self.assertEqual({'enable_thinking': True}, kwargs.get('extra_body'))
+
+    async def test_kimi_reasoning_model_sends_thinking_and_k2_5_temperature(self) -> None:
+        llm = KimiLLM({
+            'model': 'kimi-k2.5',
+            'api_key': 'test-key',
+            'base_url': 'https://api.moonshot.cn/v1',
+            'enable_reasoning': True,
+        })
+        llm.client.chat.completions.create = AsyncMock(return_value=empty_stream())
+
+        async for _ in llm.stream([{'role': 'user', 'content': 'hello'}], None):
+            pass
+
+        kwargs = llm.client.chat.completions.create.await_args.kwargs
+        self.assertEqual({'thinking': {'type': 'enabled'}}, kwargs.get('extra_body'))
+        self.assertEqual(1.0, kwargs.get('temperature'))
+
+    async def test_glm_reasoning_model_sends_thinking_and_tool_stream(self) -> None:
+        llm = GLMLLM({
+            'model': 'glm-4.6',
+            'api_key': 'test-key',
+            'base_url': 'https://open.bigmodel.cn/api/paas/v4',
+            'enable_reasoning': True,
+        })
+        llm.client.chat.completions.create = AsyncMock(return_value=empty_stream())
+
+        async for _ in llm.stream([{'role': 'user', 'content': 'hello'}], [DummyTool()]):
+            pass
+
+        kwargs = llm.client.chat.completions.create.await_args.kwargs
+        self.assertEqual(
+            {'thinking': {'type': 'enabled', 'clear_thinking': False}, 'tool_stream': True},
+            kwargs.get('extra_body'),
+        )
+
+    async def test_minimax_request_enables_reasoning_split(self) -> None:
+        llm = MiniMaxLLM({
+            'model': 'MiniMax-M2.5',
+            'api_key': 'test-key',
+            'base_url': 'https://api.minimaxi.com/v1',
+        })
+        llm.client.chat.completions.create = AsyncMock(return_value=empty_stream())
+
+        async for _ in llm.stream([{'role': 'user', 'content': 'hello'}], None):
+            pass
+
+        kwargs = llm.client.chat.completions.create.await_args.kwargs
+        self.assertEqual({'reasoning_split': True}, kwargs.get('extra_body'))
+
+    def test_minimax_normalizes_reasoning_details_to_reasoning_content(self) -> None:
+        llm = MiniMaxLLM({
+            'model': 'MiniMax-M2.5',
+            'api_key': 'test-key',
+            'base_url': 'https://api.minimaxi.com/v1',
+        })
+
+        chunk = llm._normalize_chunk({
+            'choices': [{
+                'delta': {
+                    'reasoning_details': [{'text': 'step 1'}, {'text': ' + step 2'}],
+                }
+            }]
+        })
+
+        self.assertEqual('step 1 + step 2', chunk['choices'][0]['delta']['reasoning_content'])
 
     def test_ollama_reasoning_model_sets_think_flag(self) -> None:
         llm = OllamaLLM({

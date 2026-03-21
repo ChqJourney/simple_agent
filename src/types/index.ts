@@ -93,7 +93,7 @@ export interface RunEventRecord {
   timestamp: string;
 }
 
-export type ProviderType = 'openai' | 'deepseek' | 'qwen' | 'ollama';
+export type ProviderType = 'openai' | 'deepseek' | 'kimi' | 'glm' | 'minimax' | 'qwen' | 'ollama';
 export type InputType = 'text' | 'image';
 
 export interface ModelProfile {
@@ -111,6 +111,12 @@ export interface RuntimePolicy {
   max_output_tokens?: number;
   max_tool_rounds?: number;
   max_retries?: number;
+}
+
+export interface ProviderMemoryEntry {
+  model?: string;
+  api_key?: string;
+  base_url?: string;
 }
 
 export interface AppearanceConfig {
@@ -141,6 +147,7 @@ export interface ProviderConfig extends ModelProfile {
     primary: ModelProfile;
     secondary?: ModelProfile;
   };
+  provider_memory?: Partial<Record<ProviderType, ProviderMemoryEntry>>;
   runtime?: RuntimePolicy;
   appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
@@ -188,6 +195,7 @@ export interface ClientConfig {
   enable_reasoning: boolean;
   input_type?: InputType;
   profiles?: ProviderConfig['profiles'];
+  provider_memory?: ProviderConfig['provider_memory'];
   runtime?: RuntimePolicy;
   appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
@@ -391,4 +399,3 @@ export type ServerWebSocketMessage =
   | ServerRunEvent;
 
 export type WebSocketMessage = ClientWebSocketMessage | ServerWebSocketMessage;
-

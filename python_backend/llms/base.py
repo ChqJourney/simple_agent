@@ -120,10 +120,25 @@ class BaseLLM(ABC):
 
     @staticmethod
     def _coerce_usage_field(raw_usage: Any, field: str) -> Optional[int]:
+        field_aliases = {
+            "prompt_tokens": ("prompt_tokens", "input_tokens"),
+            "completion_tokens": ("completion_tokens", "output_tokens"),
+            "total_tokens": ("total_tokens",),
+        }
+        candidate_fields = field_aliases.get(field, (field,))
+
         if isinstance(raw_usage, dict):
-            value = raw_usage.get(field)
+            value = None
+            for candidate in candidate_fields:
+                value = raw_usage.get(candidate)
+                if value not in (None, ""):
+                    break
         else:
-            value = getattr(raw_usage, field, None)
+            value = None
+            for candidate in candidate_fields:
+                value = getattr(raw_usage, candidate, None)
+                if value not in (None, ""):
+                    break
 
         if value in (None, ""):
             return None
@@ -140,15 +155,23 @@ class BaseLLM(ABC):
             details = raw_usage.get("completion_tokens_details")
             if details is None:
                 details = raw_usage.get("output_tokens_details")
+            if details is None:
+                details = raw_usage.get("reasoning_details")
         else:
             details = getattr(raw_usage, "completion_tokens_details", None)
             if details is None:
                 details = getattr(raw_usage, "output_tokens_details", None)
+            if details is None:
+                details = getattr(raw_usage, "reasoning_details", None)
 
         if isinstance(details, dict):
             value = details.get("reasoning_tokens")
+            if value in (None, ""):
+                value = details.get("tokens")
         else:
             value = getattr(details, "reasoning_tokens", None)
+            if value in (None, ""):
+                value = getattr(details, "tokens", None)
 
         if value in (None, ""):
             value = raw_usage.get("reasoning_tokens") if isinstance(raw_usage, dict) else getattr(raw_usage, "reasoning_tokens", None)

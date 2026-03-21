@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { ProviderConfigForm } from '../components/Settings/ProviderConfig';
 import { useConfigStore } from '../stores/configStore';
 import { useUIStore } from '../stores';
-import { ModelProfile, ProviderConfig } from '../types';
+import { ModelProfile, ProviderConfig, ProviderType } from '../types';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import {
   DEFAULT_RUNTIME_POLICY,
   normalizeBaseFontSize,
   normalizeBaseUrl,
   normalizeContextProviders,
+  normalizeProviderMemory,
   normalizeProviderConfig,
 } from '../utils/config';
 import { backendTestConfigUrl } from '../utils/backendEndpoint';
@@ -52,7 +53,18 @@ export const SettingsPage: React.FC = () => {
 
   const primaryProfile: Partial<ModelProfile> = draftConfig.profiles?.primary || draftConfig;
   const secondaryProfile: Partial<ModelProfile> = draftConfig.profiles?.secondary || {};
+  const providerMemory = normalizeProviderMemory(draftConfig.provider_memory);
   const contextProviders = normalizeContextProviders(draftConfig.context_providers);
+  const configuredProviders = Object.entries(providerMemory).reduce((acc, [provider, entry]) => ({
+    ...acc,
+    [provider]: Boolean(entry?.api_key || entry?.base_url),
+  }), {} as Partial<Record<ProviderType, boolean>>);
+  if (primaryProfile.provider) {
+    configuredProviders[primaryProfile.provider] = Boolean(primaryProfile.api_key || primaryProfile.base_url);
+  }
+  if (secondaryProfile.provider) {
+    configuredProviders[secondaryProfile.provider] = Boolean(secondaryProfile.api_key || secondaryProfile.base_url);
+  }
   const resolvedRuntime = {
     context_length: draftConfig.runtime?.context_length ?? DEFAULT_RUNTIME_POLICY.context_length,
     max_output_tokens: draftConfig.runtime?.max_output_tokens ?? DEFAULT_RUNTIME_POLICY.max_output_tokens,
@@ -79,12 +91,51 @@ export const SettingsPage: React.FC = () => {
   };
 
   const updateProfile = (profileName: 'primary' | 'secondary', updates: Partial<ModelProfile>) => {
+    const currentProfile = profileName === 'primary'
+      ? (draftConfig.profiles?.primary || draftConfig)
+      : (draftConfig.profiles?.secondary || {});
+    const currentProvider = currentProfile.provider;
+    const nextProvider = updates.provider || currentProvider;
+    const providerChanged = Boolean(updates.provider && updates.provider !== currentProvider);
+    const nextProviderMemory = {
+      ...providerMemory,
+    };
+
+    if (currentProvider) {
+      nextProviderMemory[currentProvider] = {
+        model: currentProfile.model || '',
+        api_key: currentProfile.api_key || '',
+        base_url: currentProfile.base_url || '',
+      };
+    }
+
+    const rememberedProviderSettings = nextProvider ? nextProviderMemory[nextProvider] : undefined;
+    const normalizedUpdates = providerChanged
+      ? {
+          ...updates,
+          model: rememberedProviderSettings?.model || '',
+          api_key: rememberedProviderSettings?.api_key || '',
+          base_url: rememberedProviderSettings?.base_url || '',
+        }
+      : updates;
+    const nextCurrentProfile = {
+      ...currentProfile,
+      ...normalizedUpdates,
+    };
+    if (nextProvider) {
+      nextProviderMemory[nextProvider] = {
+        model: nextCurrentProfile.model || '',
+        api_key: nextCurrentProfile.api_key || '',
+        base_url: nextCurrentProfile.base_url || '',
+      };
+    }
+
     const nextProfiles = {
       primary: profileName === 'primary'
-        ? { ...(draftConfig.profiles?.primary || draftConfig), ...updates }
+        ? nextCurrentProfile
         : { ...(draftConfig.profiles?.primary || draftConfig) },
       ...(profileName === 'secondary'
-        ? { secondary: { ...(draftConfig.profiles?.secondary || {}), ...updates } }
+        ? { secondary: nextCurrentProfile }
         : draftConfig.profiles?.secondary
           ? { secondary: { ...draftConfig.profiles.secondary } }
           : {}),
@@ -95,6 +146,7 @@ export const SettingsPage: React.FC = () => {
       ...draftConfig,
       ...nextPrimary,
       profiles: nextProfiles as ProviderConfig['profiles'],
+      provider_memory: nextProviderMemory,
     });
   };
 
@@ -197,6 +249,23 @@ export const SettingsPage: React.FC = () => {
             }
           : {}),
       },
+      provider_memory: {
+        ...providerMemory,
+        [primaryProfile.provider]: {
+          model: primaryProfile.model || '',
+          api_key: primaryProfile.api_key || '',
+          base_url: primaryProfile.base_url || '',
+        },
+        ...(secondaryProfile.provider
+          ? {
+              [secondaryProfile.provider]: {
+                model: secondaryProfile.model || '',
+                api_key: secondaryProfile.api_key || '',
+                base_url: secondaryProfile.base_url || '',
+              },
+            }
+          : {}),
+      },
       runtime: {
         context_length: resolvedRuntime.context_length,
         max_output_tokens: resolvedRuntime.max_output_tokens,
@@ -240,12 +309,14 @@ export const SettingsPage: React.FC = () => {
             <ProviderConfigForm
               title="Primary Model"
               config={primaryProfile}
+              configuredProviders={configuredProviders}
               onChange={(nextConfig) => updateProfile('primary', nextConfig)}
             />
             <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
               <ProviderConfigForm
                 title="Secondary Model"
                 config={secondaryProfile}
+                configuredProviders={configuredProviders}
                 onChange={(nextConfig) => updateProfile('secondary', nextConfig)}
               />
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">

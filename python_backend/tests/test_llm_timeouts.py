@@ -8,6 +8,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from llms.deepseek import DeepSeekLLM
+from llms.glm import GLMLLM
+from llms.kimi import KimiLLM
+from llms.minimax import MiniMaxLLM
 from llms.ollama import OllamaLLM
 from llms.openai import OpenAILLM
 from llms.qwen import QwenLLM
@@ -33,10 +36,31 @@ class LLMTimeoutTests(unittest.TestCase):
             "api_key": "test-key",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         })
+        kimi_llm = KimiLLM({
+            "provider": "kimi",
+            "model": "kimi-k2.5",
+            "api_key": "test-key",
+            "base_url": "https://api.moonshot.cn/v1",
+        })
+        glm_llm = GLMLLM({
+            "provider": "glm",
+            "model": "glm-4.6",
+            "api_key": "test-key",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        })
+        minimax_llm = MiniMaxLLM({
+            "provider": "minimax",
+            "model": "MiniMax-M2.5",
+            "api_key": "test-key",
+            "base_url": "https://api.minimaxi.com/v1",
+        })
 
         self.assertEqual(60, openai_llm.client._client.timeout.read)
         self.assertEqual(60, deepseek_llm.client._client.timeout.read)
         self.assertEqual(60, qwen_llm.client._client.timeout.read)
+        self.assertEqual(60, kimi_llm.client._client.timeout.read)
+        self.assertEqual(60, glm_llm.client._client.timeout.read)
+        self.assertEqual(60, minimax_llm.client._client.timeout.read)
 
     def test_llm_clients_allow_runtime_timeout_override(self) -> None:
         openai_llm = OpenAILLM({

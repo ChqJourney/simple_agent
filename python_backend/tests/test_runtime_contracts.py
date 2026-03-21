@@ -69,6 +69,54 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual("deepseek", normalized["profiles"]["primary"]["provider"])
         self.assertEqual("https://api.deepseek.com", normalized["profiles"]["primary"]["base_url"])
 
+    def test_normalize_runtime_config_supports_kimi(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "kimi",
+                "model": "kimi-k2.5",
+                "api_key": "test-key",
+                "base_url": "   ",
+                "enable_reasoning": True,
+            }
+        )
+
+        self.assertEqual("kimi", normalized["provider"])
+        self.assertEqual("kimi", normalized["profiles"]["primary"]["provider"])
+        self.assertEqual("https://api.moonshot.cn/v1", normalized["profiles"]["primary"]["base_url"])
+        self.assertTrue(normalized["profiles"]["primary"]["enable_reasoning"])
+
+    def test_normalize_runtime_config_supports_glm(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "glm",
+                "model": "glm-4.6v",
+                "api_key": "test-key",
+                "base_url": "   ",
+                "enable_reasoning": True,
+            }
+        )
+
+        self.assertEqual("glm", normalized["provider"])
+        self.assertEqual("glm", normalized["profiles"]["primary"]["provider"])
+        self.assertEqual("https://open.bigmodel.cn/api/paas/v4", normalized["profiles"]["primary"]["base_url"])
+        self.assertEqual("text", normalized["profiles"]["primary"]["input_type"])
+
+    def test_normalize_runtime_config_supports_minimax(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "minimax",
+                "model": "MiniMax-M2.7",
+                "api_key": "test-key",
+                "base_url": "   ",
+                "enable_reasoning": True,
+            }
+        )
+
+        self.assertEqual("minimax", normalized["provider"])
+        self.assertEqual("minimax", normalized["profiles"]["primary"]["provider"])
+        self.assertEqual("https://api.minimaxi.com/v1", normalized["profiles"]["primary"]["base_url"])
+        self.assertFalse(normalized["profiles"]["primary"]["enable_reasoning"])
+
     def test_normalize_runtime_config_preserves_custom_appearance_font_size(self) -> None:
         normalized = normalize_runtime_config(
             {

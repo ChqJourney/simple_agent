@@ -3,6 +3,7 @@ import {
   ContextProviderConfig,
   ModelProfile,
   ProviderConfig,
+  ProviderMemoryEntry,
   ProviderType,
   RuntimePolicy,
 } from '../types';
@@ -11,6 +12,9 @@ import { getSupportedInputTypes, supportsReasoning } from './modelCapabilities';
 export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
   openai: 'https://api.openai.com/v1',
   deepseek: 'https://api.deepseek.com',
+  kimi: 'https://api.moonshot.cn/v1',
+  glm: 'https://open.bigmodel.cn/api/paas/v4',
+  minimax: 'https://api.minimaxi.com/v1',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   ollama: 'http://127.0.0.1:11434',
 };
@@ -66,6 +70,28 @@ export function normalizeContextProviders(contextProviders?: ContextProviderConf
       },
     },
   };
+}
+
+function normalizeProviderMemoryEntry(entry?: ProviderMemoryEntry): ProviderMemoryEntry {
+  return {
+    model: entry?.model?.trim() || '',
+    api_key: entry?.api_key?.trim() || '',
+    base_url: entry?.base_url?.trim() || '',
+  };
+}
+
+export function normalizeProviderMemory(
+  providerMemory?: Partial<Record<ProviderType, ProviderMemoryEntry>>
+): Partial<Record<ProviderType, ProviderMemoryEntry>> {
+  if (!providerMemory) {
+    return {};
+  }
+
+  const normalized = {} as Partial<Record<ProviderType, ProviderMemoryEntry>>;
+  (Object.keys(providerMemory) as ProviderType[]).forEach((provider) => {
+    normalized[provider] = normalizeProviderMemoryEntry(providerMemory[provider]);
+  });
+  return normalized;
 }
 
 function normalizeProfileConfig(profile: ModelProfile, profileName: string): ModelProfile {
@@ -151,6 +177,7 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
       primary: primaryProfile,
       ...(secondaryProfile ? { secondary: secondaryProfile } : {}),
     },
+    provider_memory: normalizeProviderMemory(config.provider_memory),
     runtime: normalizeRuntimePolicy(config.runtime),
     appearance: normalizeAppearanceConfig(config.appearance),
     context_providers: normalizeContextProviders(config.context_providers),

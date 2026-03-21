@@ -70,6 +70,21 @@ describe("normalizeProviderConfig", () => {
     expect(normalized.profiles?.primary.base_url).toBe("https://api.deepseek.com");
   });
 
+  it("normalizes kimi config with the provider default base url", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "kimi",
+      model: "kimi-k2.5",
+      api_key: "kimi-key",
+      base_url: " ",
+      enable_reasoning: true,
+    });
+
+    expect(normalized.provider).toBe("kimi");
+    expect(normalized.base_url).toBe("https://api.moonshot.cn/v1");
+    expect(normalized.profiles?.primary.provider).toBe("kimi");
+    expect(normalized.profiles?.primary.base_url).toBe("https://api.moonshot.cn/v1");
+  });
+
   it("treats hosted providers without an API key as not runnable", () => {
     expect(hasRunnableConversationProfile({
       provider: "openai",

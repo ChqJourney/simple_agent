@@ -5,12 +5,16 @@ import { getImageSupportStatus, ImageSupportStatus, supportsReasoning } from '..
 interface ProviderConfigProps {
   config: Partial<ProviderConfig>;
   onChange: (config: Partial<ProviderConfig>) => void;
+  configuredProviders?: Partial<Record<ProviderType, boolean>>;
   title?: string;
 }
 
 const PROVIDERS: { value: ProviderType; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'kimi', label: 'Kimi (Moonshot)' },
+  { value: 'glm', label: 'GLM (Zhipu)' },
+  { value: 'minimax', label: 'MiniMax' },
   { value: 'qwen', label: 'Qwen (Tongyi Qianwen)' },
   { value: 'ollama', label: 'Ollama (Local)' },
 ];
@@ -18,6 +22,9 @@ const PROVIDERS: { value: ProviderType; label: string }[] = [
 const MODELS: Record<ProviderType, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
   deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+  kimi: ['kimi-k2.5'],
+  glm: ['glm-5', 'glm-4.7', 'glm-4.6', 'glm-4.6v'],
+  minimax: ['MiniMax-M2.5', 'MiniMax-M2.7'],
   qwen: ['qwen3-max-2026-01-23', 'qwen3.5-plus', 'qwen3-coder-next'],
   ollama: ['llama3.1', 'llama3.2', 'qwen3:8b', 'mistral', 'codellama'],
 };
@@ -44,8 +51,14 @@ function getImageSupportDescription(status: ImageSupportStatus): string {
   }
 }
 
-export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onChange, title }) => {
+export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
+  config,
+  onChange,
+  configuredProviders = {},
+  title,
+}) => {
   const provider = config.provider;
+  const hasSavedProviderConfig = provider ? Boolean(configuredProviders[provider]) : false;
 
   const handleChange = (key: keyof ProviderConfig, value: string | boolean) => {
     onChange({ ...config, [key]: value });
@@ -94,10 +107,15 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({ config, onCh
           <option value="">Select a provider</option>
           {PROVIDERS.map((p) => (
             <option key={p.value} value={p.value}>
-              {p.label}
+              {configuredProviders[p.value] ? `${p.label} · Saved` : p.label}
             </option>
           ))}
         </select>
+        {provider && hasSavedProviderConfig && (
+          <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+            Saved API configuration found for this provider.
+          </p>
+        )}
       </div>
 
       {provider && (

@@ -137,13 +137,26 @@ describe("SettingsPage", () => {
     expect((screen.getByLabelText("Max Retries") as HTMLInputElement).value).toBe("3");
   });
 
-  it("offers DeepSeek in the provider selector", () => {
+  it("offers hosted providers in the provider selector", () => {
     render(<SettingsPage />);
 
     const providerSelects = screen.getAllByRole("combobox") as HTMLSelectElement[];
     const providerOptions = Array.from(providerSelects[0].options).map((option) => option.textContent);
 
     expect(providerOptions).toContain("DeepSeek");
+    expect(providerOptions).toContain("Kimi (Moonshot)");
+    expect(providerOptions).toContain("GLM (Zhipu)");
+    expect(providerOptions).toContain("MiniMax");
+  });
+
+  it("marks configured providers in the selector and shows a saved hint", () => {
+    render(<SettingsPage />);
+
+    const providerSelects = screen.getAllByRole("combobox") as HTMLSelectElement[];
+    const providerOptions = Array.from(providerSelects[0].options).map((option) => option.textContent);
+
+    expect(providerOptions).toContain("OpenAI · Saved");
+    expect(screen.getAllByText("Saved API configuration found for this provider.").length).toBeGreaterThan(0);
   });
 
   it("shows image support status in the primary model list", () => {
@@ -257,5 +270,36 @@ describe("SettingsPage", () => {
     );
     expect(sendConfigMock).toHaveBeenCalled();
     expect(navigateMock).toHaveBeenCalledWith(-1);
+  });
+
+  it("remembers api key and base url per provider when switching providers", () => {
+    render(<SettingsPage />);
+
+    const providerSelect = screen.getByLabelText("Primary Model Provider");
+    const modelSelect = screen.getByLabelText("Primary Model Model");
+
+    fireEvent.change(providerSelect, { target: { value: "kimi" } });
+    fireEvent.change(modelSelect, { target: { value: "kimi-k2.5" } });
+    fireEvent.change(screen.getAllByPlaceholderText("Enter your API key")[0], {
+      target: { value: "kimi-key" },
+    });
+    fireEvent.change(screen.getAllByPlaceholderText("Custom API endpoint")[0], {
+      target: { value: "https://api.moonshot.cn/v1" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Primary Model Provider"), {
+      target: { value: "deepseek" },
+    });
+
+    expect((screen.getAllByPlaceholderText("Enter your API key")[0] as HTMLInputElement).value).toBe("");
+    expect((screen.getAllByPlaceholderText("Custom API endpoint")[0] as HTMLInputElement).value).toBe("");
+
+    fireEvent.change(screen.getByLabelText("Primary Model Provider"), {
+      target: { value: "kimi" },
+    });
+
+    expect((screen.getByLabelText("Primary Model Model") as HTMLSelectElement).value).toBe("kimi-k2.5");
+    expect((screen.getAllByPlaceholderText("Enter your API key")[0] as HTMLInputElement).value).toBe("kimi-key");
+    expect((screen.getAllByPlaceholderText("Custom API endpoint")[0] as HTMLInputElement).value).toBe("https://api.moonshot.cn/v1");
   });
 });

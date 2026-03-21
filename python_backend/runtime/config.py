@@ -1,12 +1,18 @@
 from typing import Any, Dict, Optional
 
 from llms.deepseek import DEEPSEEK_DEFAULT_BASE_URL
+from llms.glm import GLM_DEFAULT_BASE_URL
+from llms.kimi import KIMI_DEFAULT_BASE_URL
+from llms.minimax import MINIMAX_DEFAULT_BASE_URL
 from llms.capabilities import coerce_reasoning_enabled
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, normalize_ollama_base_url
 
 DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
     "deepseek": DEEPSEEK_DEFAULT_BASE_URL,
+    "kimi": KIMI_DEFAULT_BASE_URL,
+    "glm": GLM_DEFAULT_BASE_URL,
+    "minimax": MINIMAX_DEFAULT_BASE_URL,
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "ollama": OLLAMA_DEFAULT_BASE_URL,
 }

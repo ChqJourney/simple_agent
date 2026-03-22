@@ -1,5 +1,5 @@
 import React from 'react';
-import { Workspace } from '../../stores/workspaceStore';
+import type { Workspace } from '../../types';
 import { WorkspaceItem } from './WorkspaceItem';
 
 interface WorkspaceListProps {

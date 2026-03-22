@@ -1,13 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-
-export interface Workspace {
-  id: string;
-  name: string;
-  path: string;
-  lastOpened: string;
-  createdAt: string;
-}
+import { v4 as uuidv4 } from 'uuid';
+import type { Workspace } from '../types';
 
 export type ChangedFileKind = 'created' | 'updated';
 
@@ -24,7 +18,7 @@ interface WorkspaceState {
   clearChangedFiles: () => void;
 }
 
-const generateId = () => Math.random().toString(36).substring(2, 15);
+const generateId = () => uuidv4();
 const getWorkspaceName = (path: string) => path.split(/[/\\]/).filter(Boolean).pop() || path;
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -120,6 +114,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }),
     {
       name: 'workspace-storage',
+      partialize: (state) => ({
+        workspaces: state.workspaces,
+        currentWorkspace: state.currentWorkspace,
+      }),
     }
   )
 );

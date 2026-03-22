@@ -24,7 +24,7 @@ const scanSessionsMock = vi.mocked(scanSessions);
 
 describe("useSession", () => {
   beforeEach(() => {
-    localStorage.clear();
+    globalThis.localStorage?.clear?.();
     deleteSessionHistoryMock.mockReset();
     deleteSessionHistoryMock.mockResolvedValue(undefined);
     loadSessionHistoryMock.mockReset();
@@ -132,5 +132,34 @@ describe("useSession", () => {
     expect(useChatStore.getState().sessions["session-b"]).toBeDefined();
     expect(useRunStore.getState().sessions["session-b"]).toBeDefined();
     expect(useTaskStore.getState().getTasksBySession("session-b")).toHaveLength(1);
+  });
+
+  it("releases the previous chat session when switching sessions", async () => {
+    loadSessionHistoryMock.mockResolvedValueOnce([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "loaded from disk",
+        status: "completed",
+      },
+    ]);
+
+    const { result } = renderHook(() => useSession());
+
+    await act(async () => {
+      await result.current.switchSession("session-b");
+    });
+
+    expect(loadSessionHistoryMock).toHaveBeenCalledWith("C:/repo", "session-b");
+    expect(useSessionStore.getState().currentSessionId).toBe("session-b");
+    expect(useChatStore.getState().sessions["session-a"]).toBeUndefined();
+    expect(useChatStore.getState().sessions["session-b"]?.messages).toEqual([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "loaded from disk",
+        status: "completed",
+      },
+    ]);
   });
 });

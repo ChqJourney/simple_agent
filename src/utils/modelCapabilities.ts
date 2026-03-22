@@ -1,6 +1,4 @@
-import { ProviderType } from '../types';
-
-export type InputType = 'text' | 'image';
+import type { InputType, ProviderType } from '../types';
 export type ImageSupportStatus = 'supported' | 'unsupported' | 'unknown';
 
 const OPENAI_REASONING_PREFIXES = ['o1', 'o3', 'o4', 'gpt-5'];

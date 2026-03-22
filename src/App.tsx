@@ -4,7 +4,6 @@ import { WelcomePage, WorkspacePage, SettingsPage } from './pages';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { LoadingOverlay } from './components/common';
 import { useUIStore } from './stores';
-import './index.css';
 
 function RoutedContent() {
   const location = useLocation();

@@ -36,7 +36,6 @@ interface WebSocketContextValue {
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 const TASK_STATUS_VALUES: Task['status'][] = ['pending', 'in_progress', 'completed', 'failed'];
-const LEGACY_NO_AUTH_TOKEN = '__legacy_no_auth__';
 const UNSUPPORTED_EXECUTION_MODE_ERROR = 'Unknown message type: set_execution_mode';
 const AUTH_REQUIRED_ERROR = 'Connection not authenticated. Send config with auth_token first.';
 
@@ -116,6 +115,7 @@ function applyFileWriteToolResult(output: unknown) {
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const lastSentConfigKeyRef = useRef<string | null>(null);
+  const lastConfigErrorRef = useRef<string | null>(null);
   const authTokenRef = useRef<string | null>(null);
   const authTokenPromiseRef = useRef<Promise<string | null> | null>(null);
   const executionModeSupportedRef = useRef(true);
@@ -127,6 +127,28 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const config = useConfigStore((state) => state.config);
   const isConnected = connectionStatus === 'connected';
   const isTestMode = import.meta.env.MODE === 'test';
+
+  const reportConfigError = useCallback((error: string, details?: string) => {
+    const dedupeKey = details ? `${error}\n${details}` : error;
+    if (lastConfigErrorRef.current === dedupeKey) {
+      return;
+    }
+
+    lastConfigErrorRef.current = dedupeKey;
+
+    const currentSessionId = useSessionStore.getState().currentSessionId;
+    if (currentSessionId) {
+      useChatStore.getState().setError(currentSessionId, error, details);
+      return;
+    }
+
+    if (details) {
+      console.error(error, details);
+      return;
+    }
+
+    console.error(error);
+  }, []);
 
   useEffect(() => {
     const handleMessage = (data: ServerWebSocketMessage) => {
@@ -239,6 +261,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         case 'config_updated':
           backendAuthenticatedRef.current = true;
           workspaceBoundRef.current = false;
+          lastConfigErrorRef.current = null;
           for (const [sessionId, executionMode] of Object.entries(queuedExecutionModesRef.current)) {
             const sent = wsService.send({
               type: 'set_execution_mode',
@@ -347,19 +370,35 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       try {
         const response = await fetch(backendAuthTokenUrl);
         if (response.status === 404) {
-          authTokenRef.current = LEGACY_NO_AUTH_TOKEN;
-          return LEGACY_NO_AUTH_TOKEN;
+          reportConfigError(
+            'Backend auth handshake failed.',
+            `GET ${backendAuthTokenUrl} returned 404. Check the backend base URL and ensure the server exposes /auth-token.`
+          );
+          return null;
         }
         if (!response.ok) {
+          reportConfigError(
+            'Backend auth handshake failed.',
+            `GET ${backendAuthTokenUrl} returned HTTP ${response.status}.`
+          );
           return null;
         }
         const payload = await response.json().catch(() => ({}));
         if (typeof payload.auth_token !== 'string' || !payload.auth_token) {
+          reportConfigError(
+            'Backend auth handshake failed.',
+            `GET ${backendAuthTokenUrl} returned an invalid auth token payload.`
+          );
           return null;
         }
         authTokenRef.current = payload.auth_token;
+        lastConfigErrorRef.current = null;
         return payload.auth_token;
       } catch {
+        reportConfigError(
+          'Backend auth handshake failed.',
+          `Unable to reach ${backendAuthTokenUrl}.`
+        );
         return null;
       } finally {
         authTokenPromiseRef.current = null;
@@ -367,7 +406,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     })();
 
     return authTokenPromiseRef.current;
-  }, [isTestMode]);
+  }, [isTestMode, reportConfigError]);
 
   const sendConfig = useCallback((configOverride?: ProviderConfig) => {
     const sourceConfig = configOverride || config;
@@ -385,10 +424,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       const payload: ClientWebSocketMessage = {
         type: 'config',
         ...runtimeConfig,
+        auth_token: authToken,
       };
-      if (authToken !== LEGACY_NO_AUTH_TOKEN) {
-        payload.auth_token = authToken;
-      }
       if (send(payload)) {
         backendAuthenticatedRef.current = false;
         lastSentConfigKeyRef.current = configKey;
@@ -421,10 +458,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         const payload: ClientWebSocketMessage = {
           type: 'config',
           ...runtimeConfig,
+          auth_token: authToken,
         };
-        if (authToken !== LEGACY_NO_AUTH_TOKEN) {
-          payload.auth_token = authToken;
-        }
         if (send(payload)) {
           backendAuthenticatedRef.current = false;
           lastSentConfigKeyRef.current = nextConfigKey;

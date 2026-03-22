@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderConfig } from "../types";
 import { useRunStore } from "../stores/runStore";
 import { useConfigStore } from "../stores/configStore";
@@ -116,8 +116,13 @@ const testConfig: ProviderConfig = {
 };
 
 describe("WebSocketProvider", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
-    localStorage.clear();
+    globalThis.localStorage?.clear?.();
     websocketMockState.statusListeners.clear();
     websocketMockState.connectionStatus = "connecting";
     websocketMockState.sendSucceeded = false;
@@ -145,6 +150,7 @@ describe("WebSocketProvider", () => {
       sessions: [],
       currentSessionId: null,
     }));
+    globalThis.fetch = vi.fn();
   });
 
   it("exposes websocket connection status transitions", async () => {
@@ -466,6 +472,35 @@ describe("WebSocketProvider", () => {
       session_id: "session-a",
       execution_mode: "free",
     });
+  });
+
+  it("does not silently downgrade auth when /auth-token returns 404", async () => {
+    vi.stubEnv("MODE", "development");
+    websocketMockState.sendSucceeded = true;
+    vi.mocked(globalThis.fetch).mockResolvedValue({
+      status: 404,
+      ok: false,
+      json: vi.fn(),
+    } as unknown as Response);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "sync config" }));
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalled();
+    });
+
+    expect(websocketMockState.sendMock).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Backend auth handshake failed.",
+      expect.stringContaining("/auth-token")
+    );
   });
 
   it("stops sending execution mode updates when backend reports unsupported message type", async () => {

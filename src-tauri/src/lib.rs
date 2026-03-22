@@ -8,11 +8,6 @@ const EMBEDDED_PYTHON_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_PYTHON";
 const EMBEDDED_NODE_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_NODE";
 
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
 fn prepare_workspace_path(
     app: tauri::AppHandle,
     selected_path: String,
@@ -271,7 +266,6 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(PythonSidecar(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
-            greet,
             prepare_workspace_path,
             authorize_workspace_path,
             scan_workspace_sessions,

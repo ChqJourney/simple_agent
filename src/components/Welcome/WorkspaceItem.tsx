@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Workspace } from '../../stores/workspaceStore';
+import type { Workspace } from '../../types';
 
 interface WorkspaceItemProps {
   workspace: Workspace;

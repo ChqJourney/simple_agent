@@ -49,14 +49,19 @@ export function useSession(): UseSessionReturn {
   }, [currentWorkspace?.path, addSession]);
 
   const switchSession = useCallback(async (sessionId: string) => {
+    const previousSessionId = useSessionStore.getState().currentSessionId;
     setCurrentSession(sessionId);
+
+    if (previousSessionId && previousSessionId !== sessionId) {
+      clearSession(previousSessionId);
+    }
 
     const session = sessions.find(s => s.session_id === sessionId);
     if (session) {
       const messages = await loadSessionHistory(session.workspace_path, sessionId);
       loadChatSession(sessionId, messages);
     }
-  }, [setCurrentSession, sessions, loadChatSession]);
+  }, [clearSession, setCurrentSession, sessions, loadChatSession]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     const workspacePath = currentWorkspace?.path;

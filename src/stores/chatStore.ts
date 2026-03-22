@@ -433,7 +433,29 @@ export const useChatStore = create<ChatState>((set) => ({
     const session = state.sessions[sessionId];
     if (!session) return state;
 
-    const newMessages = [...session.messages];
+    const newMessages: Message[] = session.messages.map((message): Message => {
+      if (
+        message.role === 'assistant' &&
+        message.status === 'streaming' &&
+        message.tool_calls &&
+        message.tool_calls.length > 0
+      ) {
+        return {
+          ...message,
+          status: 'completed',
+        };
+      }
+      return message;
+    });
+
+    if (session.currentReasoningContent) {
+      newMessages.push({
+        id: crypto.randomUUID(),
+        role: 'reasoning',
+        content: session.currentReasoningContent,
+        status: 'completed',
+      });
+    }
 
     if (session.currentStreamingContent) {
       const reversedIndex = [...newMessages].reverse().findIndex(

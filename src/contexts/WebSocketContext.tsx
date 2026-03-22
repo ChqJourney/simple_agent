@@ -44,6 +44,27 @@ interface QueuedWorkspaceMessage {
   message: ClientMessage;
 }
 
+function hasTransientChatState(session: {
+  isStreaming: boolean;
+  currentStreamingContent: string;
+  currentReasoningContent: string;
+  assistantStatus: string;
+  pendingToolConfirm?: unknown;
+  pendingQuestion?: unknown;
+}): boolean {
+  return (
+    session.isStreaming
+    || Boolean(session.currentStreamingContent)
+    || Boolean(session.currentReasoningContent)
+    || session.assistantStatus === 'waiting'
+    || session.assistantStatus === 'thinking'
+    || session.assistantStatus === 'streaming'
+    || session.assistantStatus === 'tool_calling'
+    || Boolean(session.pendingToolConfirm)
+    || Boolean(session.pendingQuestion)
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -148,6 +169,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }
 
     console.error(error);
+  }, []);
+
+  const finalizeInterruptedChatSessions = useCallback(() => {
+    const chatStore = useChatStore.getState();
+    for (const [sessionId, session] of Object.entries(chatStore.sessions)) {
+      if (hasTransientChatState(session)) {
+        chatStore.setInterrupted(sessionId);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -341,15 +371,17 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         lastSentConfigKeyRef.current = null;
         backendAuthenticatedRef.current = false;
         workspaceBoundRef.current = false;
+        finalizeInterruptedChatSessions();
         setConnectionStatus('disconnected');
       }
     );
 
     return () => {
+      finalizeInterruptedChatSessions();
       wsService.offMessage(handleMessage);
       cleanup();
     };
-  }, []);
+  }, [finalizeInterruptedChatSessions]);
 
   const send = useCallback((message: ClientWebSocketMessage) => {
     return wsService.send(message);

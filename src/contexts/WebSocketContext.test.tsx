@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderConfig } from "../types";
+import { useChatStore } from "../stores/chatStore";
 import { useRunStore } from "../stores/runStore";
 import { useConfigStore } from "../stores/configStore";
 import { useSessionStore } from "../stores/sessionStore";
@@ -150,6 +151,7 @@ describe("WebSocketProvider", () => {
       sessions: [],
       currentSessionId: null,
     }));
+    useChatStore.setState({ sessions: {} });
     globalThis.fetch = vi.fn();
   });
 
@@ -195,6 +197,49 @@ describe("WebSocketProvider", () => {
     await waitFor(() => {
       expect(websocketMockState.sendMock).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("finalizes partial streaming state when the provider unmounts", () => {
+    const { unmount } = render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [],
+          latestUsage: undefined,
+          currentStreamingContent: "partial answer",
+          currentReasoningContent: "partial reasoning",
+          isStreaming: true,
+          assistantStatus: "streaming",
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
+        },
+      },
+    });
+
+    unmount();
+
+    expect(useChatStore.getState().sessions["session-a"]?.messages).toEqual([
+      {
+        id: expect.any(String),
+        role: "reasoning",
+        content: "partial reasoning",
+        status: "completed",
+      },
+      {
+        id: expect.any(String),
+        role: "assistant",
+        content: "partial answer",
+        status: "completed",
+      },
+    ]);
+    expect(useChatStore.getState().sessions["session-a"]?.isStreaming).toBe(false);
+    expect(useChatStore.getState().sessions["session-a"]?.assistantStatus).toBe("idle");
   });
 
   it("forwards run_event messages into chat state", async () => {
@@ -412,6 +457,11 @@ describe("WebSocketProvider", () => {
         <Probe />
       </WebSocketProvider>
     );
+
+    websocketMockState.messageHandler?.({
+      type: "started",
+      session_id: "session-a",
+    });
 
     websocketMockState.messageHandler?.({
       type: "completed",

@@ -53,6 +53,23 @@ class SlowStreamingLLM(BaseLLM):
         return {}
 
 
+class HangingStreamingLLM(BaseLLM):
+    def __init__(self):
+        super().__init__({'model': 'hanging-test-model'})
+        self.stream_started = asyncio.Event()
+
+    async def stream(self, messages, tools=None):
+        self.stream_started.set()
+        await asyncio.Future()
+        if False:
+            yield {
+                'choices': [{'delta': {'content': 'never'}}]
+            }
+
+    async def complete(self, messages, tools=None):
+        return {}
+
+
 class UsageReportingLLM(BaseLLM):
     def __init__(self):
         super().__init__({
@@ -101,7 +118,7 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
 
         temp_dir.cleanup()
 
-    async def test_interrupt_during_stream_emits_interrupted_without_persisting_empty_assistant(self) -> None:
+    async def test_interrupt_during_stream_persists_partial_assistant_for_follow_up_context(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         sent_messages = []
         user_manager = UserManager()
@@ -125,7 +142,35 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         event_types = [message.get('type') for message in sent_messages]
         self.assertIn('interrupted', event_types)
         self.assertNotIn('completed', event_types)
-        self.assertEqual('user', session.messages[-1].role)
+        self.assertEqual(['user', 'assistant'], [message.role for message in session.messages])
+        self.assertEqual('partial', session.messages[-1].content)
+
+        temp_dir.cleanup()
+
+    async def test_cancelled_stream_does_not_persist_empty_assistant_message(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+        llm = HangingStreamingLLM()
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-1')
+        await user_manager.bind_session_to_connection('session-1', 'conn-1')
+
+        agent = Agent(llm, ToolRegistry(), user_manager)
+        task = asyncio.create_task(agent.run('hello', session))
+
+        await asyncio.wait_for(llm.stream_started.wait(), timeout=1)
+        task.cancel()
+        await asyncio.wait_for(task, timeout=1)
+
+        event_types = [message.get('type') for message in sent_messages]
+        self.assertIn('interrupted', event_types)
+        self.assertNotIn('completed', event_types)
+        self.assertEqual(['user'], [message.role for message in session.messages])
 
         temp_dir.cleanup()
 

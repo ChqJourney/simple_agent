@@ -20,6 +20,12 @@ class RunInterrupted(Exception):
     pass
 
 
+class RunInterruptedWithPartial(RunInterrupted):
+    def __init__(self, partial_message: Optional[Message] = None):
+        super().__init__()
+        self.partial_message = partial_message
+
+
 class Agent:
     def __init__(
         self,
@@ -146,7 +152,10 @@ class Agent:
                 "error": f"Tool call rounds exceeded limit ({self.max_tool_rounds})"
             })
 
-        except RunInterrupted:
+        except RunInterrupted as interrupted:
+            partial_message = getattr(interrupted, "partial_message", None)
+            if partial_message is not None:
+                session.add_message(partial_message)
             await self._emit_run_event(session, run_id, "run_interrupted")
             await self.user_manager.send_to_frontend({
                 "type": "interrupted",
@@ -302,64 +311,76 @@ class Agent:
         reasoning_chunks: List[str] = []
         tool_calls_data: Dict[int, Dict[str, Any]] = {}
 
-        async for chunk in self.llm.stream(messages, tools):
-            if self._interrupt_event.is_set():
-                raise RunInterrupted()
+        def interrupted_with_partial() -> RunInterrupted:
+            partial_message = self._build_interrupted_assistant_message(
+                content_chunks,
+                reasoning_chunks,
+            )
+            if partial_message is not None:
+                return RunInterruptedWithPartial(partial_message)
+            return RunInterrupted()
 
-            choices = self._get_chunk_choices(chunk)
-            if not choices:
-                continue
+        try:
+            async for chunk in self.llm.stream(messages, tools):
+                if self._interrupt_event.is_set():
+                    raise interrupted_with_partial()
 
-            choice = choices[0]
-            delta = self._get_choice_field(choice, "delta")
-            if not delta:
-                continue
+                choices = self._get_chunk_choices(chunk)
+                if not choices:
+                    continue
 
-            reasoning_content = self._get_delta_field(delta, "reasoning_content")
-            if reasoning_content:
-                reasoning_chunks.append(reasoning_content)
-                await self.user_manager.send_to_frontend({
-                    "type": "reasoning_token",
-                    "session_id": session.session_id,
-                    "content": reasoning_content
-                })
+                choice = choices[0]
+                delta = self._get_choice_field(choice, "delta")
+                if not delta:
+                    continue
 
-            content = self._get_delta_field(delta, "content")
-            if content:
-                content_chunks.append(content)
-                await self.user_manager.send_to_frontend({
-                    "type": "token",
-                    "session_id": session.session_id,
-                    "content": content
-                })
+                reasoning_content = self._get_delta_field(delta, "reasoning_content")
+                if reasoning_content:
+                    reasoning_chunks.append(reasoning_content)
+                    await self.user_manager.send_to_frontend({
+                        "type": "reasoning_token",
+                        "session_id": session.session_id,
+                        "content": reasoning_content
+                    })
 
-            delta_tool_calls = self._get_delta_field(delta, "tool_calls")
-            if delta_tool_calls:
-                for tool_call_delta in delta_tool_calls:
-                    idx = self._get_tool_call_delta_field(tool_call_delta, "index")
-                    if idx is None:
-                        idx = 0
+                content = self._get_delta_field(delta, "content")
+                if content:
+                    content_chunks.append(content)
+                    await self.user_manager.send_to_frontend({
+                        "type": "token",
+                        "session_id": session.session_id,
+                        "content": content
+                    })
 
-                    if idx not in tool_calls_data:
-                        tool_calls_data[idx] = {
-                            "id": "",
-                            "type": "function",
-                            "function": {"name": "", "arguments": ""}
-                        }
+                delta_tool_calls = self._get_delta_field(delta, "tool_calls")
+                if delta_tool_calls:
+                    for tool_call_delta in delta_tool_calls:
+                        idx = self._get_tool_call_delta_field(tool_call_delta, "index")
+                        if idx is None:
+                            idx = 0
 
-                    tool_call_id = self._get_tool_call_delta_field(tool_call_delta, "id")
-                    if tool_call_id:
-                        tool_calls_data[idx]["id"] = tool_call_id
+                        if idx not in tool_calls_data:
+                            tool_calls_data[idx] = {
+                                "id": "",
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""}
+                            }
 
-                    function_delta = self._get_tool_call_delta_field(tool_call_delta, "function")
-                    if function_delta:
-                        function_name = self._get_delta_field(function_delta, "name")
-                        if function_name:
-                            tool_calls_data[idx]["function"]["name"] = function_name
+                        tool_call_id = self._get_tool_call_delta_field(tool_call_delta, "id")
+                        if tool_call_id:
+                            tool_calls_data[idx]["id"] = tool_call_id
 
-                        function_args = self._get_delta_field(function_delta, "arguments")
-                        if function_args:
-                            tool_calls_data[idx]["function"]["arguments"] += function_args
+                        function_delta = self._get_tool_call_delta_field(tool_call_delta, "function")
+                        if function_delta:
+                            function_name = self._get_delta_field(function_delta, "name")
+                            if function_name:
+                                tool_calls_data[idx]["function"]["name"] = function_name
+
+                            function_args = self._get_delta_field(function_delta, "arguments")
+                            if function_args:
+                                tool_calls_data[idx]["function"]["arguments"] += function_args
+        except asyncio.CancelledError as exc:
+            raise interrupted_with_partial() from exc
 
         if reasoning_chunks:
             await self.user_manager.send_to_frontend({
@@ -412,6 +433,22 @@ class Agent:
             content=content,
             tool_calls=tool_calls,
             reasoning_content=reasoning_content
+        )
+
+    @staticmethod
+    def _build_interrupted_assistant_message(
+        content_chunks: List[str],
+        reasoning_chunks: List[str],
+    ) -> Optional[Message]:
+        content = "".join(content_chunks)
+        if not content.strip():
+            return None
+
+        reasoning_content = "".join(reasoning_chunks) if reasoning_chunks else None
+        return Message(
+            role="assistant",
+            content=content,
+            reasoning_content=reasoning_content,
         )
 
     async def _execute_tools(
@@ -937,5 +974,3 @@ class Agent:
         for hit in hits:
             parts.append(f"- {hit.path}: {hit.snippet}")
         return "\n".join(parts)
-
-

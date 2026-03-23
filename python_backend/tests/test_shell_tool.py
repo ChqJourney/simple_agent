@@ -130,7 +130,10 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_falls_back_to_cmd_shell_on_windows_when_powershell_is_unavailable(self) -> None:
-        with patch("tools.shell_execute.os.name", "nt"), patch("tools.shell_execute.shutil.which", return_value=None):
+        with (
+            patch("tools.shell_execute.os.name", "nt"),
+            patch("tools.shell_execute.ShellExecuteTool._find_windows_shell_executable", return_value=None),
+        ):
             runner = ShellExecuteTool._resolve_shell_runner("dir")
 
         self.assertEqual("shell", runner["mode"])
@@ -148,7 +151,7 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
     async def test_failure_includes_windows_command_hint(self) -> None:
         with (
             patch("tools.shell_execute.os.name", "nt"),
-            patch("tools.shell_execute.shutil.which", return_value=None),
+            patch("tools.shell_execute.ShellExecuteTool._find_windows_shell_executable", return_value=None),
             patch(
                 "tools.shell_execute.asyncio.create_subprocess_shell",
                 AsyncMock(return_value=FakeProcess(stdout=b"", stderr=b"'ls' is not recognized", returncode=1)),

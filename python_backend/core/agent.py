@@ -950,6 +950,10 @@ class Agent:
             f"Workspace path: {session.workspace_path}",
             f"Operating system: {operating_system}",
             f"`shell_execute` runner: {runner_name}",
+            "`python_execute` already uses the configured Python runtime automatically. "
+            "Do not search for or hardcode an absolute Python path when using it.",
+            "If you need to run Python through `shell_execute`, prefer the plain `python` command first. "
+            "The backend injects embedded runtime paths into PATH when available.",
         ]
 
         if operating_system.lower().startswith("windows"):

@@ -9,6 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from runtime.embedded_runtime import (
+    build_runtime_environment,
     get_node_executable,
     get_npm_command,
     get_npx_command,
@@ -41,6 +42,28 @@ class EmbeddedRuntimeTests(unittest.TestCase):
             self.assertEqual(Path("node"), get_node_executable())
             self.assertEqual(["npm"], get_npm_command())
             self.assertEqual(["npx"], get_npx_command())
+
+    def test_build_runtime_environment_prepends_embedded_runtime_directories_to_path(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "TAURI_AGENT_EMBEDDED_PYTHON": r"C:\runtime\python",
+                "TAURI_AGENT_EMBEDDED_NODE": r"C:\runtime\node",
+            },
+            clear=False,
+        ):
+            env = build_runtime_environment({"PATH": r"C:\Windows\System32"})
+
+        self.assertEqual(
+            os.pathsep.join(
+                [
+                    r"C:\runtime\python",
+                    r"C:\runtime\node",
+                    r"C:\Windows\System32",
+                ]
+            ),
+            env["PATH"],
+        )
 
     def test_raises_for_missing_embedded_python_executable(self) -> None:
         with patch.dict("os.environ", {"TAURI_AGENT_EMBEDDED_PYTHON": r"C:\missing\python"}, clear=False):

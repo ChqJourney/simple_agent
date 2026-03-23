@@ -5,6 +5,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Optional
 
+from runtime.embedded_runtime import build_runtime_environment
+
 from .base import BaseTool, ToolResult
 from .execution_common import MAX_OUTPUT_BYTES, format_process_output, normalize_timeout
 from .policies import ToolExecutionPolicy
@@ -206,11 +208,13 @@ class ShellExecuteTool(BaseTool):
         normalized_timeout = normalize_timeout(timeout_seconds, self.policy.timeout_seconds)
         cwd = str(Path(workspace_path).resolve()) if workspace_path else None
         shell_runner = self._resolve_shell_runner(command)
+        env = build_runtime_environment()
 
         if shell_runner["mode"] == "exec":
             process = await asyncio.create_subprocess_exec(
                 *shell_runner["argv"],
                 cwd=cwd,
+                env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -218,6 +222,7 @@ class ShellExecuteTool(BaseTool):
             process = await asyncio.create_subprocess_shell(
                 shell_runner["command"],
                 cwd=cwd,
+                env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

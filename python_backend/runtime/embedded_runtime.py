@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Mapping
 
 EMBEDDED_PYTHON_ENV_VAR = "TAURI_AGENT_EMBEDDED_PYTHON"
 EMBEDDED_NODE_ENV_VAR = "TAURI_AGENT_EMBEDDED_NODE"
@@ -43,6 +44,27 @@ def get_python_executable() -> Path:
 def get_pip_command() -> list[str]:
     python_executable = get_python_executable()
     return [str(python_executable), "-m", "pip"]
+
+
+def build_runtime_environment(base_env: Mapping[str, str] | None = None) -> dict[str, str]:
+    env = dict(base_env or os.environ)
+    path_entries: list[str] = []
+
+    embedded_python = _configured_root(EMBEDDED_PYTHON_ENV_VAR)
+    if embedded_python is not None:
+        path_entries.append(str(embedded_python))
+
+    embedded_node = _configured_root(EMBEDDED_NODE_ENV_VAR)
+    if embedded_node is not None:
+        path_entries.append(str(embedded_node))
+
+    if path_entries:
+        existing_path = env.get("PATH", "")
+        env["PATH"] = os.pathsep.join(
+            [*path_entries, *([existing_path] if existing_path else [])]
+        )
+
+    return env
 
 
 def get_node_executable() -> Path:

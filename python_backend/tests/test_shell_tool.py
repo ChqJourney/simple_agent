@@ -1,5 +1,6 @@
 import sys
 import unittest
+import os
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -165,6 +166,38 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.success)
         self.assertIn("Hint", result.error or "")
         self.assertIn("Windows shell detected", result.output.get("hint", ""))
+
+    async def test_shell_tool_injects_embedded_runtime_directories_into_path(self) -> None:
+        fake_subprocess = AsyncMock(return_value=FakeProcess(stdout=b"ok", stderr=b"", returncode=0))
+
+        with (
+            patch.dict(
+                "tools.shell_execute.os.environ",
+                {
+                    "PATH": r"C:\Windows\System32",
+                    "TAURI_AGENT_EMBEDDED_PYTHON": r"C:\runtime\python",
+                    "TAURI_AGENT_EMBEDDED_NODE": r"C:\runtime\node",
+                },
+                clear=False,
+            ),
+            patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_subprocess),
+        ):
+            result = await ShellExecuteTool().execute(
+                tool_call_id="shell-runtime-path",
+                command="python --version",
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual(
+            os.pathsep.join(
+                [
+                    r"C:\runtime\python",
+                    r"C:\runtime\node",
+                    r"C:\Windows\System32",
+                ]
+            ),
+            fake_subprocess.await_args.kwargs["env"]["PATH"],
+        )
 
 
 if __name__ == "__main__":

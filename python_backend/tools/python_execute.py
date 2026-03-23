@@ -11,7 +11,10 @@ from .policies import ToolExecutionPolicy
 
 class PythonExecuteTool(BaseTool):
     name = "python_execute"
-    description = "Execute a Python snippet with the current Python runtime"
+    description = (
+        "Execute a Python snippet with the current Python runtime. "
+        "Do not include interpreter commands or absolute Python paths; pass only Python code."
+    )
     display_name = "Python Execute"
     category = "execution"
     require_confirmation = True
@@ -21,7 +24,7 @@ class PythonExecuteTool(BaseTool):
         "properties": {
             "code": {
                 "type": "string",
-                "description": "Python code to execute",
+                "description": "Python code to execute directly. Do not prefix it with `python`, `python3`, or an absolute interpreter path.",
             },
             "timeout_seconds": {
                 "type": "integer",

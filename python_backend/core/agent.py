@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import platform
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -10,6 +11,7 @@ from runtime.events import RunEvent
 from runtime.logs import append_run_event
 from skills.base import SkillProvider, SkillSummary
 from tools.base import BaseTool, ToolRegistry, ToolResult
+from tools.shell_execute import ShellExecuteTool
 
 logger = logging.getLogger(__name__)
 MAX_TOOL_EXECUTION_TIMEOUT_SECONDS = 120
@@ -916,7 +918,7 @@ class Agent:
 
     async def _build_llm_messages(self, session: Session, run_id: str) -> List[Dict[str, Any]]:
         messages = session.get_messages_for_llm()
-        prompt_sections: List[str] = []
+        prompt_sections: List[str] = [self._format_runtime_environment_section(session)]
 
         if self.skill_provider:
             skills = self.skill_provider.list_skills(workspace_path=session.workspace_path)
@@ -936,6 +938,32 @@ class Agent:
             return messages
 
         return [{"role": "system", "content": "\n\n".join(prompt_sections)}, *messages]
+
+    @staticmethod
+    def _format_runtime_environment_section(session: Session) -> str:
+        shell_runner = ShellExecuteTool._resolve_shell_runner("")
+        runner_name = str(shell_runner.get("runner") or "shell")
+        operating_system = platform.system() or "Unknown"
+
+        parts = [
+            "Runtime environment:",
+            f"Workspace path: {session.workspace_path}",
+            f"Operating system: {operating_system}",
+            f"`shell_execute` runner: {runner_name}",
+        ]
+
+        if operating_system.lower().startswith("windows"):
+            parts.append(
+                "When calling `shell_execute`, use Windows-native commands only. "
+                "Prefer PowerShell syntax when available, and do not assume bash commands such as "
+                "`ls`, `cat`, `grep`, `cp`, `mv`, or `rm` exist."
+            )
+        else:
+            parts.append(
+                "When calling `shell_execute`, use commands that match the current shell and operating system."
+            )
+
+        return "\n".join(parts)
 
     @staticmethod
     def _format_skill_catalog_section(skills: List[SkillSummary]) -> str:

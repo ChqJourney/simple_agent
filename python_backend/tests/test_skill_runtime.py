@@ -84,6 +84,8 @@ class SkillRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         first_request_messages = llm.captured_messages[0]
         self.assertEqual("system", first_request_messages[0]["role"])
+        self.assertIn("Runtime environment:", first_request_messages[0]["content"])
+        self.assertIn(f"Workspace path: {self.temp_dir.name}", first_request_messages[0]["content"])
         self.assertIn("deploy-checks", first_request_messages[0]["content"])
         self.assertIn("description: Deployment checklist", first_request_messages[0]["content"])
         self.assertIn("tags:", first_request_messages[0]["content"])

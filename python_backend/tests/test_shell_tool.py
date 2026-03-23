@@ -108,6 +108,27 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
             runner["argv"],
         )
 
+    def test_finds_powershell_from_system_root_when_path_lookup_fails(self) -> None:
+        with (
+            patch("tools.shell_execute.os.name", "nt"),
+            patch("tools.shell_execute.shutil.which", return_value=None),
+            patch.dict("tools.shell_execute.os.environ", {"SystemRoot": "C:/Windows"}, clear=False),
+            patch(
+                "tools.shell_execute.os.path.isfile",
+                side_effect=lambda path: str(path).replace("\\", "/").endswith(
+                    "/System32/WindowsPowerShell/v1.0/powershell.exe"
+                ),
+            ),
+        ):
+            runner = ShellExecuteTool._resolve_shell_runner("ls")
+
+        self.assertEqual("exec", runner["mode"])
+        self.assertEqual("powershell", runner["runner"])
+        self.assertEqual(
+            "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+            runner["argv"][0].replace("\\", "/"),
+        )
+
     def test_falls_back_to_cmd_shell_on_windows_when_powershell_is_unavailable(self) -> None:
         with patch("tools.shell_execute.os.name", "nt"), patch("tools.shell_execute.shutil.which", return_value=None):
             runner = ShellExecuteTool._resolve_shell_runner("dir")
@@ -115,6 +136,32 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("shell", runner["mode"])
         self.assertEqual("cmd", runner["runner"])
         self.assertEqual("dir", runner["command"])
+
+    def test_windows_tool_description_includes_native_command_guidance(self) -> None:
+        with patch("tools.shell_execute.os.name", "nt"), patch("tools.shell_execute.shutil.which", return_value="pwsh"):
+            tool = ShellExecuteTool()
+
+        self.assertIn("Windows", tool.description)
+        self.assertIn("Get-ChildItem", tool.description)
+        self.assertIn("PowerShell", tool.parameters["properties"]["command"]["description"])
+
+    async def test_failure_includes_windows_command_hint(self) -> None:
+        with (
+            patch("tools.shell_execute.os.name", "nt"),
+            patch("tools.shell_execute.shutil.which", return_value=None),
+            patch(
+                "tools.shell_execute.asyncio.create_subprocess_shell",
+                AsyncMock(return_value=FakeProcess(stdout=b"", stderr=b"'ls' is not recognized", returncode=1)),
+            ),
+        ):
+            result = await ShellExecuteTool().execute(
+                tool_call_id="shell-windows-hint",
+                command="ls",
+            )
+
+        self.assertFalse(result.success)
+        self.assertIn("Hint", result.error or "")
+        self.assertIn("Windows shell detected", result.output.get("hint", ""))
 
 
 if __name__ == "__main__":

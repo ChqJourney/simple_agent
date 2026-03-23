@@ -168,7 +168,8 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Windows shell detected", result.output.get("hint", ""))
 
     async def test_shell_tool_injects_embedded_runtime_directories_into_path(self) -> None:
-        fake_subprocess = AsyncMock(return_value=FakeProcess(stdout=b"ok", stderr=b"", returncode=0))
+        fake_shell_subprocess = AsyncMock(return_value=FakeProcess(stdout=b"ok", stderr=b"", returncode=0))
+        fake_exec_subprocess = AsyncMock(return_value=FakeProcess(stdout=b"ok", stderr=b"", returncode=0))
 
         with (
             patch.dict(
@@ -180,7 +181,8 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
                 },
                 clear=False,
             ),
-            patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_subprocess),
+            patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_shell_subprocess),
+            patch("tools.shell_execute.asyncio.create_subprocess_exec", fake_exec_subprocess),
         ):
             result = await ShellExecuteTool().execute(
                 tool_call_id="shell-runtime-path",
@@ -188,6 +190,7 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(result.success)
+        called_mock = fake_exec_subprocess if fake_exec_subprocess.await_count else fake_shell_subprocess
         self.assertEqual(
             os.pathsep.join(
                 [
@@ -196,7 +199,7 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
                     r"C:\Windows\System32",
                 ]
             ),
-            fake_subprocess.await_args.kwargs["env"]["PATH"],
+            called_mock.await_args.kwargs["env"]["PATH"],
         )
 
 

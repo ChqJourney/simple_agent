@@ -129,8 +129,8 @@ class RunEvent(BaseModel):
 | `tool_call_requested` | DEBUG |
 | `tool_execution_started` | DEBUG |
 | `tool_execution_completed` | INFO |
-| `skill_resolution_completed` | DEBUG |
-| `retrieval_completed` | DEBUG |
+| `skill_catalog_prepared` | DEBUG |
+| `skill_loaded` | INFO |
 | `question_requested` | INFO |
 
 ---

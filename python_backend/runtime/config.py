@@ -58,46 +58,16 @@ def _to_bool(value: Any, default: bool) -> bool:
             return False
     return bool(value)
 
-
-def _normalize_extensions(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return [".md", ".txt", ".json"]
-
-    normalized: list[str] = []
-    for item in value:
-        if item is None:
-            continue
-        text = str(item).strip().lower()
-        if not text:
-            continue
-        normalized.append(text if text.startswith(".") else f".{text}")
-
-    return normalized or [".md", ".txt", ".json"]
-
-
 def _normalize_context_providers(data: Dict[str, Any]) -> Dict[str, Any]:
     raw_context = data.get("context_providers") if isinstance(data.get("context_providers"), dict) else {}
     raw_skills = raw_context.get("skills") if isinstance(raw_context.get("skills"), dict) else {}
-    raw_retrieval = raw_context.get("retrieval") if isinstance(raw_context.get("retrieval"), dict) else {}
 
     raw_local_skills = raw_skills.get("local") if isinstance(raw_skills.get("local"), dict) else {}
-    raw_workspace_retrieval = (
-        raw_retrieval.get("workspace") if isinstance(raw_retrieval.get("workspace"), dict) else {}
-    )
-
-    max_hits = _to_int(raw_workspace_retrieval.get("max_hits"))
 
     return {
         "skills": {
             "local": {
                 "enabled": _to_bool(raw_local_skills.get("enabled"), True),
-            }
-        },
-        "retrieval": {
-            "workspace": {
-                "enabled": _to_bool(raw_workspace_retrieval.get("enabled"), True),
-                "max_hits": max_hits if max_hits is not None and max_hits > 0 else 3,
-                "extensions": _normalize_extensions(raw_workspace_retrieval.get("extensions")),
             }
         },
     }

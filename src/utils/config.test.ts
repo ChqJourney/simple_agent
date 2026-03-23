@@ -19,9 +19,6 @@ describe("normalizeProviderConfig", () => {
     expect(normalized.profiles?.primary.base_url).toBe("https://api.openai.com/v1");
     expect(normalized.runtime?.context_length).toBe(64000);
     expect(normalized.context_providers?.skills?.local?.enabled).toBe(true);
-    expect(normalized.context_providers?.retrieval?.workspace?.enabled).toBe(true);
-    expect(normalized.context_providers?.retrieval?.workspace?.max_hits).toBe(3);
-    expect(normalized.context_providers?.retrieval?.workspace?.extensions).toEqual([".md", ".txt", ".json"]);
   });
 
   it("fills runtime defaults when runtime values are omitted", () => {

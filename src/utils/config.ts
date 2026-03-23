@@ -42,31 +42,11 @@ export function normalizeBaseUrl(provider: ProviderType, baseUrl?: string): stri
   return trimmed || getDefaultBaseUrl(provider);
 }
 
-function normalizeExtensions(extensions?: string[]): string[] {
-  if (!Array.isArray(extensions) || extensions.length === 0) {
-    return ['.md', '.txt', '.json'];
-  }
-
-  const normalized = extensions
-    .map((extension) => extension.trim().toLowerCase())
-    .filter(Boolean)
-    .map((extension) => (extension.startsWith('.') ? extension : `.${extension}`));
-
-  return normalized.length > 0 ? normalized : ['.md', '.txt', '.json'];
-}
-
 export function normalizeContextProviders(contextProviders?: ContextProviderConfig): ContextProviderConfig {
   return {
     skills: {
       local: {
         enabled: contextProviders?.skills?.local?.enabled ?? true,
-      },
-    },
-    retrieval: {
-      workspace: {
-        enabled: contextProviders?.retrieval?.workspace?.enabled ?? true,
-        max_hits: contextProviders?.retrieval?.workspace?.max_hits ?? 3,
-        extensions: normalizeExtensions(contextProviders?.retrieval?.workspace?.extensions),
       },
     },
   };

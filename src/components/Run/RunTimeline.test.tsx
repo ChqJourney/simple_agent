@@ -54,9 +54,9 @@ describe("RunTimeline", () => {
     expect(screen.queryByRole("button", { name: "Expand run timeline" })).toBeNull();
   });
 
-  it("renders readable skill and retrieval context events", () => {
+  it("renders readable skill context events", () => {
     useRunStore.getState().addEvent("session-a", {
-      event_type: "skill_resolution_completed",
+      event_type: "skill_catalog_prepared",
       session_id: "session-a",
       run_id: "run-1",
       payload: {
@@ -64,21 +64,27 @@ describe("RunTimeline", () => {
       },
       timestamp: "2026-03-13T09:00:00.000Z",
     });
+
+    render(<RunTimeline sessionId="session-a" />);
+
+    expect(screen.getByText("Skills indexed")).toBeTruthy();
+    expect(screen.getByText("deploy-checks")).toBeTruthy();
+  });
+
+  it("renders skill load events with the loaded skill name", () => {
     useRunStore.getState().addEvent("session-a", {
-      event_type: "retrieval_completed",
+      event_type: "skill_loaded",
       session_id: "session-a",
       run_id: "run-1",
       payload: {
-        hit_count: 2,
+        skill_name: "deploy-checks",
       },
-      timestamp: "2026-03-13T09:00:01.000Z",
+      timestamp: "2026-03-13T09:00:00.000Z",
     });
 
     render(<RunTimeline sessionId="session-a" />);
 
-    expect(screen.getAllByText(/Retrieval completed/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Skill resolved")).toBeTruthy();
+    expect(screen.getByText("Skill loaded")).toBeTruthy();
     expect(screen.getByText("deploy-checks")).toBeTruthy();
-    expect(screen.getByText("2 hits")).toBeTruthy();
   });
 });

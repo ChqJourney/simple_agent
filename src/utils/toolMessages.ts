@@ -42,7 +42,30 @@ function isTodoTaskOutput(value: unknown): value is {
   return isRecord(value) && value.event === 'todo_task' && typeof value.action === 'string';
 }
 
+function isSkillLoaderOutput(value: unknown): value is {
+  event: 'skill_loader';
+  skill: {
+    name: string;
+    description?: string;
+    source?: string;
+    source_path?: string;
+    frontmatter?: string;
+    content?: string;
+  };
+} {
+  return (
+    isRecord(value)
+    && value.event === 'skill_loader'
+    && isRecord(value.skill)
+    && typeof value.skill.name === 'string'
+  );
+}
+
 export function getToolCategoryLabel(toolName: string): string {
+  if (toolName === 'skill_loader') {
+    return 'skill';
+  }
+
   if (toolName.endsWith('_execute')) {
     return 'execution';
   }
@@ -114,6 +137,26 @@ export function renderToolResultDetails(success: boolean, output: unknown, error
         }
       }
       return lines.join('\n');
+    }
+
+    if (isSkillLoaderOutput(output)) {
+      const lines = [`Skill: ${output.skill.name}`];
+      if (output.skill.description) {
+        lines.push(`Description: ${output.skill.description}`);
+      }
+      if (output.skill.source) {
+        lines.push(`Source: ${output.skill.source}`);
+      }
+      if (output.skill.source_path) {
+        lines.push(`Path: ${output.skill.source_path}`);
+      }
+      if (output.skill.frontmatter) {
+        lines.push(`Frontmatter:\n${output.skill.frontmatter}`);
+      }
+      if (output.skill.content) {
+        lines.push(`Instructions:\n${output.skill.content}`);
+      }
+      return lines.join('\n\n');
     }
 
     if (isExecutionOutput(output)) {

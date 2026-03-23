@@ -6,10 +6,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.user import Message, Session, UserManager
 from llms.base import BaseLLM
-from retrieval.base import RetrievalProvider
 from runtime.events import RunEvent
 from runtime.logs import append_run_event
-from skills.base import SkillProvider
+from skills.base import SkillProvider, SkillSummary
 from tools.base import BaseTool, ToolRegistry, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -33,7 +32,6 @@ class Agent:
         tool_registry: ToolRegistry,
         user_manager: UserManager,
         skill_provider: Optional[SkillProvider] = None,
-        retrieval_provider: Optional[RetrievalProvider] = None,
         max_tool_rounds: int = 10,
         max_retries: int = 3,
     ):
@@ -41,7 +39,6 @@ class Agent:
         self.tool_registry = tool_registry
         self.user_manager = user_manager
         self.skill_provider = skill_provider
-        self.retrieval_provider = retrieval_provider
         self.max_tool_rounds = max_tool_rounds
         self.max_retries = max_retries
         self._interrupt_event = asyncio.Event()
@@ -102,6 +99,8 @@ class Agent:
 
                 messages = await self._build_llm_messages(session, run_id)
                 tools = list(self.tool_registry.tools.values())
+                if not self.skill_provider:
+                    tools = [tool for tool in tools if tool.name != "skill_loader"]
 
                 assistant_message = await self._stream_llm_with_retry(messages, tools, session, run_id)
 
@@ -767,6 +766,8 @@ class Agent:
                     "error": result.error,
                 },
             )
+            if tool.name == "skill_loader" and result.success:
+                await self._emit_skill_loaded_event(session, run_id, result)
 
             return result
         except asyncio.TimeoutError as e:
@@ -915,39 +916,21 @@ class Agent:
 
     async def _build_llm_messages(self, session: Session, run_id: str) -> List[Dict[str, Any]]:
         messages = session.get_messages_for_llm()
-        query = self._derive_context_query(messages)
-        if not query:
-            return messages
-
         prompt_sections: List[str] = []
 
         if self.skill_provider:
-            skills = self.skill_provider.resolve(query, workspace_path=session.workspace_path)
+            skills = self.skill_provider.list_skills(workspace_path=session.workspace_path)
             await self._emit_run_event(
                 session,
                 run_id,
-                "skill_resolution_completed",
+                "skill_catalog_prepared",
                 {
                     "skill_names": [skill.name for skill in skills],
-                    "hit_count": len(skills),
+                    "skill_count": len(skills),
                 },
             )
             if skills:
-                prompt_sections.append(self._format_skill_section(skills))
-
-        if self.retrieval_provider:
-            hits = self.retrieval_provider.retrieve(query, session.workspace_path)
-            await self._emit_run_event(
-                session,
-                run_id,
-                "retrieval_completed",
-                {
-                    "hit_count": len(hits),
-                    "sources": [hit.path for hit in hits],
-                },
-            )
-            if hits:
-                prompt_sections.append(self._format_retrieval_section(hits))
+                prompt_sections.append(self._format_skill_catalog_section(skills))
 
         if not prompt_sections:
             return messages
@@ -955,22 +938,38 @@ class Agent:
         return [{"role": "system", "content": "\n\n".join(prompt_sections)}, *messages]
 
     @staticmethod
-    def _derive_context_query(messages: List[Dict[str, Any]]) -> str:
-        for message in reversed(messages):
-            if message.get("role") == "user" and isinstance(message.get("content"), str):
-                return message["content"]
-        return ""
-
-    @staticmethod
-    def _format_skill_section(skills: List[Any]) -> str:
-        parts = ["Resolved local skills:"]
+    def _format_skill_catalog_section(skills: List[SkillSummary]) -> str:
+        parts = [
+            "Local skill catalog:",
+            "The following entries are YAML frontmatter scanned from the app skill directory and the current workspace `.agent/skills` directory.",
+            "These entries are metadata only. If a skill is relevant, call the `skill_loader` tool with the skill name before following its instructions.",
+            "Workspace skills override app skills when names collide.",
+        ]
         for skill in skills:
-            parts.append(f"- {skill.name}: {skill.content}")
+            parts.append("")
+            parts.append(f"Skill: {skill.name} ({skill.source})")
+            if skill.description:
+                parts.append(f"Description: {skill.description}")
+            parts.append("```yaml")
+            parts.append(skill.frontmatter)
+            parts.append("```")
         return "\n".join(parts)
 
-    @staticmethod
-    def _format_retrieval_section(hits: List[Any]) -> str:
-        parts = ["Retrieved workspace context:"]
-        for hit in hits:
-            parts.append(f"- {hit.path}: {hit.snippet}")
-        return "\n".join(parts)
+    async def _emit_skill_loaded_event(
+        self,
+        session: Session,
+        run_id: str,
+        result: ToolResult,
+    ) -> None:
+        output = result.output if isinstance(result.output, dict) else {}
+        skill_payload = output.get("skill") if isinstance(output.get("skill"), dict) else {}
+        skill_name = skill_payload.get("name")
+        if not isinstance(skill_name, str) or not skill_name:
+            return
+
+        event_payload: Dict[str, Any] = {"skill_name": skill_name}
+        source = skill_payload.get("source")
+        if isinstance(source, str) and source:
+            event_payload["source"] = source
+
+        await self._emit_run_event(session, run_id, "skill_loaded", event_payload)

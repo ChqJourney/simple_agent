@@ -2,20 +2,23 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import main as backend_main
-from skills.local_loader import LocalSkillLoader
+from skills.local_loader import LocalSkillLoader, default_skill_search_roots
 
 
 class SkillLoaderPathTests(unittest.TestCase):
-    def test_backend_runtime_uses_only_system_agent_skill_root(self) -> None:
+    def test_backend_runtime_uses_app_data_skill_root(self) -> None:
+        with patch.dict("os.environ", {"TAURI_AGENT_APP_DATA_DIR": "/tmp/work-agent-data"}, clear=False):
+            roots = default_skill_search_roots()
+
         self.assertEqual(
-            [Path.home() / ".agent" / "skills"],
-            backend_main.context_provider_registry.skill_search_roots,
+            [Path("/tmp/work-agent-data") / "skills"],
+            roots,
         )
 
     def test_local_skill_loader_scans_workspace_agent_directory(self) -> None:
@@ -29,9 +32,10 @@ class SkillLoaderPathTests(unittest.TestCase):
             )
 
             loader = LocalSkillLoader(search_roots=[])
-            resolved = loader.resolve("please use $deploy-checks", workspace_path=str(workspace_path))
+            resolved = loader.list_skills(workspace_path=str(workspace_path))
 
             self.assertEqual(["deploy-checks"], [skill.name for skill in resolved])
+            self.assertEqual("workspace", resolved[0].source)
 
 
 if __name__ == "__main__":

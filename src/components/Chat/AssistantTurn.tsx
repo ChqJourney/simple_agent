@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { AssistantStatus, Message } from '../../types';
-import { markdownComponents } from '../../utils/markdown';
+import { markdownComponents, markdownRemarkPlugins, parseMarkdown } from '../../utils/markdown';
 import { ReasoningBlock } from '../Reasoning/ReasoningBlock';
 import { ToolCallDisplay, ToolCard } from '../Tools';
 import { MessageItem } from './MessageItem';
@@ -125,8 +125,8 @@ function renderDetailMessage(message: Message) {
         </div>
         {hasContent && (
           <div className="prose prose-sm mt-3 max-w-none text-gray-900 leading-relaxed dark:prose-invert dark:text-gray-100">
-            <ReactMarkdown components={markdownComponents}>
-              {message.content || ''}
+            <ReactMarkdown components={markdownComponents} remarkPlugins={markdownRemarkPlugins}>
+              {parseMarkdown(message.content || '')}
             </ReactMarkdown>
           </div>
         )}

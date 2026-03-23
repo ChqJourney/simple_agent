@@ -111,4 +111,44 @@ describe("MessageList", () => {
       expect(writeTextMock).toHaveBeenNthCalledWith(2, "Copy this assistant reply");
     });
   });
+
+  it("renders assistant soft line breaks and list blocks as markdown", () => {
+    const messages: Message[] = [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "概览\n下一行\n总结：\n- 第一项\n- 第二项",
+        status: "completed",
+      },
+    ];
+
+    const { container } = render(<MessageList messages={messages} />);
+
+    expect(container.querySelector("br")).toBeTruthy();
+    expect(container.querySelector("ul")).toBeTruthy();
+    expect(screen.getByText("第一项")).toBeTruthy();
+    expect(screen.getByText("第二项")).toBeTruthy();
+  });
+
+  it("renders markdown tables in assistant messages", () => {
+    const messages: Message[] = [
+      {
+        id: "assistant-table",
+        role: "assistant",
+        content: "## 表格\n| 技能名称 | 说明 |\n| --- | --- |\n| docx | 文档处理 |",
+        status: "completed",
+      },
+    ];
+
+    const { container } = render(<MessageList messages={messages} />);
+
+    expect(container.querySelector("table")).toBeTruthy();
+    expect(container.querySelector("table")?.className).toContain("border-collapse");
+    expect(container.querySelector("thead")).toBeTruthy();
+    expect(container.querySelector("tbody")).toBeTruthy();
+    expect(container.querySelector("th")?.className).toContain("border-r");
+    expect(container.querySelector("td")?.className).toContain("px-4");
+    expect(screen.getByText("技能名称")).toBeTruthy();
+    expect(screen.getByText("docx")).toBeTruthy();
+  });
 });

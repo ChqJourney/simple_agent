@@ -18,4 +18,24 @@ describe("ToolCallDisplay", () => {
 
     expect(screen.getByText("execution")).toBeTruthy();
   });
+
+  it("renders a skill-specific summary for skill loader calls", () => {
+    render(
+      <ToolCallDisplay
+        collapsible={false}
+        toolCall={{
+          tool_call_id: "skill-1",
+          name: "skill_loader",
+          arguments: {
+            skill_name: "deploy-checks",
+            source: "workspace",
+          },
+        }}
+      />
+    );
+
+    expect(screen.getByText("skill")).toBeTruthy();
+    expect(screen.getByText("请求加载 skill deploy-checks")).toBeTruthy();
+    expect(screen.getByText("Skill request")).toBeTruthy();
+  });
 });

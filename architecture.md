@@ -13,7 +13,7 @@
 - 多模型 Provider 配置与 profile 路由
 - 基于 WebSocket 的流式对话与 reasoning 展示
 - Tool calling、用户审批、交互式提问
-- Local skills 与 workspace retrieval
+- Local skills metadata catalog 注入与按需加载
 - 工作区会话持久化、run timeline、token usage 展示
 - 图片输入与工作区文件联动
 
@@ -30,8 +30,8 @@ flowchart LR
     Backend --> Runtime["Runtime State<br/>config / provider bundle / active agents"]
     Backend --> Agent["Agent Loop"]
     Agent --> LLM["LLM Providers<br/>OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama"]
-    Agent --> Tools["Tool Registry<br/>file/shell/python/node/todo/question"]
-    Agent --> Context["Context Providers<br/>Local Skills / Workspace Retrieval"]
+    Agent --> Tools["Tool Registry<br/>file/shell/python/node/todo/question/skill_loader"]
+    Agent --> Context["Context Providers<br/>Local Skills"]
     Agent --> Persist["Workspace Persistence<br/>.agent/sessions / .agent/logs"]
 
     Tools --> Workspace["Workspace Files"]
@@ -45,7 +45,7 @@ flowchart LR
 | 层级 | 目录 | 核心职责 | 关键入口 |
 | --- | --- | --- | --- |
 | 前端展示层 | `src/` | 页面路由、聊天 UI、右侧文件树/任务面板、配置界面、状态恢复 | `src/App.tsx` |
-| 桌面宿主层 | `src-tauri/` | 工作区路径规范化、动态 FS 授权、发布态 Python sidecar 启停 | `src-tauri/src/lib.rs` |
+| 桌面宿主层 | `src-tauri/` | 工作区路径规范化、动态 FS 授权、发布态 Python sidecar 启停、app data 注入 | `src-tauri/src/lib.rs` |
 | Agent 运行时 | `python_backend/` | WebSocket 协议、配置标准化、Agent loop、工具执行、事件日志 | `python_backend/main.py` |
 | 工作区持久化层 | `<workspace>/.agent/` | 会话 transcript、metadata、run logs | 运行时按需生成 |
 
@@ -71,7 +71,7 @@ flowchart LR
 | 通信层 | `src/contexts/WebSocketContext.tsx` `src/services/websocket.ts` | 建立 WebSocket、发送协议消息、分发后端事件 | ProviderConfig、聊天输入、工具确认 | chat/session/run/task/workspace store 更新 |
 | 状态层 | `src/stores/*.ts` | Zustand 持有聊天、会话、工作区、配置、运行状态、UI 状态 | WebSocket 事件、用户操作 | 组件渲染数据 |
 | 工作区 UI | `src/components/Workspace/*` | TopBar、SessionList、FileTree、TaskList | workspace/session/chat store | 工作区侧栏、文件变化高亮 |
-| 聊天 UI | `src/components/Chat/*` | 消息流渲染、输入框、流式输出、interrupt | chat store、WebSocket actions | 消息发送、reasoning/tool 展示 |
+| 聊天 UI | `src/components/Chat/*` | 消息流渲染、输入框、流式输出、interrupt、Markdown/GFM 正文展示 | chat store、WebSocket actions | 消息发送、reasoning/tool 展示 |
 | 工具交互 UI | `src/components/Tools/*` | ToolConfirmModal、PendingQuestionCard、ToolCallDisplay | tool_confirm_request / question_request | 审批、答复回传 |
 | 运行观测 UI | `src/components/Run/RunTimeline.tsx` | 渲染 `run_event` 为时间线 | run store、chat store | run 过程可视化 |
 | 本地读取工具 | `src/utils/storage.ts` | 通过 Tauri command 恢复 session 列表与历史，并派生 UI 数据 | Tauri invoke | Session 列表、历史消息恢复 |
@@ -91,15 +91,15 @@ flowchart LR
 | 模块 | 关键文件 | 职责 | 输入 | 输出 |
 | --- | --- | --- | --- | --- |
 | 服务入口 | `python_backend/main.py` | FastAPI app、WebSocket 路由、HTTP health/test-config、全局 runtime_state | WebSocket/HTTP 请求 | 状态更新、Agent task、JSON 响应 |
-| Agent Loop | `python_backend/core/agent.py` | 组装 LLM 消息、流式生成、工具执行、重试、中断、run_event 落盘 | Session、LLM、ToolRegistry、Skill/Retrieval providers | token/tool_call/tool_result/completed/run_event |
+| Agent Loop | `python_backend/core/agent.py` | 组装 LLM 消息、流式生成、工具执行、重试、中断、run_event 落盘 | Session、LLM、ToolRegistry、Skill providers | token/tool_call/tool_result/completed/run_event |
 | 用户与会话 | `python_backend/core/user.py` | session 管理、消息持久化、连接绑定、工具审批与问题响应等待 | session_id、workspace_path、frontend 回调 | `.agent/sessions/*`、前端消息派发 |
 | Runtime 配置 | `python_backend/runtime/config.py` | 标准化 provider/profile/runtime/context_providers 配置 | 前端发来的 config | 统一结构的 runtime config |
 | Profile 路由 | `python_backend/runtime/router.py` | 决定 conversation/background profile、session lock 检查 | config、session metadata | profile 选择结果 |
-| Context Provider 注册 | `python_backend/runtime/provider_registry.py` | 构建 skill provider 与 retrieval provider bundle | normalized config | `ContextProviderBundle` |
+| Context Provider 注册 | `python_backend/runtime/provider_registry.py` | 构建 skill provider bundle | normalized config | `ContextProviderBundle` |
 | 运行事件 | `python_backend/runtime/events.py` `python_backend/runtime/logs.py` | 定义并写入 run_event | Agent loop 阶段事件 | `.agent/logs/*.jsonl` |
 | LLM Provider | `python_backend/llms/*.py` | 对接 OpenAI 兼容 API、provider 特定 reasoning/usage 适配、Kimi 温度约束 | messages、tools、runtime policy | 流式 chunk / completion |
-| Tool 系统 | `python_backend/tools/*.py` | 文件、执行、任务、提问等工具 | tool call arguments | ToolResult |
-| Context Providers | `python_backend/skills/*` `python_backend/retrieval/*` | 本地技能加载、工作区检索 | 用户 query、workspace path | 附加到 system prompt 的上下文 |
+| Tool 系统 | `python_backend/tools/*.py` | 文件、执行、任务、提问、skill 加载等工具 | tool call arguments | ToolResult |
+| Context Providers | `python_backend/skills/*` | 扫描本地 skill metadata catalog，并按名称加载 skill 正文 | app data skill root、workspace path | 附加到 system prompt 的 metadata 与 `skill_loader` 运行时加载结果 |
 
 ## 4. 关键功能视图
 
@@ -144,7 +144,7 @@ sequenceDiagram
     AG->>FS: 追加 user message 到 sessions/*.jsonl
     AG->>FE: started
     AG->>FS: append run_started 到 logs/*.jsonl
-    AG->>AG: 构建 LLM messages + skill/retrieval context
+    AG->>AG: 构建 LLM messages + skill context
     AG->>LLM: stream(messages, tools)
     LLM-->>AG: token / reasoning / tool_call chunks
     AG-->>FE: token / reasoning_token / tool_call / run_event
@@ -196,8 +196,9 @@ sequenceDiagram
 2. 发出 `started`
 3. 构建 LLM messages：
    - 基础消息来自 session history
-   - 若启用 local skills，则按 query 解析技能并拼成 system prompt
-   - 若启用 retrieval，则检索 workspace 并拼成 system prompt
+   - 若启用 local skills，则扫描 app data 与 workspace 两处 skill root
+   - 把每个 skill 的 YAML frontmatter catalog 拼入 system prompt
+   - 需要完整 skill 指令时，由模型调用 `skill_loader`
 4. 调用 provider 的 `stream()`
 
 #### E. 流式回传与工具执行
@@ -300,7 +301,6 @@ flowchart TD
     Agent --> LLM["LLM.stream()"]
     Agent --> ToolRegistry["ToolRegistry"]
     Agent --> SkillProvider["SkillProvider"]
-    Agent --> RetrievalProvider["RetrievalProvider"]
     Agent --> UserMgr
     Agent --> RunLogs["runtime.logs.append_run_event"]
 
@@ -316,7 +316,7 @@ flowchart TD
 - `active_agents`: 每个 session 对应一个 Agent 实例
 - `current_llm`: 当前默认 conversation LLM
 - `current_config`: 当前标准化后的配置
-- `current_context_bundle`: 当前 skill/retrieval provider bundle
+- `current_context_bundle`: 当前 skill provider bundle
 - `connection_workspaces`: WebSocket 连接绑定到哪个 workspace
 - `pending_tasks`: 所有异步任务
 - `active_session_tasks`: 每个 session 当前是否已有运行中的任务
@@ -332,7 +332,7 @@ flowchart TD
 
 1. 写入用户消息
 2. 发 `run_started`
-3. 解析 skill/retrieval context
+3. 扫描 local skill catalog metadata，并在需要时通过 `skill_loader` 加载正文
 4. 调用 LLM 流式输出
 5. 若无工具调用则直接结束
 6. 若有工具调用则执行并写入 tool message
@@ -465,13 +465,6 @@ Tool 系统当前注册了以下内置工具：
   "context_providers": {
     "skills": {
       "local": { "enabled": true }
-    },
-    "retrieval": {
-      "workspace": {
-        "enabled": true,
-        "max_hits": 3,
-        "extensions": [".md", ".txt", ".json"]
-      }
     }
   }
 }
@@ -510,8 +503,8 @@ Tool 系统当前注册了以下内置工具：
 常见 `event_type`：
 
 - `run_started`
-- `skill_resolution_completed`
-- `retrieval_completed`
+- `skill_catalog_prepared`
+- `skill_loaded`
 - `tool_call_requested`
 - `tool_execution_started`
 - `tool_execution_completed`
@@ -670,7 +663,6 @@ flowchart TD
 
 - 前后端没有共享 schema 生成链，协议扩展需要人工双改
 - 配置 normalize 重复实现，未来建议抽共享 schema 或契约测试
-- retrieval 目前是轻量关键词检索，不是向量索引
 - run logs 已落盘，但前端更多依赖实时事件，历史 run 回放能力仍可继续加强
 - 当前工作区数据访问高度依赖 Tauri FS scope 授权逻辑，跨平台边界要持续验证
 - 工具执行策略已支持确认与策略缓存，但更细粒度的权限系统仍有提升空间

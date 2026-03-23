@@ -4,6 +4,7 @@ from .file_read import FileReadTool
 from .file_write import FileWriteTool
 from .node_execute import NodeExecuteTool
 from .python_execute import PythonExecuteTool
+from .skill_loader import SkillLoaderTool
 from .shell_execute import ShellExecuteTool
 from .todo_task import TodoTaskTool
 
@@ -14,6 +15,7 @@ __all__ = [
     "FileWriteTool",
     "NodeExecuteTool",
     "PythonExecuteTool",
+    "SkillLoaderTool",
     "ShellExecuteTool",
     "TodoTaskTool",
     "ToolDescriptor",

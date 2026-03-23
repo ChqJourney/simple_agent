@@ -26,4 +26,23 @@ describe("toolMessages", () => {
     expect(details).toContain("Production traffic is low right now.");
     expect(details).toContain("continue, wait");
   });
+
+  it("formats skill loader outputs in a readable way", () => {
+    const details = renderToolResultDetails(true, {
+      event: "skill_loader",
+      skill: {
+        name: "deploy-checks",
+        description: "Deployment checklist",
+        source: "workspace",
+        source_path: "/tmp/workspace/.agent/skills/deploy-checks/SKILL.md",
+        frontmatter: "name: deploy-checks\ndescription: Deployment checklist",
+        content: "Always verify traffic before deploy.",
+      },
+    });
+
+    expect(details).toContain("Skill: deploy-checks");
+    expect(details).toContain("Source: workspace");
+    expect(details).toContain("Frontmatter:");
+    expect(details).toContain("Instructions:");
+  });
 });

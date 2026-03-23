@@ -7,8 +7,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.ask_question import AskQuestionTool
+from tools.skill_loader import SkillLoaderTool
 from tools.registry import ToolRegistry
 from tools.todo_task import TodoTaskTool
+from skills.local_loader import LocalSkillLoader
 
 
 class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
@@ -16,9 +18,10 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         registry = ToolRegistry()
         registry.register(TodoTaskTool())
         registry.register(AskQuestionTool())
+        registry.register(SkillLoaderTool(LocalSkillLoader(search_roots=[])))
 
         descriptors = registry.get_descriptors()
-        self.assertEqual(["ask_question", "todo_task"], sorted(d.name for d in descriptors))
+        self.assertEqual(["ask_question", "skill_loader", "todo_task"], sorted(d.name for d in descriptors))
         self.assertEqual(["todo_task"], [tool.name for tool in registry.list_by_category("task")])
         self.assertEqual(["ask_question"], [tool.name for tool in registry.list_by_category("interaction")])
 

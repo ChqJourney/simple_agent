@@ -116,7 +116,6 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                 tool_registry,
                 user_manager,
                 skill_provider=None,
-                retrieval_provider=None,
                 max_tool_rounds=10,
                 max_retries=3,
             ) -> None:
@@ -124,7 +123,6 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                 agent_self.tool_registry = tool_registry
                 agent_self.user_manager = user_manager
                 agent_self.skill_provider = skill_provider
-                agent_self.retrieval_provider = retrieval_provider
                 agent_self.max_tool_rounds = max_tool_rounds
                 agent_self.max_retries = max_retries
                 self.created_agents.append(agent_self)

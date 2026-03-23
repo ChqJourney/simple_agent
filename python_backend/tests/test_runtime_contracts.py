@@ -43,13 +43,6 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual(
             {
                 "skills": {"local": {"enabled": True}},
-                "retrieval": {
-                    "workspace": {
-                        "enabled": True,
-                        "max_hits": 3,
-                        "extensions": [".md", ".txt", ".json"],
-                    }
-                },
             },
             normalized["context_providers"],
         )

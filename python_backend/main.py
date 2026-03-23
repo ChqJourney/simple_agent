@@ -33,12 +33,14 @@ from runtime.router import (
     session_lock_matches_profile,
 )
 from runtime.session_titles import run_session_title_task
+from skills.local_loader import LocalSkillLoader, default_skill_search_roots
 from tools.base import ToolRegistry
 from tools.ask_question import AskQuestionTool
 from tools.file_read import FileReadTool
 from tools.file_write import FileWriteTool
 from tools.node_execute import NodeExecuteTool
 from tools.python_execute import PythonExecuteTool
+from tools.skill_loader import SkillLoaderTool
 from tools.shell_execute import ShellExecuteTool
 from tools.todo_task import TodoTaskTool
 
@@ -89,12 +91,12 @@ tool_registry.register(PythonExecuteTool())
 tool_registry.register(NodeExecuteTool())
 tool_registry.register(TodoTaskTool())
 tool_registry.register(AskQuestionTool())
+skill_search_roots = default_skill_search_roots()
+tool_registry.register(SkillLoaderTool(LocalSkillLoader(search_roots=skill_search_roots)))
 
 user_manager = UserManager()
 context_provider_registry = ContextProviderRegistry(
-    skill_search_roots=[
-        Path.home() / ".agent" / "skills",
-    ]
+    skill_search_roots=skill_search_roots,
 )
 state_lock = asyncio.Lock()
 
@@ -352,7 +354,6 @@ async def get_or_create_agent(
                 tool_registry=tool_registry,
                 user_manager=user_manager,
                 skill_provider=runtime_state.current_context_bundle.skill_provider,
-                retrieval_provider=runtime_state.current_context_bundle.retrieval_provider,
                 max_tool_rounds=_runtime_policy_value(
                     effective_runtime_policy,
                     "max_tool_rounds",

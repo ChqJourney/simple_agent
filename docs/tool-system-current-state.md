@@ -1,6 +1,6 @@
 ﻿# Tool System Current State (As-Is)
 
-Last updated: 2026-03-18
+Last updated: 2026-03-23
 
 ## 1. Purpose And Scope
 
@@ -8,7 +8,7 @@ This document records the **current implemented state** of the tool system in th
 
 - Covers only existing behavior in code.
 - Does not include target architecture or future design.
-- Focuses on backend tool runtime, frontend tool interaction, and current retrieval/attachment capabilities.
+- Focuses on backend tool runtime, frontend tool interaction, skill loading, and current attachment capabilities.
 
 ## 2. System Boundary
 
@@ -16,7 +16,7 @@ Tool system is distributed across:
 
 - Backend runtime and registry: `python_backend/main.py`, `python_backend/tools/*`, `python_backend/core/agent.py`
 - Frontend tool interaction: `src/contexts/WebSocketContext.tsx`, `src/components/Tools/*`, `src/utils/toolMessages.ts`
-- Runtime context providers (retrieval/skills): `python_backend/runtime/provider_registry.py`, `python_backend/retrieval/*`
+- Runtime context providers (skills): `python_backend/runtime/provider_registry.py`, `python_backend/skills/*`
 
 ## 3. Tool Base Model And Registry
 
@@ -61,6 +61,7 @@ Registered at startup in `python_backend/main.py`:
 5. `node_execute`
 6. `todo_task`
 7. `ask_question`
+8. `skill_loader`
 
 ### 4.1 `file_read`
 
@@ -172,6 +173,23 @@ Source: `python_backend/tools/ask_question.py`
 - output (initial):
   - `{ "event": "pending_question", "question": "...", "details": "...", "options": [] }`
 
+### 4.8 `skill_loader`
+
+Source: `python_backend/tools/skill_loader.py`
+
+- category: default (`general`)
+- require_confirmation: `False`
+- parameters:
+  - `skill_name` (required)
+  - `source` (optional): `app|workspace`
+- behavior:
+  - reads from the local skill provider
+  - app skill root comes from the current app's app-data directory
+  - workspace-local skills come from `<workspace>/.agent/skills`
+  - workspace skills win on name collisions unless `source` is specified
+- output:
+  - `{ "event": "skill_loader", "skill": { name, description, source, source_path, frontmatter, content } }`
+
 ## 5. Agent Tool Execution Flow
 
 Core implementation: `python_backend/core/agent.py`
@@ -180,7 +198,7 @@ Core implementation: `python_backend/core/agent.py`
 
 - Agent runs in rounds up to `max_tool_rounds`.
 - Each round:
-  1. Build LLM messages (+ optional skill/retrieval context).
+  1. Build LLM messages (+ optional local skill catalog metadata).
   2. Stream LLM response.
   3. If no tool calls: complete run.
   4. If tool calls exist: execute tools, append tool messages, continue next round.
@@ -240,6 +258,7 @@ For `ask_question`:
 - `PendingQuestionCard.tsx`: option buttons and dismiss
 - `ToolCallDisplay.tsx`: arguments/output rendering
 - `ToolCard.tsx`: shared card shell
+- `skill_loader` 会在前端展示为带技能名、来源、frontmatter 和正文的结构化结果
 
 ### 6.3 Tool result side effects
 
@@ -319,6 +338,7 @@ Current `require_confirmation` matrix:
 - `node_execute`: confirmation required
 - `todo_task`: no confirmation
 - `ask_question`: no confirmation
+- `skill_loader`: no confirmation
 
 ### 8.2 Path constraints
 
@@ -343,21 +363,21 @@ Runtime defaults from `python_backend/runtime/config.py`:
 - One active run per session at a time.
 - Workspace must be explicitly bound via `set_workspace` before `message`.
 
-## 9. Retrieval (RAG) Current State
+## 9. Local Skills Current State
 
 ### 9.1 Provider wiring
 
 - Registry: `python_backend/runtime/provider_registry.py`
-- Default provider: `SimpleRetrievalStore` (`python_backend/retrieval/simple_store.py`)
+- Loader: `python_backend/skills/local_loader.py`
 
-### 9.2 Retrieval behavior
+### 9.2 Skill behavior
 
-- File extensions default: `.md`, `.txt`, `.json`
-- Keyword-based matching (term occurrence count), no vector index
-- Max scan files default: `1200`
-- Max scanned file size default: `256KB`
-- Excluded dirs: `.agent`, `.git`, `node_modules`, `dist`, `__pycache__`
-- Retrieval hits are appended into a system prompt section
+- App-level skill root comes from the current desktop app's app-data directory
+- Workspace-level skill root is `<workspace>/.agent/skills`
+- Supported file names: `SKILL.md` and `skill.md`
+- The agent injects YAML frontmatter catalog entries into the system prompt
+- The full skill body is loaded on demand via `skill_loader`
+- Workspace-local skills override app-level skills on name collisions
 
 ## 10. Attachment And File-Type Support (Current)
 
@@ -368,7 +388,7 @@ Runtime defaults from `python_backend/runtime/config.py`:
 
 ### 10.2 Document formats
 
-Current tool/retrieval implementation has **no dedicated parser tools** for:
+Current tool/skill implementation has **no dedicated parser tools** for:
 
 - PDF (`.pdf`)
 - Word (`.docx`)
@@ -381,7 +401,7 @@ No built-in capability currently exists for:
 - standards-aware document comparison tool
 - report-generation-specific toolchain
 
-## 11. Existing Test Coverage (Tool/Retrieval Related)
+## 11. Existing Test Coverage (Tool/Skill Related)
 
 Representative tests:
 
@@ -390,7 +410,8 @@ Representative tests:
 - `python_backend/tests/test_shell_tool.py`
 - `python_backend/tests/test_python_tool.py`
 - `python_backend/tests/test_node_tool.py`
-- `python_backend/tests/test_rag_pipeline.py`
+- `python_backend/tests/test_skill_runtime.py`
+- `python_backend/tests/test_skill_loader_paths.py`
 - `python_backend/tests/test_context_provider_registry.py`
 
-These tests cover tool registry behavior, execution output structure, file write behavior, and retrieval context injection basics.
+These tests cover tool registry behavior, execution output structure, file write behavior, and local skill catalog / skill loader basics.

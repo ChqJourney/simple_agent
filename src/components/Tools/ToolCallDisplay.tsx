@@ -17,13 +17,21 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   collapsible = true,
   result,
 }) => {
-  const summary = `请求执行 ${toolCall.name}`;
+  const requestedSkillName =
+    toolCall.name === 'skill_loader' && typeof toolCall.arguments.skill_name === 'string'
+      ? toolCall.arguments.skill_name
+      : null;
+  const summary = requestedSkillName
+    ? `请求加载 skill ${requestedSkillName}`
+    : `请求执行 ${toolCall.name}`;
   const category = getToolCategoryLabel(toolCall.name);
 
   return (
     <ToolCard summary={summary} collapsible={collapsible} badges={[category]}>
       <div className="text-xs text-gray-600 dark:text-gray-400">
-        <div className="font-medium">Arguments</div>
+        <div className="font-medium">
+          {toolCall.name === 'skill_loader' ? 'Skill request' : 'Arguments'}
+        </div>
         <pre className="mt-1 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
           {JSON.stringify(toolCall.arguments, null, 2)}
         </pre>

@@ -13,8 +13,8 @@ const EVENT_LABELS: Record<string, string> = {
   tool_call_requested: 'Tool requested',
   tool_execution_started: 'Tool started',
   tool_execution_completed: 'Tool completed',
-  skill_resolution_completed: 'Skill resolved',
-  retrieval_completed: 'Retrieval completed',
+  skill_catalog_prepared: 'Skills indexed',
+  skill_loaded: 'Skill loaded',
   run_completed: 'Run completed',
   run_failed: 'Run failed',
   run_interrupted: 'Run interrupted',
@@ -31,12 +31,16 @@ function formatEventDetails(event: RunEventRecord): string | null {
   const toolName = typeof event.payload.tool_name === 'string' ? event.payload.tool_name : null;
   const attempt = typeof event.payload.attempt === 'number' ? event.payload.attempt : null;
   const hitCount = typeof event.payload.hit_count === 'number' ? event.payload.hit_count : null;
+  const skillName = typeof event.payload.skill_name === 'string' ? event.payload.skill_name : null;
   const skillNames = Array.isArray(event.payload.skill_names)
     ? event.payload.skill_names.filter((value): value is string => typeof value === 'string')
     : [];
 
   if (toolName) {
     return toolName;
+  }
+  if (skillName) {
+    return skillName;
   }
   if (skillNames.length > 0) {
     return skillNames.join(', ');

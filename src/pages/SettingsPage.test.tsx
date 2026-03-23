@@ -64,13 +64,6 @@ describe("SettingsPage", () => {
               enabled: true,
             },
           },
-          retrieval: {
-            workspace: {
-              enabled: true,
-              max_hits: 3,
-              extensions: [".md", ".txt", ".json"],
-            },
-          },
         },
       },
       setConfig: setConfigMock,
@@ -95,8 +88,6 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Max Tool Rounds")).toBeTruthy();
     expect(screen.getByLabelText("Max Retries")).toBeTruthy();
     expect(screen.getByLabelText("Enable Local Skills")).toBeTruthy();
-    expect(screen.getByLabelText("Enable Workspace Retrieval")).toBeTruthy();
-    expect(screen.getByLabelText("Retrieval Max Hits")).toBeTruthy();
     expect(screen.getByLabelText("Base Font Size")).toBeTruthy();
   });
 
@@ -175,9 +166,6 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     fireEvent.click(screen.getByLabelText("Enable Local Skills"));
-    fireEvent.change(screen.getByLabelText("Retrieval Max Hits"), {
-      target: { value: "5" },
-    });
     fireEvent.change(screen.getByLabelText("Max Output Tokens"), {
       target: { value: "2048" },
     });
@@ -186,9 +174,6 @@ describe("SettingsPage", () => {
     });
     fireEvent.change(screen.getByLabelText("Max Retries"), {
       target: { value: "4" },
-    });
-    fireEvent.change(screen.getByLabelText("Retrieval File Types"), {
-      target: { value: ".md, .py" },
     });
     fireEvent.click(screen.getByText("Save"));
 
@@ -204,13 +189,6 @@ describe("SettingsPage", () => {
           skills: {
             local: {
               enabled: false,
-            },
-          },
-          retrieval: {
-            workspace: {
-              enabled: true,
-              max_hits: 5,
-              extensions: [".md", ".py"],
             },
           },
         },

@@ -127,18 +127,9 @@ export interface LocalSkillContextProviderConfig {
   enabled: boolean;
 }
 
-export interface WorkspaceRetrievalContextProviderConfig {
-  enabled: boolean;
-  max_hits?: number;
-  extensions?: string[];
-}
-
 export interface ContextProviderConfig {
   skills?: {
     local?: LocalSkillContextProviderConfig;
-  };
-  retrieval?: {
-    workspace?: WorkspaceRetrievalContextProviderConfig;
   };
 }
 

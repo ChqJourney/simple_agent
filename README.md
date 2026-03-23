@@ -7,7 +7,7 @@
 - 结构化运行日志与可观测 agent loop
 - 多模型 profile、session 级模型锁定
 - 可扩展工具系统
-- 本地 skill 与 workspace retrieval
+- 本地 skill metadata catalog 注入与 `skill_loader` 按需加载
 - 图片输入与工作区拖拽交互
 - 会话标题生成与会话元数据持久化
 
@@ -23,7 +23,7 @@ Python Backend (FastAPI / WebSocket)
   -> Runtime config + router
   -> Agent loop
   -> Tool registry
-  -> Skill / Retrieval providers
+  -> Skill providers
   -> Run-event logging
 
 Workspace
@@ -59,6 +59,7 @@ Workspace
 
 - 流式聊天响应
 - reasoning 内容展示
+- assistant 正文支持 GFM Markdown，包括表格、任务列表、删除线与单换行
 - 中断生成并保留已输出内容
 - 可观测 run timeline
 - 结构化 run event 落盘到 `.agent/logs/`
@@ -122,6 +123,7 @@ Workspace
 - `node_execute`
 - `todo_task`
 - `ask_question`
+- `skill_loader`
 
 工具结果会被统一序列化，并映射到前端任务面板、工具摘要和待回答问题卡片。
 
@@ -129,11 +131,10 @@ Workspace
 
 - Local Skills
   - 默认扫描：
-    - `~/.agent/skills`
+    - `<app data>/<product>/skills`
     - `<workspace>/.agent/skills`
-- Workspace Retrieval
-  - 当前为轻量关键词检索
-  - 可配置 `max_hits` 与文件扩展名
+  - system prompt 注入的是每个 skill 的 YAML frontmatter catalog
+  - 完整 skill 正文通过 `skill_loader` 工具按需加载
 
 ### 输入与工作区交互
 
@@ -197,13 +198,6 @@ Workspace
     "skills": {
       "local": {
         "enabled": true
-      }
-    },
-    "retrieval": {
-      "workspace": {
-        "enabled": true,
-        "max_hits": 3,
-        "extensions": [".md", ".txt", ".json"]
       }
     }
   }
@@ -297,8 +291,8 @@ agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agen
 常见事件包括：
 
 - `run_started`
-- `skill_resolution_completed`
-- `retrieval_completed`
+- `skill_catalog_prepared`
+- `skill_loaded`
 - `tool_call_requested`
 - `tool_execution_started`
 - `tool_execution_completed`
@@ -311,6 +305,15 @@ agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agen
 - `run_max_rounds_reached`
 
 前端会把这些事件渲染为 run timeline。
+
+## Markdown 渲染
+
+- 聊天正文通过 `react-markdown` 渲染
+- 已启用 `remark-gfm` 与 `remark-breaks`
+- 前端会对部分 LLM 常见输出做轻量规范化，例如：
+  - 兼容 JSON-escaped Markdown 内容
+  - 尽量补齐列表/标题前缺失的空行
+- Markdown 表格使用自定义 table 组件渲染，带边框、表头底色与横向滚动容器
 
 ## 会话与工作区持久化
 
@@ -538,7 +541,6 @@ tauri_agent/
 ├─ python_backend/
 │  ├─ core/
 │  ├─ llms/
-│  ├─ retrieval/
 │  ├─ runtime/
 │  ├─ skills/
 │  ├─ tools/
@@ -553,6 +555,5 @@ tauri_agent/
 - 如果修改 capability，通常需要重启桌面应用
 - 同一 session 内不允许切换已锁定模型
 - 当前图片多模态只支持图片，不支持音频/视频
-- 当前 retrieval 是轻量关键词检索，不是向量索引
 - session title 会在“session 还没有 title 且本次发送的是文本消息”时异步生成一次；纯图片消息不会触发
 - token usage widget 依赖 provider 返回 usage；如果上游不返回 usage，则 widget 会显示为空态

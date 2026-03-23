@@ -6,6 +6,7 @@ mod workspace_paths;
 
 const EMBEDDED_PYTHON_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_PYTHON";
 const EMBEDDED_NODE_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_NODE";
+const APP_DATA_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DATA_DIR";
 
 #[tauri::command]
 fn prepare_workspace_path(
@@ -291,6 +292,11 @@ pub fn run() {
                         "Failed to resolve Tauri resource directory: {error}"
                     ))
                 })?;
+                let app_data_dir = _app.path().app_data_dir().map_err(|error| {
+                    std::io::Error::other(format!(
+                        "Failed to resolve Tauri app data directory: {error}"
+                    ))
+                })?;
                 let sidecar_command = shell
                     .sidecar("python_backend")
                     .map_err(|error| {
@@ -298,7 +304,8 @@ pub fn run() {
                             "Failed to create Python sidecar command: {error}"
                         ))
                     })?
-                    .envs(embedded_runtime_envs(&resource_dir));
+                    .envs(embedded_runtime_envs(&resource_dir))
+                    .env(APP_DATA_DIR_ENV_VAR, app_data_dir.display().to_string());
 
                 let (mut rx, child) = sidecar_command.spawn().map_err(|error| {
                     std::io::Error::other(format!("Failed to spawn Python sidecar: {error}"))
@@ -361,7 +368,7 @@ pub fn run() {
 mod tests {
     use super::{
         embedded_node_dir, embedded_python_dir, embedded_runtime_envs, sidecar_event_log_entry,
-        with_sidecar_slot, EMBEDDED_NODE_ENV_VAR, EMBEDDED_PYTHON_ENV_VAR,
+        with_sidecar_slot, APP_DATA_DIR_ENV_VAR, EMBEDDED_NODE_ENV_VAR, EMBEDDED_PYTHON_ENV_VAR,
     };
     use std::{
         path::Path,
@@ -432,6 +439,7 @@ mod tests {
                 .to_string(),
             envs[1].1
         );
+        assert_eq!("TAURI_AGENT_APP_DATA_DIR", APP_DATA_DIR_ENV_VAR);
     }
 
     #[test]

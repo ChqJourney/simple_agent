@@ -23,14 +23,6 @@ interface ConnectionTestState {
   error: string | null;
 }
 
-function parseExtensionsInput(value: string): string[] {
-  return value
-    .split(',')
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean)
-    .map((item) => (item.startsWith('.') ? item : `.${item}`));
-}
-
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const { config, setConfig } = useConfigStore();
@@ -470,7 +462,7 @@ export const SettingsPage: React.FC = () => {
                   Enable Local Skills
                 </label>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Load matching local `SKILL.md` instructions into the agent context.
+                  Scan local skill metadata into the system prompt and allow the agent to load full instructions with `skill_loader`.
                 </p>
               </div>
               <input
@@ -496,95 +488,9 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div className="border-t border-gray-200 pt-4 dark:border-gray-700 space-y-4">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <label htmlFor="enable-workspace-retrieval" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Enable Workspace Retrieval
-                  </label>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Search workspace files for lightweight supporting context before each run.
-                  </p>
-                </div>
-                <input
-                  id="enable-workspace-retrieval"
-                  type="checkbox"
-                  checked={contextProviders.retrieval?.workspace?.enabled ?? true}
-                  onChange={(e) =>
-                    setDraftConfig({
-                      ...draftConfig,
-                      context_providers: {
-                        ...contextProviders,
-                        retrieval: {
-                          ...contextProviders.retrieval,
-                          workspace: {
-                            ...contextProviders.retrieval?.workspace,
-                            enabled: e.target.checked,
-                          },
-                        },
-                      },
-                    })
-                  }
-                  className="rounded border-gray-300 dark:border-gray-600"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="retrieval-max-hits" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Retrieval Max Hits
-                </label>
-                <input
-                  id="retrieval-max-hits"
-                  type="number"
-                  min={1}
-                  value={contextProviders.retrieval?.workspace?.max_hits ?? 3}
-                  onChange={(e) =>
-                    setDraftConfig({
-                      ...draftConfig,
-                      context_providers: {
-                        ...contextProviders,
-                        retrieval: {
-                          ...contextProviders.retrieval,
-                          workspace: {
-                            enabled: contextProviders.retrieval?.workspace?.enabled ?? true,
-                            extensions: contextProviders.retrieval?.workspace?.extensions,
-                            max_hits: e.target.value ? Number(e.target.value) : 3,
-                          },
-                        },
-                      },
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="retrieval-file-types" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Retrieval File Types
-                </label>
-                <input
-                  id="retrieval-file-types"
-                  type="text"
-                  value={(contextProviders.retrieval?.workspace?.extensions || []).join(', ')}
-                  onChange={(e) =>
-                    setDraftConfig({
-                      ...draftConfig,
-                      context_providers: {
-                        ...contextProviders,
-                        retrieval: {
-                          ...contextProviders.retrieval,
-                          workspace: {
-                            enabled: contextProviders.retrieval?.workspace?.enabled ?? true,
-                            max_hits: contextProviders.retrieval?.workspace?.max_hits ?? 3,
-                            extensions: parseExtensionsInput(e.target.value),
-                          },
-                        },
-                      },
-                    })
-                  }
-                  placeholder=".md, .txt, .json"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                />
-              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Local skills contribute YAML frontmatter to the system prompt; full skill instructions are loaded on demand.
+              </p>
             </div>
           </div>
         </section>

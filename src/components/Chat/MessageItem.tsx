@@ -2,7 +2,7 @@ import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Message, AssistantStatus } from '../../types';
 import { StreamingMessage } from './StreamingMessage';
-import { markdownComponents } from '../../utils/markdown';
+import { markdownComponents, markdownRemarkPlugins, parseMarkdown } from '../../utils/markdown';
 import { ReasoningBlock } from '../Reasoning/ReasoningBlock';
 import { ToolCallDisplay, ToolCard } from '../Tools';
 import { UserStatusIndicator } from './UserStatusIndicator';
@@ -133,8 +133,8 @@ export const MessageItem = memo<MessageItemProps>(({
               <StreamingMessage content={streamingContent} isStreaming={true} />
             ) : null
           ) : (
-            <ReactMarkdown components={markdownComponents}>
-              {message.content || ''}
+            <ReactMarkdown components={markdownComponents} remarkPlugins={markdownRemarkPlugins}>
+              {parseMarkdown(message.content || '')}
             </ReactMarkdown>
           )}
 

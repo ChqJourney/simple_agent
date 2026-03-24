@@ -46,7 +46,7 @@ class NodeExecuteToolTests(unittest.IsolatedAsyncioTestCase):
             {"TAURI_AGENT_EMBEDDED_NODE": r"C:\runtime\node"},
             clear=False,
         ):
-            with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.is_dir", return_value=True), patch("pathlib.Path.exists", return_value=True):
                 with patch("tools.node_execute.asyncio.create_subprocess_exec", fake_subprocess):
                     result = await NodeExecuteTool().execute(
                         tool_call_id="node-embedded",

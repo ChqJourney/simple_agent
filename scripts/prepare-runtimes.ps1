@@ -55,8 +55,33 @@ import site
 "@
     Write-Utf8NoBomFile -Path $pthPath -Content $pthContent
 
-    Write-Host "Installing pip via ensurepip"
-    Invoke-CheckedCommand -FilePath $pythonExecutable -Arguments @("-m", "ensurepip", "--upgrade", "--default-pip")
+    Write-Host "Installing pip (ensurepip or get-pip.py fallback)"
+    $ensurepipAvailable = $true
+    try {
+        Invoke-CheckedCommand -FilePath $pythonExecutable -Arguments @("-c", "import ensurepip; print('ensurepip available')")
+    }
+    catch {
+        $ensurepipAvailable = $false
+        Write-Host "ensurepip not available in this embeddable build, will use get-pip.py"
+    }
+
+    if ($ensurepipAvailable) {
+        Invoke-CheckedCommand -FilePath $pythonExecutable -Arguments @("-m", "ensurepip", "--upgrade", "--default-pip")
+    }
+    else {
+        # Download get-pip.py and run it with the embedded Python itself
+        # so that pip is installed into the embedded Python's site-packages.
+        $getPipPath = Join-Path $pythonCache "get-pip.py"
+        Write-Host "Downloading get-pip.py"
+        $getPipUrl = "https://bootstrap.pypa.io/get-pip.py"
+        Invoke-WebRequest -Uri $getPipUrl -OutFile $getPipPath
+
+        Write-Host "Installing pip via get-pip.py using embedded Python"
+        Invoke-CheckedCommand -FilePath $pythonExecutable -Arguments @($getPipPath)
+
+        # Remove get-pip.py to keep the runtime clean
+        Remove-Item -LiteralPath $getPipPath -Force
+    }
 }
 
 if ($Force -or -not (Test-Path -LiteralPath $nodeExecutable)) {

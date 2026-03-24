@@ -59,7 +59,7 @@ Without a unified packaging flow, deployment depends on machine-local state and 
 
 ### Python
 
-Use the official Python `3.13.x` Windows x64 **embeddable package** (zip) as the offline source package. The build machine extracts the zip into a staging directory, configures `python._pth` for `site-packages` support, and bootstraps `pip` via `python -m ensurepip`. The staged directory is then bundled as an embedded runtime resource.
+Use the official Python `3.13.x` Windows x64 **embeddable package** (zip) as the offline source package. The build machine extracts the zip into a staging directory, configures `python._pth` for `site-packages` support, and bootstraps `pip` via `ensurepip` (with a `get-pip.py` fallback for builds where `ensurepip` is not bundled). The staged directory is then bundled as an embedded runtime resource.
 
 The embeddable package was chosen over the full installer for several reasons:
 
@@ -68,7 +68,7 @@ The embeddable package was chosen over the full installer for several reasons:
 - **Faster staging**: extraction takes ~2 seconds vs ~30 seconds for a silent installer invocation.
 - **Stronger isolation**: the `._pth` file completely overrides `sys.path`, ignoring `PYTHONPATH` and other environment variables from the host process.
 
-`pip` is obtained through `python -m ensurepip --upgrade --default-pip` which creates `Lib/site-packages/` and installs both `pip` and `setuptools`. The `python._pth` file is rewritten to include `Lib`, `Lib/site-packages`, and `import site` so that pip and user-installed packages work correctly.
+`pip` is obtained by first attempting `python -m ensurepip --upgrade --default-pip`. Some embeddable builds (notably Python 3.13) omit `ensurepip`; in that case the script falls back to downloading `get-pip.py` from `bootstrap.pypa.io` and executing it with the build machine's system Python. Both paths create `Lib/site-packages/` and install `pip` and `setuptools`. The `python._pth` file is rewritten to include `Lib`, `Lib/site-packages`, and `import site` so that pip and user-installed packages work correctly.
 
 ### Node.js
 

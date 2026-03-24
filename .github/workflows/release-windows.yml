@@ -149,15 +149,32 @@ jobs:
             throw "No-runtime ZIP still contains embedded runtimes."
           }
 
-          $process = Start-Process -FilePath $backendExe.FullName -PassThru
+          $stdoutLog = Join-Path $smokeRoot "backend-stdout.log"
+          $stderrLog = Join-Path $smokeRoot "backend-stderr.log"
+
+          $process = Start-Process -FilePath $backendExe.FullName -PassThru `
+            -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -NoNewWindow
+
           try {
             $healthy = $false
             for ($attempt = 0; $attempt -lt 15; $attempt++) {
               Start-Sleep -Seconds 1
+
+              # Check if backend process crashed (exited before health check passed)
+              if ($process.HasExited) {
+                Write-Host "Backend process exited prematurely with code $($process.ExitCode)"
+                Write-Host "=== STDOUT ==="
+                if (Test-Path -LiteralPath $stdoutLog) { Get-Content -LiteralPath $stdoutLog }
+                Write-Host "=== STDERR ==="
+                if (Test-Path -LiteralPath $stderrLog) { Get-Content -LiteralPath $stderrLog }
+                throw "Backend crashed on startup (exit code $($process.ExitCode)). Check logs above."
+              }
+
               try {
                 $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8765/health"
                 if ($response.StatusCode -eq 200) {
                   $healthy = $true
+                  Write-Host "Backend health check passed (attempt $($attempt + 1))"
                   break
                 }
               }
@@ -166,6 +183,11 @@ jobs:
             }
 
             if (-not $healthy) {
+              Write-Host "Backend never became healthy after 15 attempts"
+              Write-Host "=== STDOUT ==="
+              if (Test-Path -LiteralPath $stdoutLog) { Get-Content -LiteralPath $stdoutLog }
+              Write-Host "=== STDERR ==="
+              if (Test-Path -LiteralPath $stderrLog) { Get-Content -LiteralPath $stderrLog }
               throw "Packaged backend did not become healthy on http://127.0.0.1:8765/health"
             }
           }

@@ -21,7 +21,7 @@ from runtime.embedded_runtime import (
 class EmbeddedRuntimeTests(unittest.TestCase):
     def test_resolves_embedded_python_paths(self) -> None:
         with patch.dict("os.environ", {"TAURI_AGENT_EMBEDDED_PYTHON": r"C:\runtime\python"}, clear=False):
-            with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.is_dir", return_value=True), patch("pathlib.Path.exists", return_value=True):
                 self.assertEqual(Path(r"C:\runtime\python\python.exe"), get_python_executable())
                 self.assertEqual(
                     [str(Path(r"C:\runtime\python\python.exe")), "-m", "pip"],
@@ -30,7 +30,7 @@ class EmbeddedRuntimeTests(unittest.TestCase):
 
     def test_resolves_embedded_node_paths(self) -> None:
         with patch.dict("os.environ", {"TAURI_AGENT_EMBEDDED_NODE": r"C:\runtime\node"}, clear=False):
-            with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.is_dir", return_value=True), patch("pathlib.Path.exists", return_value=True):
                 self.assertEqual(Path(r"C:\runtime\node\node.exe"), get_node_executable())
                 self.assertEqual([str(Path(r"C:\runtime\node\npm.cmd"))], get_npm_command())
                 self.assertEqual([str(Path(r"C:\runtime\node\npx.cmd"))], get_npx_command())
@@ -73,7 +73,7 @@ class EmbeddedRuntimeTests(unittest.TestCase):
         def selective_is_dir(self_path: Path) -> bool:
             if "Scripts" in str(self_path):
                 return False
-            return original_is_dir(self_path)
+            return True
 
         with patch.dict(
             "os.environ",
@@ -97,17 +97,49 @@ class EmbeddedRuntimeTests(unittest.TestCase):
             env["PATH"],
         )
 
-    def test_raises_for_missing_embedded_python_executable(self) -> None:
+    def test_falls_back_to_system_python_when_embedded_directory_missing(self) -> None:
         with patch.dict("os.environ", {"TAURI_AGENT_EMBEDDED_PYTHON": r"C:\missing\python"}, clear=False):
-            with patch("pathlib.Path.exists", return_value=False):
-                with self.assertRaises(RuntimeError):
-                    get_python_executable()
+            with patch("pathlib.Path.is_dir", return_value=False):
+                # _configured_root returns None when the directory doesn't exist
+                self.assertEqual(Path(sys.executable), get_python_executable())
 
-    def test_raises_for_missing_embedded_node_executable(self) -> None:
+    def test_falls_back_to_system_python_when_executable_missing(self) -> None:
+        original_is_dir = Path.is_dir
+
+        def selective_is_dir(self_path: Path) -> bool:
+            # Directory exists but python.exe does not
+            if str(self_path).endswith("python.exe"):
+                return False
+            return original_is_dir(self_path)
+
+        with patch.dict("os.environ", {"TAURI_AGENT_EMBEDDED_PYTHON": r"C:\runtime\python"}, clear=False):
+            with patch.object(Path, "is_dir", selective_is_dir), patch("pathlib.Path.exists", return_value=False):
+                self.assertEqual(Path(sys.executable), get_python_executable())
+
+    def test_falls_back_to_system_node_when_directory_missing(self) -> None:
         with patch.dict("os.environ", {"TAURI_AGENT_EMBEDDED_NODE": r"C:\missing\node"}, clear=False):
-            with patch("pathlib.Path.exists", return_value=False):
-                with self.assertRaises(RuntimeError):
-                    get_node_executable()
+            with patch("pathlib.Path.is_dir", return_value=False):
+                self.assertEqual(Path("node"), get_node_executable())
+
+    def test_falls_back_to_npm_when_node_directory_missing(self) -> None:
+        with patch.dict("os.environ", {"TAURI_AGENT_EMBEDDED_NODE": r"C:\missing\node"}, clear=False):
+            with patch("pathlib.Path.is_dir", return_value=False):
+                self.assertEqual(["npm"], get_npm_command())
+                self.assertEqual(["npx"], get_npx_command())
+
+    def test_build_runtime_environment_skips_invalid_runtime_directories(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "TAURI_AGENT_EMBEDDED_PYTHON": r"C:\missing\python",
+                "TAURI_AGENT_EMBEDDED_NODE": r"C:\missing\node",
+            },
+            clear=False,
+        ):
+            with patch("pathlib.Path.is_dir", return_value=False):
+                env = build_runtime_environment({"PATH": r"C:\Windows\System32"})
+
+        self.assertEqual(r"C:\Windows\System32", env["PATH"])
 
 
 if __name__ == "__main__":

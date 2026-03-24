@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 from pathlib import Path
@@ -5,6 +6,8 @@ from typing import Mapping
 
 EMBEDDED_PYTHON_ENV_VAR = "TAURI_AGENT_EMBEDDED_PYTHON"
 EMBEDDED_NODE_ENV_VAR = "TAURI_AGENT_EMBEDDED_NODE"
+
+logger = logging.getLogger(__name__)
 
 
 def _configured_root(env_var: str) -> Path | None:
@@ -16,13 +19,28 @@ def _configured_root(env_var: str) -> Path | None:
     if not normalized:
         return None
 
-    return Path(normalized)
+    resolved = Path(normalized)
+    if resolved.is_dir():
+        return resolved
+
+    logger.warning(
+        "Environment variable %s is set to '%s' but the directory does not exist; "
+        "falling back to system runtime.",
+        env_var,
+        normalized,
+    )
+    return None
 
 
-def _validate_embedded_executable(path: Path, runtime_name: str) -> Path:
-    if not path.exists():
-        raise RuntimeError(f"Configured embedded {runtime_name} executable is missing: {path}")
-    return path
+def _validate_embedded_executable(path: Path, runtime_name: str) -> Path | None:
+    if path.exists():
+        return path
+    logger.warning(
+        "Configured embedded %s executable is missing: %s; falling back to system runtime.",
+        runtime_name,
+        path,
+    )
+    return None
 
 
 def _embedded_executable_path(root: Path, executable_name: str) -> Path:
@@ -38,7 +56,8 @@ def get_python_executable() -> Path:
     if embedded_root is None:
         return Path(sys.executable)
 
-    return _validate_embedded_executable(_embedded_executable_path(embedded_root, "python.exe"), "python")
+    result = _validate_embedded_executable(_embedded_executable_path(embedded_root, "python.exe"), "python")
+    return result if result is not None else Path(sys.executable)
 
 
 def get_pip_command() -> list[str]:
@@ -75,7 +94,8 @@ def get_node_executable() -> Path:
     if embedded_root is None:
         return Path("node")
 
-    return _validate_embedded_executable(_embedded_executable_path(embedded_root, "node.exe"), "node")
+    result = _validate_embedded_executable(_embedded_executable_path(embedded_root, "node.exe"), "node")
+    return result if result is not None else Path("node")
 
 
 def get_npm_command() -> list[str]:
@@ -84,7 +104,10 @@ def get_npm_command() -> list[str]:
         return ["npm"]
 
     command = _embedded_executable_path(embedded_root, "npm.cmd")
-    return [str(_validate_embedded_executable(command, "node"))]
+    result = _validate_embedded_executable(command, "node")
+    if result is not None:
+        return [str(result)]
+    return ["npm"]
 
 
 def get_npx_command() -> list[str]:
@@ -93,4 +116,7 @@ def get_npx_command() -> list[str]:
         return ["npx"]
 
     command = _embedded_executable_path(embedded_root, "npx.cmd")
-    return [str(_validate_embedded_executable(command, "node"))]
+    result = _validate_embedded_executable(command, "node")
+    if result is not None:
+        return [str(result)]
+    return ["npx"]

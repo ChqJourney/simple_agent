@@ -36,7 +36,10 @@ class EmbeddedRuntimeTests(unittest.TestCase):
                 self.assertEqual([str(Path(r"C:\runtime\node\npx.cmd"))], get_npx_command())
 
     def test_falls_back_to_development_commands_when_embedded_runtimes_absent(self) -> None:
-        with patch.dict("os.environ", {}, clear=False):
+        with patch.dict("os.environ", {}, clear=False), patch(
+            "runtime.embedded_runtime.shutil.which",
+            return_value=None,
+        ):
             self.assertEqual(Path(sys.executable), get_python_executable())
             self.assertEqual([sys.executable, "-m", "pip"], get_pip_command())
             self.assertEqual(Path("node"), get_node_executable())
@@ -51,19 +54,20 @@ class EmbeddedRuntimeTests(unittest.TestCase):
                 "TAURI_AGENT_EMBEDDED_NODE": r"C:\runtime\node",
             },
             clear=False,
-        ):
+        ), patch("pathlib.Path.exists", return_value=True):
             env = build_runtime_environment({"PATH": r"C:\Windows\System32"})
 
-        self.assertEqual(
-            os.pathsep.join(
-                [
-                    r"C:\runtime\python",
-                    r"C:\runtime\node",
-                    r"C:\Windows\System32",
-                ]
-            ),
-            env["PATH"],
-        )
+        path_value = env["PATH"]
+        self.assertIn("tauri-agent-runtime-shims", path_value)
+        self.assertIn(r"C:\runtime\python", path_value)
+        self.assertIn(r"C:\runtime\node", path_value)
+        self.assertTrue(path_value.endswith(r"C:\Windows\System32"))
+        self.assertLess(path_value.index("tauri-agent-runtime-shims"), path_value.index(r"C:\runtime\python"))
+        self.assertLess(path_value.index(r"C:\runtime\python"), path_value.index(r"C:\runtime\node"))
+        self.assertEqual("1", env["PYTHONNOUSERSITE"])
+        self.assertEqual("1", env["PIP_DISABLE_PIP_VERSION_CHECK"])
+        shim_root = next(part for part in env["PATH"].split(os.pathsep) if "tauri-agent-runtime-shims" in part)
+        self.assertTrue(Path(shim_root, "pip").exists())
 
     def test_raises_for_missing_embedded_python_executable(self) -> None:
         with patch.dict("os.environ", {"TAURI_AGENT_EMBEDDED_PYTHON": r"C:\missing\python"}, clear=False):
@@ -76,6 +80,13 @@ class EmbeddedRuntimeTests(unittest.TestCase):
             with patch("pathlib.Path.exists", return_value=False):
                 with self.assertRaises(RuntimeError):
                     get_node_executable()
+
+    def test_strict_mode_requires_embedded_runtimes(self) -> None:
+        with patch.dict("os.environ", {"TAURI_AGENT_RUNTIME_STRICT": "1"}, clear=False):
+            with self.assertRaises(RuntimeError):
+                get_python_executable()
+            with self.assertRaises(RuntimeError):
+                get_node_executable()
 
 
 if __name__ == "__main__":

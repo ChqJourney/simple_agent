@@ -49,13 +49,15 @@ class ShellExecuteTool(BaseTool):
         if os.name != "nt":
             return (
                 "Execute a shell command in the current workspace. "
-                f"Commands run in the current {runner_name} shell."
+                f"Commands run in the current {runner_name} shell. "
+                "The shell environment pins `python`, `python3`, `pip`, `pip3`, `node`, `npm`, and `npx` to the app runtime when configured."
             )
 
         if runner_name in {"pwsh", "powershell"}:
             return (
                 "Execute a shell command in the current workspace. "
                 f"This backend is running on Windows and commands execute in {runner_name}. "
+                "The shell environment pins `python`, `python3`, `pip`, `pip3`, `node`, `npm`, and `npx` to the app runtime when configured. "
                 "Use Windows-native commands only and prefer PowerShell syntax. "
                 "For example, use `Get-ChildItem` or `dir` instead of `ls`, "
                 "`Get-Content` instead of `cat`, `Get-Location` instead of `pwd`, "
@@ -66,6 +68,7 @@ class ShellExecuteTool(BaseTool):
         return (
             "Execute a shell command in the current workspace. "
             "This backend is running on Windows and commands execute in `cmd`. "
+            "The shell environment pins `python`, `python3`, `pip`, `pip3`, `node`, `npm`, and `npx` to the app runtime when configured. "
             "Use Windows-native commands only. "
             "For example, use `dir` instead of `ls`, `type` instead of `cat`, "
             "`cd` instead of `pwd`, `copy` instead of `cp`, `move` instead of `mv`, "

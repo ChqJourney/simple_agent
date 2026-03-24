@@ -58,13 +58,17 @@ class NodeExecuteToolTests(unittest.IsolatedAsyncioTestCase):
             r"C:\runtime\node\node.exe",
             fake_subprocess.await_args.args[0],
         )
+        self.assertEqual("1", fake_subprocess.await_args.kwargs["env"]["PYTHONNOUSERSITE"])
 
     async def test_node_tool_falls_back_to_system_node_without_embedded_runtime(self) -> None:
         fake_subprocess = AsyncMock(
             return_value=FakeProcess(stdout=b"system-node", stderr=b"", returncode=0)
         )
 
-        with patch.dict("os.environ", {}, clear=False):
+        with patch.dict("os.environ", {}, clear=False), patch(
+            "runtime.embedded_runtime.shutil.which",
+            return_value=None,
+        ):
             with patch("tools.node_execute.asyncio.create_subprocess_exec", fake_subprocess):
                 result = await NodeExecuteTool().execute(
                     tool_call_id="node-system",
@@ -73,6 +77,7 @@ class NodeExecuteToolTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.success)
         self.assertEqual("node", fake_subprocess.await_args.args[0])
+        self.assertEqual("1", fake_subprocess.await_args.kwargs["env"]["PYTHONNOUSERSITE"])
 
     async def test_node_tool_truncates_large_outputs(self) -> None:
         fake_subprocess = AsyncMock(

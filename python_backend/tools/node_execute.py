@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
-from runtime.embedded_runtime import get_node_executable
+from runtime.embedded_runtime import build_runtime_environment, get_node_executable
 
 from .base import BaseTool, ToolResult
 from .execution_common import MAX_OUTPUT_BYTES, format_process_output, normalize_timeout
@@ -11,7 +11,7 @@ from .policies import ToolExecutionPolicy
 
 class NodeExecuteTool(BaseTool):
     name = "node_execute"
-    description = "Execute a Node.js snippet with the local Node runtime"
+    description = "Execute a Node.js snippet with the app-managed Node runtime"
     display_name = "Node Execute"
     category = "execution"
     require_confirmation = True
@@ -52,11 +52,13 @@ class NodeExecuteTool(BaseTool):
         normalized_timeout = normalize_timeout(timeout_seconds, self.policy.timeout_seconds)
         cwd = str(Path(workspace_path).resolve()) if workspace_path else None
         node_executable = str(get_node_executable())
+        env = build_runtime_environment()
         process = await asyncio.create_subprocess_exec(
             node_executable,
             "-e",
             code,
             cwd=cwd,
+            env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

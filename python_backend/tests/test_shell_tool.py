@@ -181,6 +181,7 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
                 },
                 clear=False,
             ),
+            patch("pathlib.Path.exists", return_value=True),
             patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_shell_subprocess),
             patch("tools.shell_execute.asyncio.create_subprocess_exec", fake_exec_subprocess),
         ):
@@ -191,16 +192,14 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.success)
         called_mock = fake_exec_subprocess if fake_exec_subprocess.await_count else fake_shell_subprocess
-        self.assertEqual(
-            os.pathsep.join(
-                [
-                    r"C:\runtime\python",
-                    r"C:\runtime\node",
-                    r"C:\Windows\System32",
-                ]
-            ),
-            called_mock.await_args.kwargs["env"]["PATH"],
-        )
+        path_value = called_mock.await_args.kwargs["env"]["PATH"]
+        self.assertIn("tauri-agent-runtime-shims", path_value)
+        self.assertIn(r"C:\runtime\python", path_value)
+        self.assertIn(r"C:\runtime\node", path_value)
+        self.assertTrue(path_value.endswith(r"C:\Windows\System32"))
+        self.assertLess(path_value.index("tauri-agent-runtime-shims"), path_value.index(r"C:\runtime\python"))
+        self.assertLess(path_value.index(r"C:\runtime\python"), path_value.index(r"C:\runtime\node"))
+        self.assertEqual("1", called_mock.await_args.kwargs["env"]["PYTHONNOUSERSITE"])
 
 
 if __name__ == "__main__":

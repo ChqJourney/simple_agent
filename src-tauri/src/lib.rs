@@ -6,6 +6,7 @@ mod workspace_paths;
 
 const EMBEDDED_PYTHON_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_PYTHON";
 const EMBEDDED_NODE_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_NODE";
+const STRICT_RUNTIME_ENV_VAR: &str = "TAURI_AGENT_RUNTIME_STRICT";
 const APP_DATA_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DATA_DIR";
 
 #[tauri::command]
@@ -305,6 +306,7 @@ pub fn run() {
                         ))
                     })?
                     .envs(embedded_runtime_envs(&resource_dir))
+                    .env(STRICT_RUNTIME_ENV_VAR, "1")
                     .env(APP_DATA_DIR_ENV_VAR, app_data_dir.display().to_string());
 
                 let (mut rx, child) = sidecar_command.spawn().map_err(|error| {

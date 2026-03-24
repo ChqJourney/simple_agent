@@ -58,6 +58,7 @@ class PythonExecuteToolTests(unittest.IsolatedAsyncioTestCase):
             r"C:\runtime\python\python.exe",
             fake_subprocess.await_args.args[0],
         )
+        self.assertEqual("1", fake_subprocess.await_args.kwargs["env"]["PYTHONNOUSERSITE"])
 
     async def test_python_tool_falls_back_to_current_interpreter_without_embedded_runtime(self) -> None:
         fake_subprocess = AsyncMock(
@@ -73,6 +74,7 @@ class PythonExecuteToolTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.success)
         self.assertEqual(sys.executable, fake_subprocess.await_args.args[0])
+        self.assertEqual("1", fake_subprocess.await_args.kwargs["env"]["PYTHONNOUSERSITE"])
 
     async def test_python_tool_truncates_large_outputs(self) -> None:
         fake_subprocess = AsyncMock(

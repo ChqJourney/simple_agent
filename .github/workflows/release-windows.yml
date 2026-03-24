@@ -7,11 +7,6 @@ on:
         description: Optional release version override, for example 0.1.1
         required: false
         type: string
-      vendor_release_tag:
-        description: Vendor release tag that contains the Windows runtime bundle
-        required: false
-        default: vendor-202603
-        type: string
   push:
     tags:
       - "v*"
@@ -22,8 +17,6 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    env:
-      DEFAULT_VENDOR_RELEASE_TAG: vendor-202603
 
     steps:
       - name: Checkout
@@ -58,98 +51,43 @@ jobs:
         shell: pwsh
         run: npm run test
 
-      - name: Download vendor bundle from release assets
+      - name: Download runtime source archives
         shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          $vendorTag = "${{ github.event.inputs.vendor_release_tag }}"
-          if ([string]::IsNullOrWhiteSpace($vendorTag)) {
-            $vendorTag = $env:DEFAULT_VENDOR_RELEASE_TAG
-          }
+          $manifest = Get-Content -Raw scripts/runtime-manifest.json | ConvertFrom-Json
 
-          $apiHeaders = @{
-            Authorization = "Bearer $env:GITHUB_TOKEN"
-            Accept = "application/vnd.github+json"
-            "X-GitHub-Api-Version" = "2022-11-28"
-          }
+          $pythonArchiveUrl = "https://www.python.org/ftp/python/$($manifest.python.version)/$($manifest.python.embeddableArchive)"
+          $nodeArchiveUrl = "https://nodejs.org/dist/v$($manifest.node.version)/$($manifest.node.archive)"
 
-          $release = Invoke-RestMethod -Headers $apiHeaders -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$vendorTag"
-          $zipAssets = @($release.assets | Where-Object { $_.name -like "*.zip" })
-
-          if ($zipAssets.Count -eq 0) {
-            throw "No zip asset was found in release tag '$vendorTag'."
-          }
-
-          if ($zipAssets.Count -gt 1) {
-            $assetNames = $zipAssets | ForEach-Object { $_.name }
-            throw "Multiple zip assets were found in release tag '$vendorTag': $($assetNames -join ', '). Keep exactly one zip asset or teach the workflow which asset to pick."
-          }
-
-          $asset = $zipAssets[0]
-          $downloadDir = Join-Path $env:RUNNER_TEMP "vendor-download"
           $vendorRoot = Join-Path $env:RUNNER_TEMP "vendor"
-          $archivePath = Join-Path $downloadDir $asset.name
+          $pythonDownloadDir = Join-Path $vendorRoot "downloads/python"
+          $nodeDownloadDir = Join-Path $vendorRoot "downloads/node"
 
-          New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
-          if (Test-Path -LiteralPath $vendorRoot) {
-            Remove-Item -LiteralPath $vendorRoot -Recurse -Force
+          foreach ($dir in @($pythonDownloadDir, $nodeDownloadDir)) {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
           }
 
-          $downloadHeaders = @{
-            Authorization = "Bearer $env:GITHUB_TOKEN"
-            Accept = "application/octet-stream"
-            "X-GitHub-Api-Version" = "2022-11-28"
-          }
+          $pythonArchivePath = Join-Path $pythonDownloadDir $manifest.python.embeddableArchive
+          $nodeArchivePath = Join-Path $nodeDownloadDir $manifest.node.archive
 
-          Invoke-WebRequest -Headers $downloadHeaders -Uri $asset.url -OutFile $archivePath
-          Expand-Archive -LiteralPath $archivePath -DestinationPath $vendorRoot -Force
+          Write-Host "Downloading Python embeddable package: $pythonArchiveUrl"
+          Invoke-WebRequest -Uri $pythonArchiveUrl -OutFile $pythonArchivePath
+
+          Write-Host "Downloading Node.js archive: $nodeArchiveUrl"
+          Invoke-WebRequest -Uri $nodeArchiveUrl -OutFile $nodeArchivePath
 
           "TAURI_AGENT_VENDOR_ROOT=$vendorRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "Using vendor release tag: $vendorTag"
-          "Resolved vendor root: $vendorRoot"
+          Write-Host "Runtime source archives downloaded to $vendorRoot"
 
-      - name: Stage vendor runtimes
+      - name: Prepare embedded runtimes
         shell: pwsh
         run: |
-          $projectRoot = Get-Location
-          $runtimeRoot = Join-Path $env:TAURI_AGENT_VENDOR_ROOT "runtimes"
-          $prebuiltPython = Join-Path $runtimeRoot "python\python.exe"
-          $prebuiltNode = Join-Path $runtimeRoot "node\node.exe"
+          ./scripts/prepare-runtimes.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT
 
-          if ((Test-Path -LiteralPath $prebuiltPython) -and (Test-Path -LiteralPath $prebuiltNode)) {
-            $pythonStage = Join-Path $projectRoot "tmp\runtime-stage\python"
-            $nodeStage = Join-Path $projectRoot "tmp\runtime-stage\node"
-            $pythonResource = Join-Path $projectRoot "src-tauri\resources\runtimes\python"
-            $nodeResource = Join-Path $projectRoot "src-tauri\resources\runtimes\node"
-
-            foreach ($path in @($pythonStage, $nodeStage, $pythonResource, $nodeResource)) {
-              if (Test-Path -LiteralPath $path) {
-                Remove-Item -LiteralPath $path -Recurse -Force
-              }
-              New-Item -ItemType Directory -Force -Path $path | Out-Null
-            }
-
-            Copy-Item -Path (Join-Path $runtimeRoot "python\*") -Destination $pythonStage -Recurse -Force
-            Copy-Item -Path (Join-Path $runtimeRoot "node\*") -Destination $nodeStage -Recurse -Force
-            Copy-Item -Path (Join-Path $runtimeRoot "python\*") -Destination $pythonResource -Recurse -Force
-            Copy-Item -Path (Join-Path $runtimeRoot "node\*") -Destination $nodeResource -Recurse -Force
-
-            "TAURI_AGENT_VENDOR_MODE=prebuilt_runtimes" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "Staged prebuilt runtimes from vendor bundle."
-          } else {
-            "TAURI_AGENT_VENDOR_MODE=source_archives" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "Vendor bundle does not contain prebuilt runtimes. Falling back to source archive staging."
-          }
-
-      - name: Prepare Windows sidecar inputs
+      - name: Build backend sidecar
         shell: pwsh
         run: |
-          if ($env:TAURI_AGENT_VENDOR_MODE -eq "prebuilt_runtimes") {
-            ./scripts/build-backend.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT -SkipRuntimePrepare
-          } else {
-            ./scripts/build-backend.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT
-          }
+          ./scripts/build-backend.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT -SkipRuntimePrepare
 
       - name: Run Rust tests
         shell: pwsh
@@ -168,20 +106,10 @@ jobs:
       - name: Build portable release
         shell: pwsh
         run: |
-          $skipRuntimePrepare = ($env:TAURI_AGENT_VENDOR_MODE -eq "prebuilt_runtimes")
-
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_VERSION)) {
-            if ($skipRuntimePrepare) {
-              ./scripts/release.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT -SkipRuntimePrepare
-            } else {
-              ./scripts/release.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT
-            }
+            ./scripts/release.ps1 -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT -SkipRuntimePrepare
           } else {
-            if ($skipRuntimePrepare) {
-              ./scripts/release.ps1 -Version $env:RELEASE_VERSION -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT -SkipRuntimePrepare
-            } else {
-              ./scripts/release.ps1 -Version $env:RELEASE_VERSION -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT
-            }
+            ./scripts/release.ps1 -Version $env:RELEASE_VERSION -VendorRoot $env:TAURI_AGENT_VENDOR_ROOT -SkipRuntimePrepare
           }
 
       - name: Smoke test packaged backend

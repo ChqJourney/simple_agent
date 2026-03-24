@@ -1,8 +1,7 @@
 {
   "python": {
     "version": "3.13.12",
-    "embeddableArchive": "python-3.13.12-embed-amd64.zip",
-    "installer": "python-3.13.12-amd64.exe"
+    "embeddableArchive": "python-3.13.12-embed-amd64.zip"
   },
   "node": {
     "version": "22.22.1",

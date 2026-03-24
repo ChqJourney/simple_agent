@@ -109,7 +109,9 @@ An optional `release` wrapper script orchestrates the full sequence.
 
 ### Runtime preparation
 
-The user downloads official offline packages into a repository-external vendor root, for example:
+In CI, the workflow downloads official source archives from python.org and nodejs.org using URLs derived from `scripts/runtime-manifest.json`, then runs `prepare-runtimes.ps1` to extract, configure, and stage the runtimes.
+
+For local builds, the user can either set `TAURI_AGENT_VENDOR_ROOT` pointing to a directory with the source archives already present, or download them manually into the expected layout:
 
 ```text
 %TAURI_AGENT_VENDOR_ROOT%/
@@ -118,12 +120,9 @@ The user downloads official offline packages into a repository-external vendor r
       python-3.13.x-embed-amd64.zip
     node/
       node-v22.x-win-x64.zip
-  cache/
-    python-runtime/
-    node-runtime/
 ```
 
-Project scripts then stage normalized runtime directories under:
+Project scripts stage normalized runtime directories under:
 
 ```text
 tmp/runtime-stage/python/

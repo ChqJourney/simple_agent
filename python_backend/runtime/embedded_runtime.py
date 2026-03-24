@@ -305,8 +305,6 @@ def _ensure_runtime_shims(bundle: RuntimeBundle) -> Path:
     }
 
     for shim_name, command in shim_map.items():
-        if command[0] == shim_name:
-            continue
         _write_shim(shim_root / f"{shim_name}{extension}", command)
 
     return shim_root
@@ -329,6 +327,18 @@ def build_runtime_environment(base_env: Mapping[str, str] | None = None) -> dict
     env["PATH"] = os.pathsep.join([*path_entries, *([existing_path] if existing_path else [])])
     env[PYTHON_NO_USER_SITE_ENV_VAR] = "1"
     env[PIP_DISABLE_VERSION_CHECK_ENV_VAR] = "1"
+
+    # Strip virtual-environment variables that could poison sys.path
+    # inside the child process, even when the correct interpreter is used.
+    for _ve_key in (
+        "VIRTUAL_ENV",
+        "CONDA_PREFIX",
+        "CONDA_DEFAULT_ENV",
+        "CONDA_PROMPT_MODIFIER",
+        "PYTHONPATH",
+    ):
+        env.pop(_ve_key, None)
+
     return env
 
 

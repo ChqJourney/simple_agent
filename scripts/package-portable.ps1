@@ -68,14 +68,14 @@ foreach ($portableRoot in @($fullPortableRoot, $noRuntimePortableRoot)) {
 # Copy contents of portableResources (src-tauri/resources) into the
 # destination "resources" directory so that runtimes/ appears directly
 # under tauri_agent/resources/ — not under resources/resources/.
-Get-ChildItem -LiteralPath $portableResources | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $fullPortableRoot "resources" $_.Name) -Recurse -Force
-}
+$fullResourcesDir = Join-Path $fullPortableRoot "resources"
+Copy-Item -Path (Join-Path $portableResources "*") -Destination $fullResourcesDir -Recurse -Force
 
 $noRuntimeResources = Join-Path $noRuntimePortableRoot "resources"
 Get-ChildItem -LiteralPath $portableResources | ForEach-Object {
     if ($_.Name -ne "runtimes") {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $noRuntimeResources $_.Name) -Recurse -Force
+        $dest = Join-Path $noRuntimeResources $_.Name
+        Copy-Item -LiteralPath $_.FullName -Destination $dest -Recurse -Force
     }
 }
 

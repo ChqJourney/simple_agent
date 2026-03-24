@@ -53,6 +53,9 @@ def build_runtime_environment(base_env: Mapping[str, str] | None = None) -> dict
     embedded_python = _configured_root(EMBEDDED_PYTHON_ENV_VAR)
     if embedded_python is not None:
         path_entries.append(str(embedded_python))
+        scripts_dir = embedded_python / "Scripts"
+        if scripts_dir.is_dir():
+            path_entries.append(str(scripts_dir))
 
     embedded_node = _configured_root(EMBEDDED_NODE_ENV_VAR)
     if embedded_node is not None:

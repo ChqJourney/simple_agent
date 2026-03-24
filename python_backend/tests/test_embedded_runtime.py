@@ -52,7 +52,39 @@ class EmbeddedRuntimeTests(unittest.TestCase):
             },
             clear=False,
         ):
-            env = build_runtime_environment({"PATH": r"C:\Windows\System32"})
+            with patch("pathlib.Path.is_dir", return_value=True):
+                env = build_runtime_environment({"PATH": r"C:\Windows\System32"})
+
+        self.assertEqual(
+            os.pathsep.join(
+                [
+                    r"C:\runtime\python",
+                    r"C:\runtime\python\Scripts",
+                    r"C:\runtime\node",
+                    r"C:\Windows\System32",
+                ]
+            ),
+            env["PATH"],
+        )
+
+    def test_build_runtime_environment_omits_scripts_dir_when_absent(self) -> None:
+        original_is_dir = Path.is_dir
+
+        def selective_is_dir(self_path: Path) -> bool:
+            if "Scripts" in str(self_path):
+                return False
+            return original_is_dir(self_path)
+
+        with patch.dict(
+            "os.environ",
+            {
+                "TAURI_AGENT_EMBEDDED_PYTHON": r"C:\runtime\python",
+                "TAURI_AGENT_EMBEDDED_NODE": r"C:\runtime\node",
+            },
+            clear=False,
+        ):
+            with patch.object(Path, "is_dir", selective_is_dir):
+                env = build_runtime_environment({"PATH": r"C:\Windows\System32"})
 
         self.assertEqual(
             os.pathsep.join(

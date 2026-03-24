@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
-from runtime.embedded_runtime import get_python_executable
+from runtime.embedded_runtime import build_runtime_environment, get_python_executable
 
 from .base import BaseTool, ToolResult
 from .execution_common import MAX_OUTPUT_BYTES, format_process_output, normalize_timeout
@@ -12,7 +12,7 @@ from .policies import ToolExecutionPolicy
 class PythonExecuteTool(BaseTool):
     name = "python_execute"
     description = (
-        "Execute a Python snippet with the current Python runtime. "
+        "Execute a Python snippet using the built-in Python runtime. "
         "Do not include interpreter commands or absolute Python paths; pass only Python code."
     )
     display_name = "Python Execute"
@@ -55,11 +55,13 @@ class PythonExecuteTool(BaseTool):
         normalized_timeout = normalize_timeout(timeout_seconds, self.policy.timeout_seconds)
         cwd = str(Path(workspace_path).resolve()) if workspace_path else None
         python_executable = str(get_python_executable())
+        env = build_runtime_environment()
         process = await asyncio.create_subprocess_exec(
             python_executable,
             "-c",
             code,
             cwd=cwd,
+            env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

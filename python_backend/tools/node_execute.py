@@ -11,7 +11,7 @@ from .policies import ToolExecutionPolicy
 
 class NodeExecuteTool(BaseTool):
     name = "node_execute"
-    description = "Execute a Node.js snippet with the local Node runtime"
+    description = "Execute a Node.js snippet using the built-in Node runtime"
     display_name = "Node Execute"
     category = "execution"
     require_confirmation = True

@@ -181,6 +181,7 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
                 },
                 clear=False,
             ),
+            patch("pathlib.Path.is_dir", return_value=True),
             patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_shell_subprocess),
             patch("tools.shell_execute.asyncio.create_subprocess_exec", fake_exec_subprocess),
         ):
@@ -195,6 +196,7 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
             os.pathsep.join(
                 [
                     r"C:\runtime\python",
+                    r"C:\runtime\python\Scripts",
                     r"C:\runtime\node",
                     r"C:\Windows\System32",
                 ]

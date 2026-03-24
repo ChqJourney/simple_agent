@@ -950,10 +950,16 @@ class Agent:
             f"Workspace path: {session.workspace_path}",
             f"Operating system: {operating_system}",
             f"`shell_execute` runner: {runner_name}",
-            "`python_execute` already uses the configured Python runtime automatically. "
-            "Do not search for or hardcode an absolute Python path when using it.",
-            "If you need to run Python through `shell_execute`, prefer the plain `python` command first. "
-            "The backend injects embedded runtime paths into PATH when available.",
+            "Execution tools (`python_execute`, `shell_execute`, `node_execute`) use a built-in Python/Node "
+            "runtime bundled with the application. The backend prepends these runtime directories to PATH "
+            "before executing any command, so plain commands like `python`, `pip`, `node`, and `npm` will "
+            "use the built-in runtime — not the system-installed versions.",
+            "Do not hardcode absolute interpreter paths (e.g. `C:\\...\\python.exe` or `C:\\...\\pip.exe`). "
+            "Always use plain command names such as `python`, `python -m pip`, `node`, or `npm`.",
+            "`python_execute` directly invokes the built-in Python interpreter with your code snippet. "
+            "Do not prefix code with `python` or an absolute path; pass only Python code.",
+            "When using `shell_execute` to run Python or install packages, simply use `python` or "
+            "`python -m pip install <package>` — the built-in runtime will be found automatically.",
         ]
 
         if operating_system.lower().startswith("windows"):

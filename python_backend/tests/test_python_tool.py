@@ -1,3 +1,4 @@
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -46,7 +47,7 @@ class PythonExecuteToolTests(unittest.IsolatedAsyncioTestCase):
             {"TAURI_AGENT_EMBEDDED_PYTHON": r"C:\runtime\python"},
             clear=False,
         ):
-            with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.is_dir", return_value=True):
                 with patch("tools.python_execute.asyncio.create_subprocess_exec", fake_subprocess):
                     result = await PythonExecuteTool().execute(
                         tool_call_id="python-embedded",
@@ -58,6 +59,31 @@ class PythonExecuteToolTests(unittest.IsolatedAsyncioTestCase):
             r"C:\runtime\python\python.exe",
             fake_subprocess.await_args.args[0],
         )
+
+    async def test_python_tool_passes_runtime_environment_to_subprocess(self) -> None:
+        fake_subprocess = AsyncMock(
+            return_value=FakeProcess(stdout=b"ok", stderr=b"", returncode=0)
+        )
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PATH": r"C:\Windows\System32",
+                "TAURI_AGENT_EMBEDDED_PYTHON": r"C:\runtime\python",
+            },
+            clear=False,
+        ):
+            with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.is_dir", return_value=True):
+                with patch("tools.python_execute.asyncio.create_subprocess_exec", fake_subprocess):
+                    result = await PythonExecuteTool().execute(
+                        tool_call_id="python-env",
+                        code="print('x')",
+                    )
+
+        self.assertTrue(result.success)
+        env = fake_subprocess.await_args.kwargs["env"]
+        self.assertIn("env", fake_subprocess.await_args.kwargs)
+        self.assertTrue(env["PATH"].startswith(r"C:\runtime\python" + os.pathsep))
 
     async def test_python_tool_falls_back_to_current_interpreter_without_embedded_runtime(self) -> None:
         fake_subprocess = AsyncMock(

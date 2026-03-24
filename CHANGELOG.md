@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Changed embedded Python runtime from full installer to official embeddable package (~15 MB vs ~80 MB), with `python._pth` configuration and `ensurepip` for pip bootstrapping
+
 - Changed the workspace composer so execution mode and send/stop controls render inside a single wider input surface with a taller textarea
 - Changed the workspace run timeline from an inline chat block to a top-bar-triggered modal
 - Changed the workspace sidebar header to show folder name, truncated absolute path, and filtered session count instead of model name

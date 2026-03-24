@@ -127,6 +127,8 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("tauri-agent-tests-" + 
 $sitePackages = Join-Path $tempRoot "Lib/site-packages"
 New-Item -ItemType Directory -Path (Join-Path $sitePackages "pip") -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $sitePackages "pip-25.3.dist-info") -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $sitePackages "setuptools") -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $sitePackages "setuptools-78.1.dist-info") -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $sitePackages "torch") -Force | Out-Null
 
 try {
@@ -134,6 +136,8 @@ try {
 
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $sitePackages "pip")) -Message "pip package should be preserved."
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $sitePackages "pip-25.3.dist-info")) -Message "pip metadata should be preserved."
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $sitePackages "setuptools")) -Message "setuptools package should be preserved."
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $sitePackages "setuptools-78.1.dist-info")) -Message "setuptools metadata should be preserved."
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $sitePackages "torch"))) -Message "Unrelated third-party packages should be removed."
 }
 finally {

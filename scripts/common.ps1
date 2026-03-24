@@ -424,7 +424,9 @@ function Prune-PythonSitePackages {
 
     $keepPatterns = @(
         "pip",
-        "pip-*.dist-info"
+        "pip-*.dist-info",
+        "setuptools",
+        "setuptools-*.dist-info"
     )
 
     Get-ChildItem -LiteralPath $sitePackagesPath -Force | ForEach-Object {

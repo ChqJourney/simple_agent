@@ -139,7 +139,7 @@ jobs:
             "Staged prebuilt runtimes from vendor bundle."
           } else {
             "TAURI_AGENT_VENDOR_MODE=source_archives" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "Vendor bundle does not contain prebuilt runtimes. Falling back to installer/archive staging."
+            "Vendor bundle does not contain prebuilt runtimes. Falling back to source archive staging."
           }
 
       - name: Prepare Windows sidecar inputs

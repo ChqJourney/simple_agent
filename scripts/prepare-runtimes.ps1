@@ -8,31 +8,11 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "common.ps1")
 
-function Get-InstalledPythonRoot {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Version
-    )
-
-    $versionParts = $Version.Split(".")
-    if ($versionParts.Length -lt 2) {
-        throw "Python version '$Version' is not in the expected major.minor.patch format."
-    }
-
-    $folderName = "Python{0}{1}" -f $versionParts[0], $versionParts[1]
-    $installedRoot = Join-Path $env:LocalAppData "Programs\\Python\\$folderName"
-    if (-not (Test-Path -LiteralPath (Join-Path $installedRoot "python.exe"))) {
-        throw "Python installer finished, but no usable runtime was found at $installedRoot"
-    }
-
-    return $installedRoot
-}
-
 $projectRoot = Get-ProjectRoot
 $manifest = Get-RuntimeManifest
 $resolvedVendorRoot = Resolve-VendorRoot -VendorRoot $VendorRoot
 
-$pythonInstaller = Find-RequiredFile -Root $resolvedVendorRoot -FileName $manifest.python.installer
+$pythonArchive = Find-RequiredFile -Root $resolvedVendorRoot -FileName $manifest.python.embeddableArchive
 $nodeArchive = Find-RequiredFile -Root $resolvedVendorRoot -FileName $manifest.node.archive
 
 $pythonCache = Join-Path $resolvedVendorRoot "cache/python-runtime"
@@ -53,28 +33,30 @@ $pythonExecutable = Join-Path $pythonCache "python.exe"
 $nodeExecutable = Join-Path $nodeCache "node.exe"
 
 if ($Force -or -not (Test-Path -LiteralPath $pythonExecutable)) {
-    Write-Host "Staging Python runtime from $pythonInstaller"
+    Write-Host "Staging Python embeddable runtime from $pythonArchive"
     Reset-Directory -Path $pythonCache
-    $pythonArgs = @(
-        "/quiet",
-        "InstallAllUsers=0",
-        "TargetDir=$pythonCache",
-        "Include_pip=1",
-        "Include_launcher=0",
-        "Include_test=0",
-        "Include_tcltk=0",
-        "Include_doc=0",
-        "AssociateFiles=0",
-        "Shortcuts=0",
-        "PrependPath=0"
-    )
-    Invoke-CheckedProcess -FilePath $pythonInstaller -ArgumentList $pythonArgs
+    Expand-Archive -LiteralPath $pythonArchive -DestinationPath $pythonCache -Force
 
-    if (-not (Test-Path -LiteralPath $pythonExecutable)) {
-        $installedPythonRoot = Get-InstalledPythonRoot -Version $manifest.python.version
-        Write-Host "Python installer used its default location. Syncing from $installedPythonRoot"
-        Sync-Directory -Source $installedPythonRoot -Destination $pythonCache
+    Write-Host "Configuring python._pth for site-packages support"
+    $versionParts = $manifest.python.version.Split(".")
+    $pthFileName = "python{0}{1}._pth" -f $versionParts[0], $versionParts[1]
+    $pthPath = Join-Path $pythonCache $pthFileName
+
+    if (-not (Test-Path -LiteralPath $pthPath)) {
+        throw "Expected python._pth file not found: $pthPath"
     }
+
+    $pthContent = @"
+python$($versionParts[0])$($versionParts[1]).zip
+.
+Lib
+Lib/site-packages
+import site
+"@
+    Write-Utf8NoBomFile -Path $pthPath -Content $pthContent
+
+    Write-Host "Installing pip via ensurepip"
+    Invoke-CheckedCommand -FilePath $pythonExecutable -Arguments @("-m", "ensurepip", "--upgrade", "--default-pip")
 }
 
 if ($Force -or -not (Test-Path -LiteralPath $nodeExecutable)) {

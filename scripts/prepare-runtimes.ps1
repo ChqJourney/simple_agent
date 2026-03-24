@@ -106,11 +106,48 @@ if ($Force -or -not (Test-Path -LiteralPath $nodeExecutable)) {
 }
 
 Write-Host "Pruning staged Python site-packages"
-$pruneKeepPackages = @()
-if ($manifest.python.pipPackages -and $manifest.python.pipPackages.Count -gt 0) {
-    $pruneKeepPackages = [string[]]$manifest.python.pipPackages
+# Collect the names of all installed packages (including transitive dependencies)
+# so that the prune step does not remove any package that pip pulled in.
+# We use both pip freeze names (for dist-info matching) and a Python helper
+# that resolves the actual top-level module names (for package directory matching),
+# because pip install names often differ from the module directory names
+# (e.g. Pillow -> PIL, python-docx -> docx, PyYAML -> yaml).
+Write-Host "  Collecting installed package list via pip freeze"
+$pipFreezeOutput = & $pythonExecutable -m pip freeze 2>$null
+if ($LASTEXITCODE -ne 0) {
+    throw "pip freeze failed with exit code ${LASTEXITCODE}"
 }
-Prune-PythonSitePackages -PythonRoot $pythonCache -ExtraKeepPatterns $pruneKeepPackages
+$installedPackages = @()
+foreach ($line in ($pipFreezeOutput -split "`r?`n")) {
+    $line = $line.Trim()
+    if ($line -match "^([A-Za-z0-9_.-]+)") {
+        $installedPackages += $Matches[1]
+    }
+}
+# Also collect top-level module names from package metadata
+$topLevelModules = & $pythonExecutable -c @"
+import importlib.metadata, sys
+for dist in importlib.metadata.distributions():
+    try:
+        files = dist.files
+    except Exception:
+        continue
+    for f in (files or []):
+        parts = f.parts
+        if len(parts) >= 2 and parts[0].endswith('.dist-info'):
+            top = parts[1]
+            if not top.startswith('_') and not top.endswith('.py'):
+                print(top)
+                break
+"@ 2>$null
+foreach ($mod in ($topLevelModules -split "`r?`n")) {
+    $mod = $mod.Trim()
+    if ($mod -and $mod -match "^[A-Za-z0-9_]+$" -and $installedPackages -notcontains $mod) {
+        $installedPackages += $mod
+    }
+}
+Write-Host "  Keeping $($installedPackages.Count) installed packages/modules during prune"
+Prune-PythonSitePackages -PythonRoot $pythonCache -ExtraKeepPatterns $installedPackages
 
 Write-Host "Verifying staged Python runtime"
 Invoke-CheckedCommand -FilePath $pythonExecutable -Arguments @("--version")

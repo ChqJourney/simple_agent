@@ -431,8 +431,9 @@ function Prune-PythonSitePackages {
     )
 
     foreach ($pattern in $ExtraKeepPatterns) {
-        # Package names may differ from their pip install names (e.g. "python-docx" -> "docx" folder).
-        # We keep both the raw name and a common "strip python-" heuristic.
+        # Each entry is an installed package name (from pip freeze).
+        # We need to keep the package directory, its dist-info, and
+        # handle the python-xxx -> xxx naming convention.
         $keepPatterns += $pattern
         $keepPatterns += "$pattern.dist-info"
         $keepPatterns += "$pattern-*.dist-info"

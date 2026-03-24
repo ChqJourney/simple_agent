@@ -175,6 +175,16 @@ export function renderToolResultDetails(success: boolean, output: unknown, error
     return JSON.stringify(output, null, 2);
   }
 
+  // Failure path — still extract execution output details when available.
+  if (isExecutionOutput(output)) {
+    const lines = [`Error: ${error || 'Tool execution failed'}`, `exit_code: ${output.exit_code}`];
+    lines.push(`stdout:\n${output.stdout || '(empty)'}`);
+    if (output.stderr) {
+      lines.push(`stderr:\n${output.stderr}`);
+    }
+    return lines.join('\n\n');
+  }
+
   if (error) {
     return `Error: ${error}`;
   }

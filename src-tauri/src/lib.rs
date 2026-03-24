@@ -141,11 +141,11 @@ where
 }
 
 fn embedded_python_dir(resource_dir: &Path) -> std::path::PathBuf {
-    resource_dir.join("runtimes").join("python")
+    resource_dir.join("resources").join("runtimes").join("python")
 }
 
 fn embedded_node_dir(resource_dir: &Path) -> std::path::PathBuf {
-    resource_dir.join("runtimes").join("node")
+    resource_dir.join("resources").join("runtimes").join("node")
 }
 
 fn embedded_runtime_envs(resource_dir: &Path) -> [(String, String); 2] {
@@ -408,11 +408,11 @@ mod tests {
         let resource_dir = Path::new(r"C:\release-root\custom-product\resources");
 
         assert_eq!(
-            resource_dir.join("runtimes").join("python"),
+            resource_dir.join("resources").join("runtimes").join("python"),
             embedded_python_dir(resource_dir)
         );
         assert_eq!(
-            resource_dir.join("runtimes").join("node"),
+            resource_dir.join("resources").join("runtimes").join("node"),
             embedded_node_dir(resource_dir)
         );
     }
@@ -426,6 +426,7 @@ mod tests {
         assert_eq!(EMBEDDED_PYTHON_ENV_VAR, envs[0].0);
         assert_eq!(
             resource_dir
+                .join("resources")
                 .join("runtimes")
                 .join("python")
                 .display()
@@ -435,6 +436,7 @@ mod tests {
         assert_eq!(EMBEDDED_NODE_ENV_VAR, envs[1].0);
         assert_eq!(
             resource_dir
+                .join("resources")
                 .join("runtimes")
                 .join("node")
                 .display()

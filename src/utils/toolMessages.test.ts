@@ -45,4 +45,23 @@ describe("toolMessages", () => {
     expect(details).toContain("Frontmatter:");
     expect(details).toContain("Instructions:");
   });
+
+  it("shows stderr in failed execution outputs", () => {
+    const details = renderToolResultDetails(false, {
+      exit_code: 1,
+      stdout: "",
+      stderr: "ModuleNotFoundError: No module named 'pdfplumber'",
+    }, "Python exited with code 1");
+
+    expect(details).toContain("Error: Python exited with code 1");
+    expect(details).toContain("exit_code: 1");
+    expect(details).toContain("stderr:");
+    expect(details).toContain("ModuleNotFoundError: No module named 'pdfplumber'");
+  });
+
+  it("shows simple error message when output has no execution details", () => {
+    const details = renderToolResultDetails(false, "something broke", "Tool crashed");
+
+    expect(details).toBe("Error: Tool crashed");
+  });
 });

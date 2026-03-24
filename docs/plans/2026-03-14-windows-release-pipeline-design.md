@@ -68,7 +68,9 @@ The embeddable package was chosen over the full installer for several reasons:
 - **Faster staging**: extraction takes ~2 seconds vs ~30 seconds for a silent installer invocation.
 - **Stronger isolation**: the `._pth` file completely overrides `sys.path`, ignoring `PYTHONPATH` and other environment variables from the host process.
 
-`pip` is obtained by first attempting `python -m ensurepip --upgrade --default-pip`. Some embeddable builds (notably Python 3.13) omit `ensurepip`; in that case the script falls back to downloading `get-pip.py` from `bootstrap.pypa.io` and executing it with the build machine's system Python. Both paths create `Lib/site-packages/` and install `pip` and `setuptools`. The `python._pth` file is rewritten to include `Lib`, `Lib/site-packages`, and `import site` so that pip and user-installed packages work correctly.
+`pip` is obtained by first attempting `python -m ensurepip --upgrade --default-pip`. Some embeddable builds (notably Python 3.13) omit `ensurepip`; in that case the script falls back to downloading `get-pip.py` from `bootstrap.pypa.io` and executing it with the embedded Python. Both paths create `Lib/site-packages/` and install `pip` and `setuptools`. The `python._pth` file is rewritten to include `Lib`, `Lib/site-packages`, and `import site` so that pip and user-installed packages work correctly.
+
+After pip is ready, the build script installs **pre-bundled pip packages** declared in `scripts/runtime-manifest.json` under `python.pipPackages`. These are commonly needed libraries (e.g. `python-docx`, `openpyxl`, `pypdf`) that ship with the runtime so that the LLM agent can use them immediately without waiting for `pip install` at runtime. The pruning step (`Prune-PythonSitePackages`) is aware of these packages and preserves them along with their dependencies.
 
 ### Node.js
 

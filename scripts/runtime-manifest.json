@@ -1,7 +1,14 @@
 {
   "python": {
     "version": "3.13.12",
-    "embeddableArchive": "python-3.13.12-embed-amd64.zip"
+    "embeddableArchive": "python-3.13.12-embed-amd64.zip",
+    "pipPackages": [
+      "python-docx",
+      "openpyxl",
+      "pypdf",
+      "pdfplumber",
+      "pymupdf"
+    ]
   },
   "node": {
     "version": "22.22.1",

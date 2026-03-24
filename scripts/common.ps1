@@ -414,7 +414,8 @@ function Sync-ReleaseMetadata {
 function Prune-PythonSitePackages {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$PythonRoot
+        [string]$PythonRoot,
+        [string[]]$ExtraKeepPatterns = @()
     )
 
     $sitePackagesPath = Join-Path $PythonRoot "Lib/site-packages"
@@ -428,6 +429,21 @@ function Prune-PythonSitePackages {
         "setuptools",
         "setuptools-*.dist-info"
     )
+
+    foreach ($pattern in $ExtraKeepPatterns) {
+        # Package names may differ from their pip install names (e.g. "python-docx" -> "docx" folder).
+        # We keep both the raw name and a common "strip python-" heuristic.
+        $keepPatterns += $pattern
+        $keepPatterns += "$pattern.dist-info"
+        $keepPatterns += "$pattern-*.dist-info"
+        # Handle python-xxx convention: "python-docx" installs as "docx" package
+        if ($pattern.StartsWith("python-")) {
+            $shortName = $pattern.Substring("python-".Length)
+            $keepPatterns += $shortName
+            $keepPatterns += "$shortName.dist-info"
+            $keepPatterns += "$shortName-*.dist-info"
+        }
+    }
 
     Get-ChildItem -LiteralPath $sitePackagesPath -Force | ForEach-Object {
         $shouldKeep = $false

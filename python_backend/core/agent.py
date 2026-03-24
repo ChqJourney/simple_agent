@@ -133,7 +133,15 @@ class Agent:
                 tool_results = await self._execute_tools(assistant_message.tool_calls, session, run_id)
 
                 for result in tool_results:
-                    content = result.output if result.success else f"Error: {result.error}"
+                    if result.success:
+                        content = result.output
+                    else:
+                        parts = [f"Error: {result.error}"]
+                        if result.output and isinstance(result.output, dict):
+                            stderr = result.output.get("stderr", "")
+                            if stderr:
+                                parts.append(f"stderr: {stderr}")
+                        content = "\n".join(parts)
                     session.add_message(Message(
                         role="tool",
                         tool_call_id=result.tool_call_id,

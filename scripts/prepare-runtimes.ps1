@@ -82,6 +82,14 @@ import site
         # Remove get-pip.py to keep the runtime clean
         Remove-Item -LiteralPath $getPipPath -Force
     }
+    # Install pre-bundled pip packages declared in runtime-manifest.json
+    if ($manifest.python.pipPackages -and $manifest.python.pipPackages.Count -gt 0) {
+        Write-Host "Installing pre-bundled pip packages: $($manifest.python.pipPackages -join ', ')"
+        foreach ($packageName in $manifest.python.pipPackages) {
+            Write-Host "  Installing $packageName"
+            Invoke-CheckedCommand -FilePath $pythonExecutable -Arguments @("-m", "pip", "install", $packageName)
+        }
+    }
 }
 
 if ($Force -or -not (Test-Path -LiteralPath $nodeExecutable)) {
@@ -98,7 +106,11 @@ if ($Force -or -not (Test-Path -LiteralPath $nodeExecutable)) {
 }
 
 Write-Host "Pruning staged Python site-packages"
-Prune-PythonSitePackages -PythonRoot $pythonCache
+$pruneKeepPackages = @()
+if ($manifest.python.pipPackages -and $manifest.python.pipPackages.Count -gt 0) {
+    $pruneKeepPackages = [string[]]$manifest.python.pipPackages
+}
+Prune-PythonSitePackages -PythonRoot $pythonCache -ExtraKeepPatterns $pruneKeepPackages
 
 Write-Host "Verifying staged Python runtime"
 Invoke-CheckedCommand -FilePath $pythonExecutable -Arguments @("--version")

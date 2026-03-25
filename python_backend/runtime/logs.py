@@ -1,6 +1,6 @@
+import asyncio
 import json
 import logging
-import time
 from pathlib import Path
 
 from core.user import validate_session_id
@@ -11,17 +11,20 @@ LOG_WRITE_MAX_ATTEMPTS = 3
 LOG_WRITE_RETRY_DELAYS_SECONDS = (0.05, 0.1)
 
 
-def append_run_event(workspace_path: str, session_id: str, event: RunEvent) -> None:
+def _write_run_event_payload(log_path: Path, payload: str) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as file:
+        file.write(payload)
+
+
+async def append_run_event(workspace_path: str, session_id: str, event: RunEvent) -> None:
     safe_session_id = validate_session_id(session_id)
     log_path = Path(workspace_path) / ".agent" / "logs" / f"{safe_session_id}.jsonl"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
     payload = json.dumps(event.model_dump(mode="json"), ensure_ascii=False) + "\n"
 
     for attempt in range(LOG_WRITE_MAX_ATTEMPTS):
         try:
-            with log_path.open("a", encoding="utf-8") as file:
-                file.write(payload)
+            await asyncio.to_thread(_write_run_event_payload, log_path, payload)
             return
         except Exception:
             is_final_attempt = attempt == LOG_WRITE_MAX_ATTEMPTS - 1
@@ -34,4 +37,6 @@ def append_run_event(workspace_path: str, session_id: str, event: RunEvent) -> N
                 attempt + 1,
                 LOG_WRITE_MAX_ATTEMPTS,
             )
-            time.sleep(LOG_WRITE_RETRY_DELAYS_SECONDS[min(attempt, len(LOG_WRITE_RETRY_DELAYS_SECONDS) - 1)])
+            await asyncio.sleep(
+                LOG_WRITE_RETRY_DELAYS_SECONDS[min(attempt, len(LOG_WRITE_RETRY_DELAYS_SECONDS) - 1)]
+            )

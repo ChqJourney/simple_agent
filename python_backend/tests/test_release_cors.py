@@ -20,7 +20,7 @@ class ReleaseCorsTests(unittest.TestCase):
             headers={
                 "Origin": "http://tauri.localhost",
                 "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "content-type",
+                "Access-Control-Request-Headers": "content-type,x-tauri-agent-auth",
             },
         )
 
@@ -29,6 +29,35 @@ class ReleaseCorsTests(unittest.TestCase):
             "http://tauri.localhost",
             response.headers.get("access-control-allow-origin"),
         )
+
+    def test_test_config_requires_backend_auth_header(self) -> None:
+        client = TestClient(backend_main.app)
+        original_token = backend_main.runtime_state.auth_token
+        original_host_managed = backend_main.runtime_state.auth_token_host_managed
+        backend_main.runtime_state.auth_token = "release-token"
+        backend_main.runtime_state.auth_token_host_managed = True
+
+        try:
+            response = client.post(
+                "/test-config",
+                json={"provider": "openai", "model": "gpt-4o", "api_key": "key", "base_url": "https://api.openai.com/v1"},
+            )
+            self.assertEqual(401, response.status_code)
+            self.assertEqual({"ok": False, "error": "Unauthorized"}, response.json())
+        finally:
+            backend_main.runtime_state.auth_token = original_token
+            backend_main.runtime_state.auth_token_host_managed = original_host_managed
+
+    def test_auth_token_endpoint_is_hidden_when_token_is_host_managed(self) -> None:
+        client = TestClient(backend_main.app)
+        original_host_managed = backend_main.runtime_state.auth_token_host_managed
+        backend_main.runtime_state.auth_token_host_managed = True
+
+        try:
+            response = client.get("/auth-token")
+            self.assertEqual(404, response.status_code)
+        finally:
+            backend_main.runtime_state.auth_token_host_managed = original_host_managed
 
 
 if __name__ == "__main__":

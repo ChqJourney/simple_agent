@@ -66,7 +66,7 @@ class Agent:
             step_index=step_index,
             payload=payload or {},
         )
-        append_run_event(session.workspace_path, session.session_id, event)
+        await append_run_event(session.workspace_path, session.session_id, event)
         await self.user_manager.send_to_frontend({
             "type": "run_event",
             "session_id": session.session_id,
@@ -172,16 +172,17 @@ class Agent:
             })
         except Exception as e:
             logger.exception(f"Agent run failed: {e}")
+            safe_error = "Agent run failed. Check backend logs."
             await self._emit_run_event(
                 session,
                 run_id,
                 "run_failed",
-                {"error": str(e)},
+                {"error": safe_error},
             )
             await self.user_manager.send_to_frontend({
                 "type": "error",
                 "session_id": session.session_id,
-                "error": str(e)
+                "error": safe_error
             })
 
     async def _stream_llm_with_retry(
@@ -204,6 +205,7 @@ class Agent:
             except Exception as e:
                 last_error = e
                 logger.warning(f"LLM call failed (attempt {attempt + 1}/{self.max_retries}): {e}")
+                safe_error = "LLM request failed"
                 await self._emit_run_event(
                     session,
                     run_id,
@@ -211,7 +213,7 @@ class Agent:
                     {
                         "attempt": attempt + 1,
                         "max_retries": self.max_retries,
-                        "error": str(e),
+                        "error": safe_error,
                     },
                 )
 
@@ -220,7 +222,7 @@ class Agent:
                     "session_id": session.session_id,
                     "attempt": attempt + 1,
                     "max_retries": self.max_retries,
-                    "error": str(e)
+                    "error": safe_error
                 })
 
                 if attempt < self.max_retries - 1:
@@ -265,6 +267,59 @@ class Agent:
             except TypeError:
                 return str(content)
         return str(content)
+
+    @staticmethod
+    def _estimate_message_tokens(message: Dict[str, Any]) -> int:
+        try:
+            serialized = json.dumps(message, ensure_ascii=False)
+        except TypeError:
+            serialized = str(message)
+        return max(1, len(serialized) // 4)
+
+    def _trim_messages_to_context_window(
+        self,
+        history_messages: List[Dict[str, Any]],
+        system_message: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        get_context_length = getattr(self.llm, "_get_context_length", None)
+        if not callable(get_context_length):
+            if system_message is None:
+                return history_messages
+            return [system_message, *history_messages]
+
+        context_length = get_context_length()
+        if context_length is None or context_length <= 0:
+            if system_message is None:
+                return history_messages
+            return [system_message, *history_messages]
+
+        if not history_messages and system_message is None:
+            return []
+
+        get_max_output_tokens = getattr(self.llm, "_get_max_output_tokens", None)
+        reserved_output_tokens = get_max_output_tokens() if callable(get_max_output_tokens) else None
+        if reserved_output_tokens is None or reserved_output_tokens <= 0:
+            reserved_output_tokens = min(2048, max(256, context_length // 8))
+
+        system_tokens = self._estimate_message_tokens(system_message) if system_message is not None else 0
+        history_budget = max(context_length - reserved_output_tokens - system_tokens, 0)
+        kept_reversed: List[Dict[str, Any]] = []
+        used_tokens = 0
+
+        for message in reversed(history_messages):
+            message_tokens = self._estimate_message_tokens(message)
+            if kept_reversed and used_tokens + message_tokens > history_budget:
+                break
+            kept_reversed.append(message)
+            used_tokens += message_tokens
+
+        if not kept_reversed:
+            kept_reversed.append(history_messages[-1])
+
+        trimmed_history = list(reversed(kept_reversed))
+        if system_message is None:
+            return trimmed_history
+        return [system_message, *trimmed_history]
 
     @staticmethod
     def _validate_tool_arguments(tool: BaseTool, arguments: Dict[str, Any]) -> Optional[str]:
@@ -819,12 +874,13 @@ class Agent:
             raise
         except Exception as e:
             logger.exception(f"Tool execution failed: {tool.name}")
+            safe_error = "Tool execution failed. Check backend logs."
             error_result = ToolResult(
                 tool_call_id=tool_call_id,
                 tool_name=tool.name,
                 success=False,
                 output=None,
-                error=str(e)
+                error=safe_error
             )
 
             await self.user_manager.send_to_frontend({
@@ -834,7 +890,7 @@ class Agent:
                 "tool_name": tool.name,
                 "success": False,
                 "output": None,
-                "error": str(e)
+                "error": safe_error
             })
             await self._emit_run_event(
                 session,
@@ -844,7 +900,7 @@ class Agent:
                     "tool_call_id": tool_call_id,
                     "tool_name": tool.name,
                     "success": False,
-                    "error": str(e),
+                    "error": safe_error,
                 },
             )
 
@@ -942,10 +998,8 @@ class Agent:
             if skills:
                 prompt_sections.append(self._format_skill_catalog_section(skills))
 
-        if not prompt_sections:
-            return messages
-
-        return [{"role": "system", "content": "\n\n".join(prompt_sections)}, *messages]
+        system_message = {"role": "system", "content": "\n\n".join(prompt_sections)} if prompt_sections else None
+        return self._trim_messages_to_context_window(messages, system_message)
 
     @staticmethod
     def _format_runtime_environment_section(session: Session) -> str:

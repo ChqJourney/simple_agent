@@ -35,3 +35,4 @@ binaries
 tmp/runtime-stage
 src-tauri/resources/runtimes
 artifacts
+.workbuddy

@@ -15,6 +15,9 @@ export const ModelDisplay: React.FC = () => {
   const providerLabel: Record<string, string> = {
     openai: 'OpenAI',
     deepseek: 'DeepSeek',
+    kimi: 'Kimi',
+    glm: 'GLM',
+    minimax: 'MiniMax',
     qwen: 'Qwen',
     ollama: 'Ollama',
   };

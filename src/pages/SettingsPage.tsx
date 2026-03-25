@@ -13,6 +13,7 @@ import {
   normalizeProviderMemory,
   normalizeProviderConfig,
 } from '../utils/config';
+import { buildBackendAuthHeaders, getBackendAuthToken } from '../utils/backendAuth';
 import { backendTestConfigUrl } from '../utils/backendEndpoint';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
@@ -157,11 +158,18 @@ export const SettingsPage: React.FC = () => {
     setConnectionTestState(profileName, 'testing', null);
 
     try {
+      const authToken = await getBackendAuthToken({ isTestMode: import.meta.env.MODE === 'test' });
+      if (!authToken) {
+        setConnectionTestState(profileName, 'error', 'Backend auth handshake failed');
+        return;
+      }
+
       const baseUrl = normalizeBaseUrl(profile.provider, profile.base_url);
       const response = await fetch(backendTestConfigUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...buildBackendAuthHeaders(authToken),
         },
         body: JSON.stringify({
           provider: profile.provider,

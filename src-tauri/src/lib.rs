@@ -8,6 +8,7 @@ const EMBEDDED_PYTHON_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_PYTHON";
 const EMBEDDED_NODE_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_NODE";
 const STRICT_RUNTIME_ENV_VAR: &str = "TAURI_AGENT_RUNTIME_STRICT";
 const APP_DATA_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DATA_DIR";
+const AUTH_TOKEN_ENV_VAR: &str = "TAURI_AGENT_AUTH_TOKEN";
 
 #[tauri::command]
 fn prepare_workspace_path(
@@ -103,7 +104,19 @@ fn open_workspace_folder(selected_path: String) -> Result<(), String> {
         .map_err(|error| format!("Failed to open workspace folder: {error}"))
 }
 
+pub struct BackendAuthToken(Mutex<Option<String>>);
 pub struct PythonSidecar(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
+
+#[tauri::command]
+fn get_backend_auth_token(auth_token: tauri::State<'_, BackendAuthToken>) -> Result<String, String> {
+    let guard = auth_token
+        .0
+        .lock()
+        .map_err(|_| "Backend auth token state lock poisoned".to_string())?;
+    guard
+        .clone()
+        .ok_or_else(|| "Backend auth token unavailable from host".to_string())
+}
 
 fn sidecar_event_log_entry(
     event: &tauri_plugin_shell::process::CommandEvent,
@@ -261,11 +274,23 @@ fn kill_sidecar(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let initial_auth_token = std::env::var(AUTH_TOKEN_ENV_VAR)
+        .ok()
+        .and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .manage(BackendAuthToken(Mutex::new(initial_auth_token)))
         .manage(PythonSidecar(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             prepare_workspace_path,
@@ -273,7 +298,8 @@ pub fn run() {
             scan_workspace_sessions,
             read_session_history,
             delete_session_history,
-            open_workspace_folder
+            open_workspace_folder,
+            get_backend_auth_token
         ])
         .setup(|_app| {
             #[cfg(debug_assertions)]
@@ -286,6 +312,20 @@ pub fn run() {
             #[cfg(not(debug_assertions))]
             {
                 use tauri_plugin_shell::ShellExt;
+
+                let auth_token = {
+                    let state = _app.state::<BackendAuthToken>();
+                    let mut guard = state.0.lock().map_err(|_| {
+                        std::io::Error::other("Backend auth token state lock poisoned")
+                    })?;
+                    if let Some(existing) = guard.clone() {
+                        existing
+                    } else {
+                        let generated = uuid::Uuid::new_v4().as_simple().to_string();
+                        *guard = Some(generated.clone());
+                        generated
+                    }
+                };
 
                 let shell = _app.shell();
                 let resource_dir = _app.path().resource_dir().map_err(|error| {
@@ -307,6 +347,7 @@ pub fn run() {
                     })?
                     .envs(embedded_runtime_envs(&resource_dir))
                     .env(STRICT_RUNTIME_ENV_VAR, "1")
+                    .env(AUTH_TOKEN_ENV_VAR, auth_token)
                     .env(APP_DATA_DIR_ENV_VAR, app_data_dir.display().to_string());
 
                 let (mut rx, child) = sidecar_command.spawn().map_err(|error| {

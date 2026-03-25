@@ -7,6 +7,7 @@ import { useConfigStore } from "../stores/configStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import { resetBackendAuthTokenCache } from "../utils/backendAuth";
 import { WebSocketProvider, useWebSocket } from "./WebSocketContext";
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -119,6 +120,7 @@ const testConfig: ProviderConfig = {
 describe("WebSocketProvider", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    resetBackendAuthTokenCache();
     vi.restoreAllMocks();
   });
 
@@ -137,6 +139,7 @@ describe("WebSocketProvider", () => {
     websocketMockState.isConnectedMock.mockClear();
     websocketMockState.getConnectionStatusMock.mockClear();
     websocketMockState.onStatusChangeMock.mockClear();
+    resetBackendAuthTokenCache();
     useConfigStore.setState((state) => ({
       ...state,
       config: testConfig,

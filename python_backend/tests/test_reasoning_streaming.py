@@ -9,7 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.agent import Agent
-from core.user import Session, UserManager
+from core.user import Message, Session, UserManager
 from llms.base import BaseLLM
 from tools.base import ToolRegistry
 
@@ -86,6 +86,27 @@ class UsageReportingLLM(BaseLLM):
         }
         yield {
             'choices': [{'delta': {'content': 'usage aware answer'}}]
+        }
+
+    async def complete(self, messages, tools=None):
+        return {}
+
+
+class CapturingWindowedLLM(BaseLLM):
+    def __init__(self):
+        super().__init__({
+            'model': 'windowed-test-model',
+            'runtime': {
+                'context_length': 120,
+                'max_output_tokens': 20,
+            },
+        })
+        self.seen_messages = []
+
+    async def stream(self, messages, tools=None):
+        self.seen_messages = list(messages)
+        yield {
+            'choices': [{'delta': {'content': 'trimmed answer'}}]
         }
 
     async def complete(self, messages, tools=None):
@@ -195,6 +216,34 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(4096, completed[0]['usage']['prompt_tokens'])
         self.assertEqual(128000, completed[0]['usage']['context_length'])
         self.assertEqual(4096, session.messages[-1].usage['prompt_tokens'])
+
+        temp_dir.cleanup()
+
+    async def test_agent_trims_old_history_to_fit_context_window(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+        llm = CapturingWindowedLLM()
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-1')
+        await user_manager.bind_session_to_connection('session-1', 'conn-1')
+
+        session.add_message(Message(role='user', content='old-user-' + ('a' * 220)))
+        session.add_message(Message(role='assistant', content='old-assistant-' + ('b' * 220)))
+        session.add_message(Message(role='user', content='recent-user-' + ('c' * 60)))
+
+        agent = Agent(llm, ToolRegistry(), user_manager)
+        await agent.run('latest prompt', session)
+
+        serialized_messages = [str(message.get('content')) for message in llm.seen_messages]
+        self.assertTrue(any('latest prompt' in content for content in serialized_messages))
+        self.assertFalse(any('old-user-' in content for content in serialized_messages))
+        self.assertTrue(serialized_messages[0])
+        self.assertEqual('system', llm.seen_messages[0]['role'])
 
         temp_dir.cleanup()
 

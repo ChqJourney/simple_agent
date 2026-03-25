@@ -46,6 +46,19 @@ class ConnectionRoutingTests(unittest.IsolatedAsyncioTestCase):
             self.client_b_messages,
         )
 
+    async def test_does_not_broadcast_when_only_one_connection_exists_without_session_binding(self) -> None:
+        single_connection_manager = UserManager()
+        delivered_messages = []
+
+        async def callback(message):
+            delivered_messages.append(message)
+
+        await single_connection_manager.register_connection("conn-only", callback)
+
+        await single_connection_manager.send_to_frontend({"type": "started", "session_id": "session-missing"})
+
+        self.assertEqual([], delivered_messages)
+
     async def test_unregister_connection_only_cancels_owned_confirmations(self) -> None:
         await self.user_manager.bind_session_to_connection("session-a", "conn-a")
         await self.user_manager.bind_session_to_connection("session-b", "conn-b")

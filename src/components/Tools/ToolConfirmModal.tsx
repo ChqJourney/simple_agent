@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { ToolCall, ToolDecision, ToolDecisionScope } from '../../types';
 
 interface ToolConfirmModalProps {
@@ -10,10 +10,73 @@ export const ToolConfirmModal: React.FC<ToolConfirmModalProps> = ({
   toolCall,
   onDecision,
 }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  useEffect(() => {
+    const previousActiveElement = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const dialogElement = dialogRef.current;
+    if (!dialogElement) {
+      return undefined;
+    }
+
+    const focusableElements = dialogElement.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstFocusable = focusableElements[0];
+    const lastFocusable = focusableElements[focusableElements.length - 1];
+
+    firstFocusable?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onDecision('reject');
+        return;
+      }
+
+      if (event.key !== 'Tab' || focusableElements.length === 0) {
+        return;
+      }
+
+      const activeElement = document.activeElement;
+      if (event.shiftKey) {
+        if (activeElement === firstFocusable || !dialogElement.contains(activeElement)) {
+          event.preventDefault();
+          lastFocusable?.focus();
+        }
+        return;
+      }
+
+      if (activeElement === lastFocusable) {
+        event.preventDefault();
+        firstFocusable?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      previousActiveElement?.focus();
+    };
+  }, [onDecision]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-[1.75rem] border border-gray-200 bg-white p-7 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="mb-5 text-xl font-semibold text-gray-900 dark:text-gray-100">Confirm Tool Execution</h3>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
+      onClick={() => onDecision('reject')}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="w-full max-w-2xl rounded-[1.75rem] border border-gray-200 bg-white p-7 shadow-2xl dark:border-gray-700 dark:bg-gray-800"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 id={titleId} className="mb-5 text-xl font-semibold text-gray-900 dark:text-gray-100">Confirm Tool Execution</h3>
 
         <div className="mb-6">
           <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">

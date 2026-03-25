@@ -18,7 +18,7 @@ import {
   ExecutionMode,
 } from '../types';
 import { normalizeProviderConfig } from '../utils/config';
-import { backendAuthTokenUrl } from '../utils/backendEndpoint';
+import { getBackendAuthToken } from '../utils/backendAuth';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -388,9 +388,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchAuthToken = useCallback(async (): Promise<string | null> => {
-    if (isTestMode) {
-      return 'test-auth-token';
-    }
     if (authTokenRef.current !== null) {
       return authTokenRef.current;
     }
@@ -400,38 +397,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
     authTokenPromiseRef.current = (async () => {
       try {
-        const response = await fetch(backendAuthTokenUrl);
-        if (response.status === 404) {
-          reportConfigError(
-            'Backend auth handshake failed.',
-            `GET ${backendAuthTokenUrl} returned 404. Check the backend base URL and ensure the server exposes /auth-token.`
-          );
-          return null;
+        const token = await getBackendAuthToken({
+          isTestMode,
+          onError: reportConfigError,
+        });
+        if (token) {
+          authTokenRef.current = token;
+          lastConfigErrorRef.current = null;
         }
-        if (!response.ok) {
-          reportConfigError(
-            'Backend auth handshake failed.',
-            `GET ${backendAuthTokenUrl} returned HTTP ${response.status}.`
-          );
-          return null;
-        }
-        const payload = await response.json().catch(() => ({}));
-        if (typeof payload.auth_token !== 'string' || !payload.auth_token) {
-          reportConfigError(
-            'Backend auth handshake failed.',
-            `GET ${backendAuthTokenUrl} returned an invalid auth token payload.`
-          );
-          return null;
-        }
-        authTokenRef.current = payload.auth_token;
-        lastConfigErrorRef.current = null;
-        return payload.auth_token;
-      } catch {
-        reportConfigError(
-          'Backend auth handshake failed.',
-          `Unable to reach ${backendAuthTokenUrl}.`
-        );
-        return null;
+        return token;
       } finally {
         authTokenPromiseRef.current = null;
       }
@@ -440,15 +414,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     return authTokenPromiseRef.current;
   }, [isTestMode, reportConfigError]);
 
-  const sendConfig = useCallback((configOverride?: ProviderConfig) => {
-    const sourceConfig = configOverride || config;
-    if (!sourceConfig) {
-      return;
-    }
-
-    const runtimeConfig = normalizeProviderConfig(sourceConfig);
-    const configKey = JSON.stringify(runtimeConfig);
-
+  const sendRuntimeConfig = useCallback((runtimeConfig: ProviderConfig, configKey: string) => {
     const sendWithToken = (authToken: string | null) => {
       if (authToken === null) {
         return;
@@ -473,7 +439,18 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     void fetchAuthToken().then((token) => {
       sendWithToken(token);
     });
-  }, [config, fetchAuthToken, isTestMode, send]);
+  }, [fetchAuthToken, isTestMode, send]);
+
+  const sendConfig = useCallback((configOverride?: ProviderConfig) => {
+    const sourceConfig = configOverride || config;
+    if (!sourceConfig) {
+      return;
+    }
+
+    const runtimeConfig = normalizeProviderConfig(sourceConfig);
+    const configKey = JSON.stringify(runtimeConfig);
+    sendRuntimeConfig(runtimeConfig, configKey);
+  }, [config, sendRuntimeConfig]);
 
   useEffect(() => {
     if (!isConnected || !config) {
@@ -483,31 +460,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     const runtimeConfig = normalizeProviderConfig(config);
     const nextConfigKey = JSON.stringify(runtimeConfig);
     if (nextConfigKey !== lastSentConfigKeyRef.current) {
-      const sendWithToken = (authToken: string | null) => {
-        if (authToken === null) {
-          return;
-        }
-        const payload: ClientWebSocketMessage = {
-          type: 'config',
-          ...runtimeConfig,
-          auth_token: authToken,
-        };
-        if (send(payload)) {
-          backendAuthenticatedRef.current = false;
-          lastSentConfigKeyRef.current = nextConfigKey;
-        }
-      };
-
-      const immediateToken = isTestMode ? 'test-auth-token' : authTokenRef.current;
-      if (immediateToken !== null) {
-        sendWithToken(immediateToken);
-      } else {
-        void fetchAuthToken().then((token) => {
-          sendWithToken(token);
-        });
-      }
+      sendRuntimeConfig(runtimeConfig, nextConfigKey);
     }
-  }, [config, fetchAuthToken, isConnected, isTestMode, send]);
+  }, [config, isConnected, sendRuntimeConfig]);
 
   const sendMessage = useCallback((sessionId: string, content: string, attachments?: Attachment[], workspacePath?: string) => {
     const message: ClientMessage = { type: 'message', session_id: sessionId, content };

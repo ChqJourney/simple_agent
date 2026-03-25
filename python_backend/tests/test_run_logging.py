@@ -112,7 +112,7 @@ class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
         session = Session("session-unicode", self.temp_dir.name)
         session.add_message(Message(role="user", content="帮我计算125的3次方"))
 
-        append_run_event(
+        await append_run_event(
             self.temp_dir.name,
             "session-unicode",
             RunEvent(
@@ -140,7 +140,7 @@ class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_run_logging_rejects_path_traversal_session_ids(self) -> None:
         with self.assertRaises(ValueError):
-            append_run_event(
+            await append_run_event(
                 self.temp_dir.name,
                 "../escape",
                 RunEvent(
@@ -169,10 +169,10 @@ class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
             return original_open(path_obj, *args, **kwargs)
 
         with patch("runtime.logs.Path.open", autospec=True, side_effect=flaky_open), patch(
-            "runtime.logs.time.sleep",
+            "runtime.logs.asyncio.sleep",
             autospec=True,
         ) as sleep_mock:
-            append_run_event(self.temp_dir.name, "session-retry", event)
+            await append_run_event(self.temp_dir.name, "session-retry", event)
 
         self.assertEqual(2, attempts["count"])
         self.assertEqual(2, sleep_mock.call_count)
@@ -194,10 +194,10 @@ class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
         log_path = Path(self.temp_dir.name) / ".agent" / "logs" / "session-failure.jsonl"
 
         with patch("runtime.logs.Path.open", autospec=True, side_effect=OSError("disk full")), patch(
-            "runtime.logs.time.sleep",
+            "runtime.logs.asyncio.sleep",
             autospec=True,
         ) as sleep_mock:
-            append_run_event(self.temp_dir.name, "session-failure", event)
+            await append_run_event(self.temp_dir.name, "session-failure", event)
 
         self.assertFalse(log_path.exists())
         self.assertEqual(2, sleep_mock.call_count)

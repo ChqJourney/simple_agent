@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
 import { useConfigStore, useUIStore } from "../stores";
@@ -27,6 +27,7 @@ describe("SettingsPage", () => {
     navigateMock.mockReset();
     sendConfigMock.mockReset();
     setConfigMock.mockReset();
+    globalThis.fetch = vi.fn();
     useConfigStore.setState({
       config: {
         provider: "openai",
@@ -138,6 +139,30 @@ describe("SettingsPage", () => {
     expect(providerOptions).toContain("Kimi (Moonshot)");
     expect(providerOptions).toContain("GLM (Zhipu)");
     expect(providerOptions).toContain("MiniMax");
+  });
+
+  it("includes backend auth header when testing provider connectivity", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ ok: true }),
+    } as unknown as Response);
+
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Test Primary Connection" }));
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "Content-Type": "application/json",
+            "X-Tauri-Agent-Auth": "test-auth-token",
+          }),
+        })
+      );
+    });
   });
 
   it("marks configured providers in the selector and shows a saved hint", () => {

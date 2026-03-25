@@ -430,8 +430,6 @@ class UserManager:
                 callback = self.connection_callbacks.get(target_connection_id)
                 if callback:
                     callbacks = [callback]
-            elif len(self.connection_callbacks) == 1:
-                callbacks = list(self.connection_callbacks.values())
 
         if not callbacks:
             logger.warning("No frontend connection available for message: %s", message)

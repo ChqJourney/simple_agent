@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -9,7 +10,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Set, cast
 
 import httpx
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -59,6 +60,15 @@ ALLOWED_BROWSER_ORIGINS = {
     "tauri://localhost",
     "https://tauri.localhost",
 }
+AUTH_TOKEN_ENV_VAR = "TAURI_AGENT_AUTH_TOKEN"
+HTTP_AUTH_HEADER = "x-tauri-agent-auth"
+
+
+def _load_auth_token() -> tuple[str, bool]:
+    configured_token = str(os.environ.get(AUTH_TOKEN_ENV_VAR) or "").strip()
+    if configured_token:
+        return configured_token, True
+    return uuid.uuid4().hex, False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -113,8 +123,13 @@ class BackendRuntimeState:
     active_session_tasks: Dict[str, object] = field(default_factory=dict)
     task_connections: Dict[asyncio.Task, str] = field(default_factory=dict)
     task_sessions: Dict[asyncio.Task, str] = field(default_factory=dict)
-    auth_token: str = field(default_factory=lambda: uuid.uuid4().hex)
+    auth_token: str = ""
+    auth_token_host_managed: bool = False
     authenticated_connections: Set[str] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        if not self.auth_token:
+            self.auth_token, self.auth_token_host_managed = _load_auth_token()
 
 
 runtime_state = BackendRuntimeState()
@@ -219,6 +234,31 @@ def _origin_allowed(origin: Optional[str]) -> bool:
     if not origin:
         return False
     return origin in ALLOWED_BROWSER_ORIGINS
+
+
+def _error_payload(
+    error: str,
+    *,
+    session_id: Optional[str] = None,
+    details: Optional[str] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"type": "error", "error": error}
+    if session_id:
+        payload["session_id"] = session_id
+    if details:
+        payload["details"] = details
+    return payload
+
+
+async def _require_http_auth(request: Request) -> Optional[JSONResponse]:
+    provided_token = str(request.headers.get(HTTP_AUTH_HEADER) or "").strip()
+    async with state_lock:
+        expected_token = runtime_state.auth_token
+
+    if provided_token and provided_token == expected_token:
+        return None
+
+    return JSONResponse(status_code=401, content={"ok": False, "error": "Unauthorized"})
 
 
 async def _close_llm_instance(llm: Optional[BaseLLM]) -> None:
@@ -430,10 +470,9 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception as e:
                 logger.exception(f"Error processing message: {e}")
                 try:
-                    await websocket.send_json({
-                        "type": "error",
-                        "error": str(e)
-                    })
+                    await websocket.send_json(
+                        _error_payload("Failed to process message. Check backend logs.")
+                    )
                 except Exception:
                     pass
     except WebSocketDisconnect:
@@ -505,10 +544,9 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
 
     except Exception as e:
         logger.exception(f"Failed to configure LLM: {e}")
-        await send_callback({
-            "type": "error",
-            "error": f"Failed to configure LLM: {str(e)}"
-        })
+        await send_callback(
+            _error_payload("Failed to configure LLM. Check your settings and backend logs.")
+        )
 
 
 async def handle_user_message(
@@ -689,11 +727,12 @@ async def handle_user_message(
         if session_reserved:
             await _release_reserved_session(session_id)
         logger.exception(f"Failed to handle user message: {e}")
-        await send_callback({
-            "type": "error",
-            "session_id": session_id,
-            "error": str(e)
-        })
+        await send_callback(
+            _error_payload(
+                "Failed to start the agent run. Check backend logs.",
+                session_id=session_id,
+            )
+        )
 
 
 async def run_agent_task(
@@ -711,11 +750,12 @@ async def run_agent_task(
         raise
     except Exception as e:
         logger.exception(f"Agent run failed: {e}")
-        await send_callback({
-            "type": "error",
-            "session_id": session.session_id,
-            "error": str(e)
-        })
+        await send_callback(
+            _error_payload(
+                "Agent run failed. Check backend logs.",
+                session_id=session.session_id,
+            )
+        )
 
 
 async def handle_tool_confirm(data: Dict[str, Any]) -> None:
@@ -886,12 +926,18 @@ async def health():
 @app.get("/auth-token")
 async def auth_token():
     async with state_lock:
+        if runtime_state.auth_token_host_managed:
+            return JSONResponse(status_code=404, content={"error": "Not found"})
         token = runtime_state.auth_token
     return {"auth_token": token}
 
 
 @app.post("/test-config")
-async def test_config(data: Dict[str, Any]):
+async def test_config(request: Request, data: Dict[str, Any]):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
     raw_provider = str(data.get("provider") or "").strip().lower()
     if not raw_provider:
         return JSONResponse(status_code=400, content={"ok": False, "error": "Missing provider"})
@@ -923,12 +969,11 @@ async def test_config(data: Dict[str, Any]):
                 if response.is_success:
                     return {"ok": True}
 
-                error_text = response.text[:500] if response.text else f"HTTP {response.status_code}"
                 return JSONResponse(
                     status_code=400,
                     content={
                         "ok": False,
-                        "error": f"Ollama probe failed ({response.status_code}): {error_text}"
+                        "error": f"Ollama probe failed with HTTP {response.status_code}"
                     },
                 )
 
@@ -969,28 +1014,30 @@ async def test_config(data: Dict[str, Any]):
                 if chat_response.is_success:
                     return {"ok": True}
 
-                chat_error = chat_response.text[:500] if chat_response.text else f"HTTP {chat_response.status_code}"
                 return JSONResponse(
                     status_code=400,
                     content={
                         "ok": False,
                         "error": (
                             f"Models probe failed ({response.status_code}) and chat-completions probe "
-                            f"failed ({chat_response.status_code}): {chat_error}"
+                            f"failed ({chat_response.status_code})"
                         ),
                     },
                 )
 
-            error_text = response.text[:500] if response.text else f"HTTP {response.status_code}"
             return JSONResponse(
                 status_code=400,
                 content={
                     "ok": False,
-                    "error": f"Models probe failed ({response.status_code}): {error_text}"
+                    "error": f"Models probe failed with HTTP {response.status_code}"
                 },
             )
     except Exception as e:
-        return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
+        logger.exception("Test config probe failed: %s", e)
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Connection test failed before the provider returned a response"},
+        )
 
 
 if __name__ == "__main__":

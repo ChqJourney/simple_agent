@@ -26,6 +26,19 @@ class OllamaLLM(BaseLLM):
         super().__init__(config_with_defaults)
         self.enable_reasoning = bool(config.get('enable_reasoning', False))
         self.request_timeout = aiohttp.ClientTimeout(total=self._get_timeout_seconds())
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(timeout=self.request_timeout)
+        return self._session
+
+    async def aclose(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+
+    def close(self):
+        return self.aclose()
 
     def _build_payload(self, messages: List[Dict], tools: Optional[List[Dict]], stream: bool) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
@@ -48,36 +61,36 @@ class OllamaLLM(BaseLLM):
         url = f'{self.base_url}/api/chat'
         payload = self._build_payload(messages, tools, True)
         self.reset_latest_usage()
+        session = await self._get_session()
 
-        async with aiohttp.ClientSession(timeout=self.request_timeout) as session:
-            async with session.post(url, json=payload) as response:
-                response.raise_for_status()
-                async for line in response.content:
-                    if line:
-                        data = json.loads(line)
-                        if data.get('done'):
-                            self._set_latest_usage({
-                                'prompt_tokens': data.get('prompt_eval_count', 0),
-                                'completion_tokens': data.get('eval_count', 0),
-                                'total_tokens': data.get('prompt_eval_count', 0) + data.get('eval_count', 0),
-                            })
-                        yield self._convert_chunk_to_openai(data)
+        async with session.post(url, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.content:
+                if line:
+                    data = json.loads(line)
+                    if data.get('done'):
+                        self._set_latest_usage({
+                            'prompt_tokens': data.get('prompt_eval_count', 0),
+                            'completion_tokens': data.get('eval_count', 0),
+                            'total_tokens': data.get('prompt_eval_count', 0) + data.get('eval_count', 0),
+                        })
+                    yield self._convert_chunk_to_openai(data)
 
     async def complete(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict:
         url = f'{self.base_url}/api/chat'
         payload = self._build_payload(messages, tools, False)
         self.reset_latest_usage()
+        session = await self._get_session()
 
-        async with aiohttp.ClientSession(timeout=self.request_timeout) as session:
-            async with session.post(url, json=payload) as response:
-                response.raise_for_status()
-                data = await response.json()
-                self._set_latest_usage({
-                    'prompt_tokens': data.get('prompt_eval_count', 0),
-                    'completion_tokens': data.get('eval_count', 0),
-                    'total_tokens': data.get('prompt_eval_count', 0) + data.get('eval_count', 0),
-                })
-                return self._convert_response_to_openai(data)
+        async with session.post(url, json=payload) as response:
+            response.raise_for_status()
+            data = await response.json()
+            self._set_latest_usage({
+                'prompt_tokens': data.get('prompt_eval_count', 0),
+                'completion_tokens': data.get('eval_count', 0),
+                'total_tokens': data.get('prompt_eval_count', 0) + data.get('eval_count', 0),
+            })
+            return self._convert_response_to_openai(data)
 
     def _convert_tools_to_ollama(self, tools: List[Any]) -> List[Dict]:
         ollama_tools = []

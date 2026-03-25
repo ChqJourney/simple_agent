@@ -23,4 +23,25 @@ describe("ToolConfirmModal", () => {
     expect(onDecision).toHaveBeenNthCalledWith(1, "approve_always", "session");
     expect(onDecision).toHaveBeenNthCalledWith(2, "approve_always", "workspace");
   });
+
+  it("renders as an accessible dialog and rejects on escape", () => {
+    const onDecision = vi.fn();
+
+    render(
+      <ToolConfirmModal
+        toolCall={{
+          tool_call_id: "tool-1",
+          name: "shell_execute",
+          arguments: { command: "echo hi" },
+        }}
+        onDecision={onDecision}
+      />
+    );
+
+    expect(screen.getByRole("dialog", { name: "Confirm Tool Execution" })).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(onDecision).toHaveBeenCalledWith("reject");
+  });
 });

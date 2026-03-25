@@ -95,7 +95,7 @@ export const WelcomePage: React.FC = () => {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
       {/* <DecorativePattern /> */}
-      <header className="fixed top-0 left-0 right-0 h-14 flex items-center justify-between px-4 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+      <header className="fixed top-0 left-0 right-0 h-14 flex items-center justify-between px-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
         <button
           onClick={() => setIsDrawerOpen(true)}
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"

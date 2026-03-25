@@ -38,6 +38,18 @@ Write-Host "Using build interpreter: $buildPython"
 
 Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt", "pyinstaller") -WorkingDirectory $backendRoot
 
+# Verify that key runtime deps are actually importable before building.
+# PyInstaller silently skips hidden imports that don't exist on the build
+# system, so if typing_extensions (or similar) failed to install, the
+# resulting exe will crash at startup with ModuleNotFoundError.
+Write-Host "Verifying critical runtime dependencies..."
+$criticalModules = @('typing_extensions', 'annotated_types', 'pydantic', 'pydantic_core', 'fastapi', 'starlette', 'httpx', 'httpcore', 'openai', 'uvicorn', 'websockets', 'aiohttp', 'anyio', 'h11', 'sniffio')
+foreach ($mod in $criticalModules) {
+    Write-Host "  Checking $mod..."
+    Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-c", "import $mod; print('OK: $mod')") -WorkingDirectory $backendRoot
+}
+Write-Host "All critical runtime dependencies verified."
+
 if (Test-Path -LiteralPath (Join-Path $backendRoot "build")) {
     Remove-Item -LiteralPath (Join-Path $backendRoot "build") -Recurse -Force
 }
@@ -51,6 +63,24 @@ Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "PyInstaller", "
 $builtExe = Join-Path $backendRoot "dist/$sidecarBaseName.exe"
 if (-not (Test-Path -LiteralPath $builtExe)) {
     throw "PyInstaller did not produce the expected backend executable: $builtExe"
+}
+
+# Verify that critical modules were actually bundled into the exe.
+# Use PyInstaller's own archive inspector to check.
+Write-Host "Verifying bundled modules in output exe..."
+$bundledModules = & $buildPython -m PyInstaller.utils.cliutils.archive_viewer $builtExe --with-module-names 2>$null
+if ($LASTEXITCODE -ne 0) {
+    # archive_viewer doesn't have --with-module-names in older versions,
+    # skip this check
+    Write-Host "  (archive_viewer module listing not supported, skipping bundle verification)"
+} else {
+    $criticalCheck = @('typing_extensions', 'annotated_types', 'pydantic_core', 'pydantic')
+    foreach ($mod in $criticalCheck) {
+        if ($bundledModules -notmatch [regex]::Escape($mod)) {
+            throw "CRITICAL: Module '$mod' is NOT bundled in the output exe! PyInstaller silently skipped it. The exe will crash at startup."
+        }
+        Write-Host "  OK: $mod is bundled"
+    }
 }
 
 $binariesRoot = Join-Path $projectRoot "src-tauri/binaries"

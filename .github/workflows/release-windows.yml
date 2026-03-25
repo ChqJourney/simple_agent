@@ -150,6 +150,24 @@ jobs:
           Expand-Archive -LiteralPath $runtimeZip.FullName -DestinationPath (Join-Path $smokeRoot "runtime") -Force
           Expand-Archive -LiteralPath $noRuntimeZip.FullName -DestinationPath (Join-Path $smokeRoot "no-runtime") -Force
 
+          $runtimeAppRoot = Get-ChildItem -Path (Join-Path $smokeRoot "runtime") -Directory | Select-Object -First 1
+          if ($null -eq $runtimeAppRoot) {
+            throw "Runtime ZIP did not extract a portable app directory."
+          }
+
+          if (Test-Path -LiteralPath (Join-Path $runtimeAppRoot.FullName "resources/resources")) {
+            throw "Runtime ZIP still contains nested resources/resources directories."
+          }
+
+          foreach ($requiredRuntimeDir in @(
+            (Join-Path $runtimeAppRoot.FullName "runtimes/python"),
+            (Join-Path $runtimeAppRoot.FullName "runtimes/node")
+          )) {
+            if (-not (Test-Path -LiteralPath $requiredRuntimeDir)) {
+              throw "Runtime ZIP is missing required runtime directory: $requiredRuntimeDir"
+            }
+          }
+
           $backendExe = Get-ChildItem -Path (Join-Path $smokeRoot "runtime") -Recurse -Filter python_backend.exe | Select-Object -First 1
           if ($null -eq $backendExe) {
             throw "Packaged backend executable was not found after extracting $($runtimeZip.FullName)"

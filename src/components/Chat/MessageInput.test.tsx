@@ -128,7 +128,7 @@ describe("MessageInput", () => {
     });
   });
 
-  it("inserts dragged file and folder paths into the prompt textarea", () => {
+  it("shows dragged file and folder references inside the prompt input", () => {
     render(<MessageInput onSend={vi.fn()} />);
 
     const textarea = screen.getByPlaceholderText("Type your message...");
@@ -141,9 +141,101 @@ describe("MessageInput", () => {
 
     fireEvent.drop(textarea, { dataTransfer });
 
-    expect((textarea as HTMLTextAreaElement).value).toBe("");
-    expect(screen.getByText("app.ts")).toBeTruthy();
-    expect(screen.getByText("components")).toBeTruthy();
+    expect((textarea as HTMLTextAreaElement).value).toBe("app.ts components");
+    expect(screen.getAllByText("app.ts").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("components").length).toBeGreaterThan(0);
+  });
+
+  it("inserts dropped file references at the current cursor position", () => {
+    const onSend = vi.fn();
+    render(<MessageInput onSend={onSend} />);
+
+    const textarea = screen.getByPlaceholderText("Type your message...") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "Review  please" } });
+    textarea.setSelectionRange(7, 7);
+
+    fireEvent.drop(textarea, {
+      dataTransfer: createDataTransfer({
+        "application/x-tauri-agent-file": JSON.stringify({
+          path: "/workspace/src/app.ts",
+          name: "app.ts",
+          isDirectory: false,
+          isImage: false,
+        }),
+      }),
+    });
+
+    expect(textarea.value).toBe("Review app.ts please");
+    expect(screen.getAllByText("app.ts").length).toBeGreaterThan(0);
+  });
+
+  it("sends absolute file paths while showing filenames to the user", () => {
+    const onSend = vi.fn();
+    render(<MessageInput onSend={onSend} />);
+
+    const textarea = screen.getByPlaceholderText("Type your message...") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "Review these files" } });
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    fireEvent.drop(textarea, {
+      dataTransfer: createDataTransfer({
+        "application/x-tauri-agent-file": JSON.stringify([
+          { path: "/workspace/src/app.ts", name: "app.ts", isDirectory: false, isImage: false },
+          { path: "/workspace/src/components", name: "components", isDirectory: true, isImage: false },
+        ]),
+      }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(onSend).toHaveBeenCalledWith(
+      "Review these files /workspace/src/app.ts /workspace/src/components",
+      [],
+      "Review these files app.ts components",
+    );
+  });
+
+  it("removes inline file tokens as a whole with Backspace and Delete", () => {
+    render(<MessageInput onSend={vi.fn()} />);
+
+    const textarea = screen.getByPlaceholderText("Type your message...") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "Review please" } });
+    textarea.setSelectionRange(7, 7);
+
+    fireEvent.drop(textarea, {
+      dataTransfer: createDataTransfer({
+        "application/x-tauri-agent-file": JSON.stringify({
+          path: "/workspace/src/app.ts",
+          name: "app.ts",
+          isDirectory: false,
+          isImage: false,
+        }),
+      }),
+    });
+
+    expect(textarea.value).toBe("Review app.ts please");
+
+    textarea.setSelectionRange(13, 13);
+    fireEvent.keyDown(textarea, { key: "Backspace" });
+    expect(textarea.value).toBe("Review please");
+
+    textarea.setSelectionRange(7, 7);
+    fireEvent.drop(textarea, {
+      dataTransfer: createDataTransfer({
+        "application/x-tauri-agent-file": JSON.stringify({
+          path: "/workspace/src/app.ts",
+          name: "app.ts",
+          isDirectory: false,
+          isImage: false,
+        }),
+      }),
+    });
+
+    expect(textarea.value).toBe("Review app.ts please");
+
+    textarea.setSelectionRange(7, 7);
+    fireEvent.keyDown(textarea, { key: "Delete" });
+    expect(textarea.value).toBe("Review please");
   });
 
   it("adds dropped images as attachments and sends them with the message", async () => {
@@ -226,6 +318,26 @@ describe("MessageInput", () => {
 
     await waitFor(() => {
       expect(screen.getByText("shell-drop.png")).toBeTruthy();
+    });
+  });
+
+  it("accepts workspace file references dropped onto the composer shell", async () => {
+    render(<MessageInput onSend={vi.fn()} />);
+
+    const composer = screen.getByTestId("composer-shell");
+    fireEvent.drop(composer, {
+      dataTransfer: createDataTransfer({
+        "application/x-tauri-agent-file": JSON.stringify({
+          path: "/workspace/docs/guide.md",
+          name: "guide.md",
+          isDirectory: false,
+          isImage: false,
+        }),
+      }),
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("guide.md").length).toBeGreaterThan(0);
     });
   });
 

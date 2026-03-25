@@ -1,13 +1,20 @@
-use std::{path::Path, sync::Mutex};
+use std::{
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 use tauri::Manager;
 
 mod session_storage;
 mod skill_catalog;
 mod workspace_paths;
 
+#[cfg_attr(debug_assertions, allow(dead_code))]
 const EMBEDDED_PYTHON_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_PYTHON";
+#[cfg_attr(debug_assertions, allow(dead_code))]
 const EMBEDDED_NODE_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_NODE";
+#[cfg_attr(debug_assertions, allow(dead_code))]
 const STRICT_RUNTIME_ENV_VAR: &str = "TAURI_AGENT_RUNTIME_STRICT";
+#[cfg_attr(debug_assertions, allow(dead_code))]
 const APP_DATA_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DATA_DIR";
 const AUTH_TOKEN_ENV_VAR: &str = "TAURI_AGENT_AUTH_TOKEN";
 
@@ -136,6 +143,7 @@ fn get_backend_auth_token(
         .ok_or_else(|| "Backend auth token unavailable from host".to_string())
 }
 
+#[cfg_attr(debug_assertions, allow(dead_code))]
 fn sidecar_event_log_entry(
     event: &tauri_plugin_shell::process::CommandEvent,
 ) -> Option<(bool, String)> {
@@ -171,28 +179,129 @@ where
     Ok(action(&mut *guard))
 }
 
-fn embedded_python_dir(resource_dir: &Path) -> std::path::PathBuf {
-    resource_dir
-        .join("resources")
-        .join("runtimes")
-        .join("python")
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn executable_dir() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
 }
 
-fn embedded_node_dir(resource_dir: &Path) -> std::path::PathBuf {
-    resource_dir.join("resources").join("runtimes").join("node")
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn runtime_dir_candidates(
+    resource_dir: &Path,
+    executable_dir: Option<&Path>,
+    runtime_name: &str,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(dir) = executable_dir {
+        candidates.push(dir.join("runtimes").join(runtime_name));
+    }
+
+    let resource_candidate = resource_dir.join("runtimes").join(runtime_name);
+    if !candidates
+        .iter()
+        .any(|candidate| candidate == &resource_candidate)
+    {
+        candidates.push(resource_candidate);
+    }
+
+    candidates
 }
 
-fn embedded_runtime_envs(resource_dir: &Path) -> [(String, String); 2] {
-    [
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn python_runtime_root_has_executable(root: &Path) -> bool {
+    if cfg!(windows) {
+        root.join("python.exe").is_file()
+    } else {
+        root.join("bin").join("python3").is_file() || root.join("bin").join("python").is_file()
+    }
+}
+
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn node_runtime_root_has_executables(root: &Path) -> bool {
+    if cfg!(windows) {
+        root.join("node.exe").is_file()
+            && root.join("npm.cmd").is_file()
+            && root.join("npx.cmd").is_file()
+    } else {
+        root.join("bin").join("node").is_file()
+            && root.join("bin").join("npm").is_file()
+            && root.join("bin").join("npx").is_file()
+    }
+}
+
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn resolve_runtime_root(
+    resource_dir: &Path,
+    executable_dir: Option<&Path>,
+    runtime_name: &str,
+    is_valid_root: impl Fn(&Path) -> bool,
+) -> Result<PathBuf, std::io::Error> {
+    let candidates = runtime_dir_candidates(resource_dir, executable_dir, runtime_name);
+
+    for candidate in &candidates {
+        if is_valid_root(candidate) {
+            return Ok(candidate.clone());
+        }
+    }
+
+    let checked = candidates
+        .iter()
+        .map(|candidate| candidate.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    Err(std::io::Error::other(format!(
+        "Embedded {runtime_name} runtime not found. Checked: {checked}"
+    )))
+}
+
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn embedded_python_dir(
+    resource_dir: &Path,
+    executable_dir: Option<&Path>,
+) -> Result<PathBuf, std::io::Error> {
+    resolve_runtime_root(
+        resource_dir,
+        executable_dir,
+        "python",
+        python_runtime_root_has_executable,
+    )
+}
+
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn embedded_node_dir(
+    resource_dir: &Path,
+    executable_dir: Option<&Path>,
+) -> Result<PathBuf, std::io::Error> {
+    resolve_runtime_root(
+        resource_dir,
+        executable_dir,
+        "node",
+        node_runtime_root_has_executables,
+    )
+}
+
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn embedded_runtime_envs(
+    resource_dir: &Path,
+    executable_dir: Option<&Path>,
+) -> Result<[(String, String); 2], std::io::Error> {
+    Ok([
         (
             EMBEDDED_PYTHON_ENV_VAR.to_string(),
-            embedded_python_dir(resource_dir).display().to_string(),
+            embedded_python_dir(resource_dir, executable_dir)?
+                .display()
+                .to_string(),
         ),
         (
             EMBEDDED_NODE_ENV_VAR.to_string(),
-            embedded_node_dir(resource_dir).display().to_string(),
+            embedded_node_dir(resource_dir, executable_dir)?
+                .display()
+                .to_string(),
         ),
-    ]
+    ])
 }
 
 #[cfg(all(windows, not(debug_assertions)))]
@@ -354,6 +463,11 @@ pub fn run() {
                         "Failed to resolve Tauri resource directory: {error}"
                     ))
                 })?;
+                let executable_dir = executable_dir().ok_or_else(|| {
+                    std::io::Error::other(
+                        "Failed to resolve the application executable directory for runtime lookup",
+                    )
+                })?;
                 let app_data_dir = _app.path().app_data_dir().map_err(|error| {
                     std::io::Error::other(format!(
                         "Failed to resolve Tauri app data directory: {error}"
@@ -366,7 +480,10 @@ pub fn run() {
                             "Failed to create Python sidecar command: {error}"
                         ))
                     })?
-                    .envs(embedded_runtime_envs(&resource_dir))
+                    .envs(embedded_runtime_envs(
+                        &resource_dir,
+                        Some(executable_dir.as_path()),
+                    )?)
                     .env(STRICT_RUNTIME_ENV_VAR, "1")
                     .env(AUTH_TOKEN_ENV_VAR, auth_token)
                     .env(APP_DATA_DIR_ENV_VAR, app_data_dir.display().to_string());
@@ -435,10 +552,39 @@ mod tests {
         with_sidecar_slot, APP_DATA_DIR_ENV_VAR, EMBEDDED_NODE_ENV_VAR, EMBEDDED_PYTHON_ENV_VAR,
     };
     use std::{
+        fs,
         path::Path,
         sync::{Arc, Mutex},
     };
     use tauri_plugin_shell::process::{CommandEvent, TerminatedPayload};
+    use tempfile::tempdir;
+
+    fn create_python_runtime(root: &Path) {
+        if cfg!(windows) {
+            fs::create_dir_all(root).expect("python runtime dir should be created");
+            fs::write(root.join("python.exe"), b"")
+                .expect("python runtime executable should be created");
+        } else {
+            fs::create_dir_all(root.join("bin")).expect("python runtime bin dir should be created");
+            fs::write(root.join("bin").join("python3"), b"")
+                .expect("python runtime executable should be created");
+        }
+    }
+
+    fn create_node_runtime(root: &Path) {
+        if cfg!(windows) {
+            fs::create_dir_all(root).expect("node runtime dir should be created");
+            fs::write(root.join("node.exe"), b"").expect("node executable should be created");
+            fs::write(root.join("npm.cmd"), b"").expect("npm command should be created");
+            fs::write(root.join("npx.cmd"), b"").expect("npx command should be created");
+        } else {
+            fs::create_dir_all(root.join("bin")).expect("node runtime bin dir should be created");
+            fs::write(root.join("bin").join("node"), b"")
+                .expect("node executable should be created");
+            fs::write(root.join("bin").join("npm"), b"").expect("npm command should be created");
+            fs::write(root.join("bin").join("npx"), b"").expect("npx command should be created");
+        }
+    }
 
     #[test]
     fn with_sidecar_slot_updates_healthy_mutex() {
@@ -466,32 +612,64 @@ mod tests {
     }
 
     #[test]
-    fn embedded_runtime_helpers_use_resource_dir_without_product_name_assumptions() {
-        let resource_dir = Path::new(r"C:\release-root\custom-product\resources");
+    fn embedded_runtime_helpers_prefer_executable_sibling_runtimes_when_present() {
+        let temp = tempdir().expect("temp dir should be created");
+        let executable_dir = temp.path().join("portable-root");
+        let resource_dir = executable_dir.join("resources");
+
+        create_python_runtime(&executable_dir.join("runtimes").join("python"));
+        create_node_runtime(&executable_dir.join("runtimes").join("node"));
+        create_python_runtime(&resource_dir.join("runtimes").join("python"));
+        create_node_runtime(&resource_dir.join("runtimes").join("node"));
 
         assert_eq!(
-            resource_dir
-                .join("resources")
-                .join("runtimes")
-                .join("python"),
-            embedded_python_dir(resource_dir)
+            executable_dir.join("runtimes").join("python"),
+            embedded_python_dir(resource_dir.as_path(), Some(executable_dir.as_path()))
+                .expect("portable python runtime should be preferred")
         );
         assert_eq!(
-            resource_dir.join("resources").join("runtimes").join("node"),
-            embedded_node_dir(resource_dir)
+            executable_dir.join("runtimes").join("node"),
+            embedded_node_dir(resource_dir.as_path(), Some(executable_dir.as_path()))
+                .expect("portable node runtime should be preferred")
+        );
+    }
+
+    #[test]
+    fn embedded_runtime_helpers_fallback_to_resource_dir_when_sibling_runtimes_are_missing() {
+        let temp = tempdir().expect("temp dir should be created");
+        let executable_dir = temp.path().join("portable-root");
+        let resource_dir = executable_dir.join("resources");
+
+        create_python_runtime(&resource_dir.join("runtimes").join("python"));
+        create_node_runtime(&resource_dir.join("runtimes").join("node"));
+
+        assert_eq!(
+            resource_dir.join("runtimes").join("python"),
+            embedded_python_dir(resource_dir.as_path(), Some(executable_dir.as_path()))
+                .expect("resource python runtime should be used as fallback")
+        );
+        assert_eq!(
+            resource_dir.join("runtimes").join("node"),
+            embedded_node_dir(resource_dir.as_path(), Some(executable_dir.as_path()))
+                .expect("resource node runtime should be used as fallback")
         );
     }
 
     #[test]
     fn embedded_runtime_envs_include_python_and_node_variables() {
-        let resource_dir = Path::new(r"C:\release-root\resources");
+        let temp = tempdir().expect("temp dir should be created");
+        let executable_dir = temp.path().join("portable-root");
+        let resource_dir = executable_dir.join("resources");
 
-        let envs = embedded_runtime_envs(resource_dir);
+        create_python_runtime(&executable_dir.join("runtimes").join("python"));
+        create_node_runtime(&executable_dir.join("runtimes").join("node"));
+
+        let envs = embedded_runtime_envs(resource_dir.as_path(), Some(executable_dir.as_path()))
+            .expect("runtime envs should resolve");
 
         assert_eq!(EMBEDDED_PYTHON_ENV_VAR, envs[0].0);
         assert_eq!(
-            resource_dir
-                .join("resources")
+            executable_dir
                 .join("runtimes")
                 .join("python")
                 .display()
@@ -500,8 +678,7 @@ mod tests {
         );
         assert_eq!(EMBEDDED_NODE_ENV_VAR, envs[1].0);
         assert_eq!(
-            resource_dir
-                .join("resources")
+            executable_dir
                 .join("runtimes")
                 .join("node")
                 .display()

@@ -15,8 +15,11 @@ interface DraggedFileDescriptor {
 }
 
 interface PromptPathReference {
+  id: string;
   absolutePath: string;
   displayName: string;
+  start: number;
+  end: number;
 }
 
 interface MessageInputProps {
@@ -126,6 +129,150 @@ function hasImagePayload(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.files || []).some((file) => isImageFile(file));
 }
 
+function hasPromptPathPayload(dataTransfer: DataTransfer): boolean {
+  const activeDescriptors = getActiveDraggedFileDescriptors();
+  if (activeDescriptors.some((descriptor) => !descriptor.isImage && !isImagePath(descriptor.path))) {
+    return true;
+  }
+
+  const descriptors = parseDraggedDescriptors(dataTransfer.getData(FILE_TREE_DRAG_MIME));
+  if (descriptors.some((descriptor) => !descriptor.isImage && !isImagePath(descriptor.path))) {
+    return true;
+  }
+
+  return false;
+}
+
+function sortPromptPathReferences(references: PromptPathReference[]) {
+  return [...references].sort((left, right) => left.start - right.start || left.end - right.end);
+}
+
+function serializePromptContent(
+  text: string,
+  references: PromptPathReference[],
+  field: 'absolutePath' | 'displayName',
+): string {
+  if (references.length === 0) {
+    return text.trim();
+  }
+
+  let cursor = 0;
+  let output = '';
+
+  for (const reference of sortPromptPathReferences(references)) {
+    output += text.slice(cursor, reference.start);
+    output += reference[field];
+    cursor = reference.end;
+  }
+
+  output += text.slice(cursor);
+  return output.trim();
+}
+
+function syncPromptPathReferences(
+  previousText: string,
+  nextText: string,
+  previousReferences: PromptPathReference[],
+): PromptPathReference[] {
+  if (previousReferences.length === 0 || previousText === nextText) {
+    return previousReferences;
+  }
+
+  let prefixLength = 0;
+  while (
+    prefixLength < previousText.length
+    && prefixLength < nextText.length
+    && previousText[prefixLength] === nextText[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+
+  let suffixLength = 0;
+  while (
+    suffixLength < previousText.length - prefixLength
+    && suffixLength < nextText.length - prefixLength
+    && previousText[previousText.length - 1 - suffixLength] === nextText[nextText.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+
+  const previousEditEnd = previousText.length - suffixLength;
+  const delta = nextText.length - previousText.length;
+
+  return sortPromptPathReferences(
+    previousReferences.flatMap((reference) => {
+      if (reference.end <= prefixLength) {
+        return [reference];
+      }
+
+      if (reference.start >= previousEditEnd) {
+        return [{
+          ...reference,
+          start: reference.start + delta,
+          end: reference.end + delta,
+        }];
+      }
+
+      return [];
+    })
+  );
+}
+
+function renderHighlightedContent(text: string, references: PromptPathReference[]) {
+  if (!text) {
+    return null;
+  }
+
+  const orderedReferences = sortPromptPathReferences(references);
+  const nodes: React.ReactNode[] = [];
+  let cursor = 0;
+
+  orderedReferences.forEach((reference) => {
+    if (reference.start > cursor) {
+      nodes.push(
+        <span key={`text-${cursor}-${reference.start}`}>
+          {text.slice(cursor, reference.start)}
+        </span>
+      );
+    }
+
+    nodes.push(
+      <span
+        key={reference.id}
+        className="rounded border border-amber-200 bg-amber-100/95 px-1.5 py-[1px] text-[0.78rem] font-semibold leading-5 text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-900/45 dark:text-amber-100"
+      >
+        {reference.displayName}
+      </span>
+    );
+
+    cursor = reference.end;
+  });
+
+  if (cursor < text.length) {
+    nodes.push(
+      <span key={`text-${cursor}-${text.length}`}>
+        {text.slice(cursor)}
+      </span>
+    );
+  }
+
+  return nodes;
+}
+
+function findPromptPathForCaret(
+  references: PromptPathReference[],
+  caret: number,
+  direction: 'backward' | 'forward',
+) {
+  const orderedReferences = sortPromptPathReferences(references);
+
+  if (direction === 'backward') {
+    return orderedReferences.find((reference) => caret > reference.start && caret <= reference.end);
+  }
+
+  return orderedReferences.find((reference) => caret >= reference.start && caret < reference.end);
+}
+
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
   onExecutionModeChange,
@@ -140,7 +287,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [promptPaths, setPromptPaths] = useState<PromptPathReference[]>([]);
   const [isImageDragActive, setIsImageDragActive] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const highlightRef = useRef<HTMLDivElement | null>(null);
   const imageDragDepthRef = useRef(0);
+  const selectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
   const isInputDisabled = disabled || isStreaming;
   const canAttachImages = supportsImageAttachments && !isStreaming;
 
@@ -159,23 +309,140 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   }, [attachments.length, supportsImageAttachments]);
 
-  const buildPromptContent = (paths: string[]) => {
-    const normalizedPaths = paths.filter(Boolean);
-    const normalizedContent = content.trim();
-
-    if (normalizedPaths.length === 0) {
-      return normalizedContent;
+  const syncSelectionRef = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
     }
 
-    return normalizedContent
-      ? `${normalizedContent}\n${normalizedPaths.join('\n')}`
-      : normalizedPaths.join('\n');
+    selectionRef.current = {
+      start: textarea.selectionStart ?? 0,
+      end: textarea.selectionEnd ?? 0,
+    };
+  };
+
+  const restoreSelection = (start: number, end: number = start) => {
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
+
+      textarea.focus();
+      textarea.setSelectionRange(start, end);
+      selectionRef.current = { start, end };
+    });
+  };
+
+  const updateContent = (nextContent: string) => {
+    setPromptPaths((previous) => syncPromptPathReferences(content, nextContent, previous));
+    setContent(nextContent);
+  };
+
+  const removePromptPathReference = (target: PromptPathReference) => {
+    const previousCharacter = target.start > 0 ? content[target.start - 1] : '';
+    const nextCharacter = target.end < content.length ? content[target.end] : '';
+    let deleteStart = target.start;
+    let deleteEnd = target.end;
+
+    if (previousCharacter === ' ' && (!nextCharacter || /\s/.test(nextCharacter))) {
+      deleteStart -= 1;
+    } else if (nextCharacter === ' ') {
+      deleteEnd += 1;
+    }
+
+    const nextContent = `${content.slice(0, deleteStart)}${content.slice(deleteEnd)}`;
+    const removedLength = deleteEnd - deleteStart;
+
+    setPromptPaths((previous) => sortPromptPathReferences(
+      previous.flatMap((reference) => {
+        if (reference.id === target.id) {
+          return [];
+        }
+
+        if (reference.start >= deleteEnd) {
+          return [{
+            ...reference,
+            start: reference.start - removedLength,
+            end: reference.end - removedLength,
+          }];
+        }
+
+        return [reference];
+      })
+    ));
+    setContent(nextContent);
+    restoreSelection(deleteStart);
+  };
+
+  const buildPromptContent = (field: 'absolutePath' | 'displayName') => {
+    return serializePromptContent(content, promptPaths, field);
+  };
+
+  const insertPromptPathsAtSelection = (descriptors: DraggedFileDescriptor[]) => {
+    const normalizedDescriptors = descriptors
+      .filter((descriptor) => Boolean(descriptor.path))
+      .map((descriptor) => ({
+        absolutePath: descriptor.path,
+        displayName: descriptor.name || descriptor.path.split(/[\\/]/).filter(Boolean).pop() || descriptor.path,
+      }));
+
+    if (normalizedDescriptors.length === 0) {
+      return;
+    }
+
+    const { start, end } = selectionRef.current;
+    const baseInsertionText = normalizedDescriptors.map((descriptor) => descriptor.displayName).join(' ');
+    const beforeChar = start > 0 ? content[start - 1] : '';
+    const afterChar = end < content.length ? content[end] : '';
+    const prefixSpacer = beforeChar && !/\s/.test(beforeChar) ? ' ' : '';
+    const suffixSpacer = afterChar && !/\s/.test(afterChar) ? ' ' : '';
+    const insertionText = `${prefixSpacer}${baseInsertionText}${suffixSpacer}`;
+    const nextContent = `${content.slice(0, start)}${insertionText}${content.slice(end)}`;
+    const replacedLength = end - start;
+    const delta = insertionText.length - replacedLength;
+    let offset = 0;
+    const insertedReferences: PromptPathReference[] = normalizedDescriptors.map((descriptor) => {
+      const tokenStart = start + prefixSpacer.length + offset;
+      const tokenEnd = tokenStart + descriptor.displayName.length;
+      offset += descriptor.displayName.length + 1;
+
+      return {
+        id: `${descriptor.absolutePath}:${tokenStart}:${tokenEnd}:${Math.random().toString(36).slice(2, 8)}`,
+        absolutePath: descriptor.absolutePath,
+        displayName: descriptor.displayName,
+        start: tokenStart,
+        end: tokenEnd,
+      };
+    });
+
+    setPromptPaths((previous) => {
+      const preserved = previous.flatMap((reference) => {
+        if (reference.end <= start) {
+          return [reference];
+        }
+
+        if (reference.start >= end) {
+          return [{
+            ...reference,
+            start: reference.start + delta,
+            end: reference.end + delta,
+          }];
+        }
+
+        return [];
+      });
+
+      return sortPromptPathReferences([...preserved, ...insertedReferences]);
+    });
+    setContent(nextContent);
+    restoreSelection(start + insertionText.length);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const actualContent = buildPromptContent(promptPaths.map((item) => item.absolutePath));
-    const displayContent = buildPromptContent(promptPaths.map((item) => item.displayName));
+    const actualContent = buildPromptContent('absolutePath');
+    const displayContent = buildPromptContent('displayName');
 
     if ((actualContent || attachments.length > 0) && !isInputDisabled) {
       onSend(actualContent, attachments, displayContent);
@@ -190,28 +457,29 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       return;
     }
 
+    syncSelectionRef();
+
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      const { start, end } = selectionRef.current;
+      if (start === end) {
+        const target = findPromptPathForCaret(
+          promptPaths,
+          start,
+          e.key === 'Backspace' ? 'backward' : 'forward',
+        );
+
+        if (target) {
+          e.preventDefault();
+          removePromptPathReference(target);
+          return;
+        }
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
     }
-  };
-
-  const appendPromptPaths = (descriptors: DraggedFileDescriptor[]) => {
-    const normalizedDescriptors = descriptors.filter((descriptor) => Boolean(descriptor.path));
-    if (normalizedDescriptors.length === 0) {
-      return;
-    }
-
-    setPromptPaths((previous) => {
-      const seen = new Set(previous.map((item) => item.absolutePath));
-      const nextItems = normalizedDescriptors
-        .filter((descriptor) => !seen.has(descriptor.path))
-        .map((descriptor) => ({
-          absolutePath: descriptor.path,
-          displayName: descriptor.name || descriptor.path.split(/[\\/]/).filter(Boolean).pop() || descriptor.path,
-        }));
-      return [...previous, ...nextItems];
-    });
   };
 
   const appendImageAttachments = (nextAttachments: Attachment[]) => {
@@ -242,6 +510,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   const handlePromptDrop = async (e: React.DragEvent<HTMLTextAreaElement>) => {
     e.preventDefault();
+    e.stopPropagation();
+    syncSelectionRef();
+
     if (canAttachImages && hasImagePayload(e.dataTransfer)) {
       resetImageDragState();
       await appendDroppedImageAttachments(e.dataTransfer);
@@ -251,7 +522,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
     const descriptors = parseDraggedDescriptors(e.dataTransfer.getData(FILE_TREE_DRAG_MIME));
     const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
-    appendPromptPaths(effectiveDescriptors);
+    insertPromptPathsAtSelection(effectiveDescriptors);
     clearActiveDraggedFileDescriptors();
   };
 
@@ -264,18 +535,35 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   const handleComposerDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    if (!canAttachImages || !hasImagePayload(e.dataTransfer)) {
+    const containsImagePayload = canAttachImages && hasImagePayload(e.dataTransfer);
+    const containsPromptPathPayload = hasPromptPathPayload(e.dataTransfer);
+
+    if (!containsImagePayload && !containsPromptPathPayload) {
       return;
     }
 
     e.preventDefault();
     e.stopPropagation();
-    resetImageDragState();
-    await appendDroppedImageAttachments(e.dataTransfer);
+
+    if (containsImagePayload) {
+      resetImageDragState();
+      await appendDroppedImageAttachments(e.dataTransfer);
+      clearActiveDraggedFileDescriptors();
+      return;
+    }
+
+    const descriptors = parseDraggedDescriptors(e.dataTransfer.getData(FILE_TREE_DRAG_MIME));
+    const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
+    insertPromptPathsAtSelection(effectiveDescriptors);
     clearActiveDraggedFileDescriptors();
   };
 
   const handleComposerDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    if (hasPromptPathPayload(e.dataTransfer)) {
+      e.preventDefault();
+      return;
+    }
+
     if (!canAttachImages || !hasImagePayload(e.dataTransfer)) {
       return;
     }
@@ -286,6 +574,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   const handleComposerDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (hasPromptPathPayload(e.dataTransfer)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      return;
+    }
+
     if (!canAttachImages || !hasImagePayload(e.dataTransfer)) {
       return;
     }
@@ -296,6 +590,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   const handleComposerDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (hasPromptPathPayload(e.dataTransfer)) {
+      e.preventDefault();
+      return;
+    }
+
     if (!canAttachImages || !hasImagePayload(e.dataTransfer)) {
       return;
     }
@@ -313,10 +612,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     );
   };
 
-  const removePromptPath = (target: PromptPathReference) => {
-    setPromptPaths((previous) =>
-      previous.filter((item) => item.absolutePath !== target.absolutePath)
-    );
+  const handleTextareaScroll = () => {
+    if (!textareaRef.current || !highlightRef.current) {
+      return;
+    }
+
+    highlightRef.current.scrollTop = textareaRef.current.scrollTop;
+    highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
   };
 
   return (
@@ -341,20 +643,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           </div>
         )}
 
-        {(promptPaths.length > 0 || attachments.length > 0) && (
+        {attachments.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-2">
-            {promptPaths.map((item) => (
-              <button
-                key={item.absolutePath}
-                type="button"
-                onClick={() => removePromptPath(item)}
-                className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-                title={item.absolutePath}
-              >
-                {item.displayName}
-              </button>
-            ))}
-
             {attachments.map((attachment) => (
               <button
                 key={`${attachment.name}:${attachment.path}`}
@@ -368,17 +658,40 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           </div>
         )}
 
-        <div className={`relative overflow-visible rounded-xl border border-gray-200 bg-gray-50/90 dark:border-gray-700 dark:bg-gray-800/85 ${promptPaths.length > 0 || attachments.length > 0 || (canAttachImages && isImageDragActive) ? '' : 'mt-0'}`}>
+        <div className={`relative overflow-visible rounded-xl border border-gray-200 bg-gray-50/90 dark:border-gray-700 dark:bg-gray-800/85 ${attachments.length > 0 || (canAttachImages && isImageDragActive) ? '' : 'mt-0'}`}>
+          <div
+            ref={highlightRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 overflow-hidden px-4 py-4 pb-16 pr-20 text-gray-900 dark:text-gray-100"
+          >
+            <div className="min-h-[8.25rem] whitespace-pre-wrap break-words">
+              {content
+                ? renderHighlightedContent(content, promptPaths)
+                : <span className="text-gray-500 dark:text-gray-400">{placeholder}</span>}
+            </div>
+          </div>
           <textarea
+            ref={textareaRef}
+            aria-label="Message input"
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={(e) => {
+              selectionRef.current = {
+                start: e.target.selectionStart ?? 0,
+                end: e.target.selectionEnd ?? 0,
+              };
+              updateContent(e.target.value);
+            }}
             onKeyDown={handleKeyDown}
+            onClick={syncSelectionRef}
+            onKeyUp={syncSelectionRef}
+            onSelect={syncSelectionRef}
+            onScroll={handleTextareaScroll}
             onDragOver={(e) => e.preventDefault()}
             onDrop={handlePromptDrop}
             placeholder={placeholder}
             disabled={isInputDisabled}
             rows={5}
-            className="h-[8.25rem] w-full resize-none overflow-y-auto bg-transparent px-4 py-4 pb-16 pr-20 text-gray-900 outline-none transition-colors placeholder:text-gray-500 dark:text-gray-100 dark:placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-70"
+            className="relative z-10 h-[8.25rem] w-full resize-none overflow-y-auto bg-transparent px-4 py-4 pb-16 pr-20 text-transparent caret-gray-900 outline-none transition-colors selection:bg-blue-200/80 dark:caret-gray-100 dark:selection:bg-blue-700/40 disabled:cursor-not-allowed disabled:opacity-70"
           />
           {isStreaming ? (
             <button
@@ -396,7 +709,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           ) : (
             <button
               type="submit"
-              disabled={disabled || (!content.trim() && attachments.length === 0 && promptPaths.length === 0)}
+              disabled={disabled || (!content.trim() && attachments.length === 0)}
               aria-label="Send message"
               title="Send message"
               className="absolute bottom-3 right-3 flex h-8 w-20 items-center justify-center rounded-lg bg-slate-600 text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"

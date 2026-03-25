@@ -65,10 +65,23 @@ foreach ($portableRoot in @($fullPortableRoot, $noRuntimePortableRoot)) {
     Ensure-Directory -Path (Join-Path $portableRoot "resources")
 }
 
-Copy-Item -LiteralPath $portableResources -Destination (Join-Path $fullPortableRoot "resources") -Recurse -Force
+$fullRuntimeRoot = Join-Path $fullPortableRoot "runtimes"
+$fullResourceRoot = Join-Path $fullPortableRoot "resources"
+
+Get-ChildItem -LiteralPath $portableResources -Force | ForEach-Object {
+    if ($_.Name -eq "runtimes") {
+        Ensure-Directory -Path $fullRuntimeRoot
+        Get-ChildItem -LiteralPath $_.FullName -Force | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $fullRuntimeRoot $_.Name) -Recurse -Force
+        }
+    }
+    else {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $fullResourceRoot $_.Name) -Recurse -Force
+    }
+}
 
 $noRuntimeResources = Join-Path $noRuntimePortableRoot "resources"
-Get-ChildItem -LiteralPath $portableResources | ForEach-Object {
+Get-ChildItem -LiteralPath $portableResources -Force | ForEach-Object {
     if ($_.Name -ne "runtimes") {
         Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $noRuntimeResources $_.Name) -Recurse -Force
     }

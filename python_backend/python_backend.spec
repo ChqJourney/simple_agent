@@ -1,77 +1,158 @@
 # -*- mode: python ; coding: utf-8 -*-
-import sys
-import importlib
-from PyInstaller.utils.hooks import collect_all, collect_submodules
-
-# Collect all submodules, data files, and binaries for key dependencies.
-# PyInstaller's static analysis sometimes misses lazy-loaded or
-# conditionally imported submodules (e.g. typing_extensions, uvicorn
-# protocol backends, anyio backends).  Using collect_all ensures
-# everything is included without listing individual hidden imports.
-_all_datas = []
-_all_binaries = []
-_all_hidden = []
-
-_PACKAGES = (
-    'typing_extensions', 'uvicorn', 'h11', 'anyio', 'sniffio',
-    'fastapi', 'starlette', 'pydantic', 'pydantic_core',
-    'annotated_types', 'email_validator',
-    'httpx', 'httpcore', 'certifi', 'idna',
-    'aiohttp', 'aiosignal', 'attrs', 'frozenlist',
-    'multidict', 'yarl',
-    'openai',
-    'websockets',
-    'python_multipart',
-)
-
-# CRITICAL: For packages that are direct runtime deps of pydantic/fastapi,
-# always include them even if they are not importable at build time
-# (e.g. vendor/embedded Python may not have them pre-installed).
-# Fall back to collect_submodules for pure-Python packages if collect_all fails.
-_CRITICAL_PYTHON_ONLY = (
-    'typing_extensions', 'annotated_types', 'sniffio', 'certifi', 'idna',
-    'h11', 'hpack', 'hyperframe', 'anyio', 'anyio._backends',
-    'anyio._backends._asyncio', 'pydantic_core', 'email_validator',
-)
-
-for _pkg in _PACKAGES:
-    try:
-        _datas, _binaries, _hidden = collect_all(_pkg)
-        _all_datas.extend(_datas)
-        _all_binaries.extend(_binaries)
-        _all_hidden.extend(_hidden)
-    except Exception:
-        # collect_all failed — try collect_submodules as a lighter fallback
-        # for pure-Python packages that may have no data/binaries anyway.
-        try:
-            _hidden = collect_submodules(_pkg)
-            _all_hidden.extend(_hidden)
-        except Exception:
-            pass
-
-# Belt-and-suspenders: explicitly list typing_extensions and annotated_types.
-# These are the most common hidden deps that break pydantic v2 at runtime
-# when PyInstaller's static analysis misses them.
-_ESSENTIAL_HIDDEN = [
-    'typing_extensions',
-    'annotated_types',
-    'pydantic_core',
-    'email_validator',
-    'sniffio',
-    'anyio',
-    'anyio._backends',
-    'anyio._backends._asyncio',
-]
-for _mod in _ESSENTIAL_HIDDEN:
-    if _mod not in _all_hidden:
-        _all_hidden.append(_mod)
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=_all_binaries,
-    datas=_all_datas,
-    hiddenimports=_all_hidden,
+    binaries=[],
+    datas=[],
+    hiddenimports=[
+        # pydantic v2 and its runtime dependencies
+        'typing_extensions',
+        'annotated_types',
+        'pydantic',
+        'pydantic_core',
+        'pydantic._migration',
+        'pydantic.errors',
+        'pydantic.json_schema',
+        'pydantic.main',
+        'pydantic._internal',
+        'pydantic._internal._config',
+        'pydantic._internal._core_utils',
+        'pydantic._internal._fields',
+        'pydantic._internal._forward_ref',
+        'pydantic._internal._generate_schema',
+        'pydantic._internal._generics',
+        'pydantic._internal._model_construction',
+        'pydantic._internal._repr',
+        'pydantic._internal._std_types_schema',
+        'pydantic._internal._typing_extra',
+        'pydantic._internal._utils',
+        'pydantic._internal._validators',
+        'pydantic._internal._discriminated_union',
+        'pydantic._internal._model_serialization',
+        'pydantic._internal._dataclasses',
+        # fastapi and starlette
+        'fastapi',
+        'starlette',
+        'starlette.routing',
+        'starlette.responses',
+        'starlette.middleware',
+        'starlette.middleware.cors',
+        'starlette.websockets',
+        'starlette.requests',
+        'starlette.datastructures',
+        'starlette.exceptions',
+        'starlette.status',
+        'starlette.types',
+        'starlette.concurrency',
+        'starlette.convertors',
+        'starlette.formparsers',
+        'starlette.schemas',
+        'starlette.staticfiles',
+        'starlette.transports',
+        # httpx / httpcore
+        'httpx',
+        'httpx._transports',
+        'httpx._transports.default',
+        'httpcore',
+        'httpcore._async',
+        'httpcore._sync',
+        'httpcore._async.http11',
+        'httpcore._sync.http11',
+        'httpcore._async.http2',
+        'httpcore._sync.http2',
+        'httpcore._async.connection',
+        'httpcore._sync.connection',
+        'httpcore._async.connection_pool',
+        'httpcore._sync.connection_pool',
+        'httpcore._async.interfaces',
+        'httpcore._sync.interfaces',
+        'httpcore._async.request',
+        'httpcore._sync.request',
+        'httpcore._async.ssl',
+        'httpcore._sync.ssl',
+        'httpcore._async.tcp',
+        'httpcore._sync.tcp',
+        'httpcore._async.websocket',
+        'httpcore._sync.websocket',
+        # httpx transitive deps
+        'h11',
+        'h2',
+        'hpack',
+        'hyperframe',
+        'anyio',
+        'anyio._backends',
+        'anyio._backends._asyncio',
+        'sniffio',
+        'certifi',
+        'idna',
+        # openai SDK
+        'openai',
+        'openai._types',
+        'openai._models',
+        'openai._response',
+        'openai._streaming',
+        'openai._compat',
+        'openai.types',
+        'openai.types.chat',
+        'openai.types.chat.chat_completion',
+        'openai.types.chat.chat_completion_chunk',
+        'openai.types.shared_params',
+        'openai._base_client',
+        'openai._client',
+        'tiktoken',
+        'tiktoken_ext',
+        'tiktoken_ext.openai_public',
+        # uvicorn
+        'uvicorn',
+        'uvicorn.logging',
+        'uvicorn.loops',
+        'uvicorn.loops.auto',
+        'uvicorn.loops.asyncio',
+        'uvicorn.protocols',
+        'uvicorn.protocols.http',
+        'uvicorn.protocols.http.auto',
+        'uvicorn.protocols.http.h11_impl',
+        'uvicorn.protocols.http.httptools_impl',
+        'uvicorn.protocols.websockets',
+        'uvicorn.protocols.websockets.auto',
+        'uvicorn.protocols.websockets.websockets_impl',
+        'uvicorn.lifespan',
+        'uvicorn.lifespan.on',
+        'uvicorn.lifespan.off',
+        # websockets
+        'websockets',
+        'websockets.asyncio',
+        'websockets.asyncio.client',
+        'websockets.sync',
+        'websockets.sync.client',
+        'websockets.extensions',
+        'websockets.extensions.permessage_deflate',
+        'websockets.frames',
+        'websockets.headers',
+        'websockets.handshake',
+        'websockets.http11',
+        'websockets.protocol',
+        'websockets.streams',
+        'websockets.uri',
+        'websockets.utils',
+        'websockets.version',
+        # aiohttp (ollama)
+        'aiohttp',
+        'aiohttp.http',
+        'aiohttp.http_parser',
+        'aiohttp.http_writer',
+        'aiohttp.web',
+        'aiohttp.ws',
+        'aiohttp.multipart',
+        'multidict',
+        'yarl',
+        'attr',
+        'attrs',
+        'aiosignal',
+        'frozenlist',
+        'email_validator',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

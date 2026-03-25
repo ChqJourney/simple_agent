@@ -327,6 +327,7 @@ def build_runtime_environment(base_env: Mapping[str, str] | None = None) -> dict
     env["PATH"] = os.pathsep.join([*path_entries, *([existing_path] if existing_path else [])])
     env[PYTHON_NO_USER_SITE_ENV_VAR] = "1"
     env[PIP_DISABLE_VERSION_CHECK_ENV_VAR] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
 
     # Strip virtual-environment variables that could poison sys.path
     # inside the child process, even when the correct interpreter is used.

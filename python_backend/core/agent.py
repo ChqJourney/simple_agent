@@ -962,6 +962,10 @@ class Agent:
             "Do not search for or hardcode an absolute Python path when using it.",
             "`shell_execute` injects runtime shims so `python`, `python3`, `pip`, `pip3`, `node`, `npm`, and `npx` resolve to the app-managed runtimes when configured. "
             "Prefer those plain command names instead of hardcoded system paths.",
+            "When you need to run a Python script file, prefer `python_execute` with "
+            "`exec(open('path/to/script.py').read())` or `subprocess.run([sys.executable, 'script.py', ...])` "
+            "over `shell_execute` with `python script.py`. `python_execute` avoids shell quoting issues "
+            "with paths containing spaces or special characters.",
         ]
 
         if operating_system.lower().startswith("windows"):

@@ -68,6 +68,7 @@ class EmbeddedRuntimeTests(unittest.TestCase):
         self.assertLess(path_value.index(r"C:\runtime\python"), path_value.index(r"C:\runtime\node"))
         self.assertEqual("1", env["PYTHONNOUSERSITE"])
         self.assertEqual("1", env["PIP_DISABLE_PIP_VERSION_CHECK"])
+        self.assertEqual("utf-8", env["PYTHONIOENCODING"])
         shim_root = next(part for part in env["PATH"].split(os.pathsep) if "tauri-agent-runtime-shims" in part)
         extension = ".cmd" if os.name == "nt" else ""
         self.assertTrue(Path(shim_root, f"pip{extension}").exists())

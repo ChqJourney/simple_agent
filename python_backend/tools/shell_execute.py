@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import copy
 import os
 import shutil
@@ -159,6 +160,19 @@ class ShellExecuteTool(BaseTool):
         )
 
     @staticmethod
+    def _powershell_encoded_argv(shell_path: str, command: str) -> list[str]:
+        """Build PowerShell argv using -EncodedCommand to avoid quoting issues with paths containing spaces."""
+        encoded = base64.b64encode(command.encode("utf-16-le")).decode("ascii")
+        return [
+            shell_path,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            encoded,
+        ]
+
+    @staticmethod
     def _resolve_shell_runner(command: str) -> dict[str, Any]:
         if os.name != "nt":
             shell_path = os.environ.get("SHELL", "")
@@ -175,14 +189,7 @@ class ShellExecuteTool(BaseTool):
             return {
                 "mode": "exec",
                 "runner": runner_name,
-                "argv": [
-                    shell_path,
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    command,
-                ],
+                "argv": ShellExecuteTool._powershell_encoded_argv(shell_path, command),
             }
 
         return {

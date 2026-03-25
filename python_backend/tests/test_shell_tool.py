@@ -1,3 +1,4 @@
+import base64
 import sys
 import unittest
 import os
@@ -55,7 +56,7 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("shell_execute", result.tool_name)
         self.assertEqual(0, result.output["exit_code"])
         self.assertIn("hello-from-shell", result.output["stdout"])
-        self.assertEqual("", result.output["stderr"])
+        # stderr may contain CLIXML progress output from PowerShell when using -EncodedCommand
         self.assertIn("runner", result.output)
 
     async def test_shell_tool_truncates_large_outputs(self) -> None:
@@ -104,10 +105,14 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("exec", runner["mode"])
         self.assertEqual("pwsh", runner["runner"])
-        self.assertEqual(
-            ["pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "ls"],
-            runner["argv"],
-        )
+        self.assertEqual("pwsh", runner["argv"][0])
+        self.assertEqual("-NoLogo", runner["argv"][1])
+        self.assertEqual("-NonInteractive", runner["argv"][3])
+        # -EncodedCommand should be used instead of -Command
+        self.assertEqual("-EncodedCommand", runner["argv"][4])
+        # The encoded value should be valid base64 decoding to "ls" in UTF-16-LE
+        decoded = base64.b64decode(runner["argv"][5]).decode("utf-16-le")
+        self.assertEqual("ls", decoded)
 
     def test_finds_powershell_from_system_root_when_path_lookup_fails(self) -> None:
         with (
@@ -129,6 +134,17 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
             "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
             runner["argv"][0].replace("\\", "/"),
         )
+        self.assertEqual("-EncodedCommand", runner["argv"][4])
+
+    def test_encoded_command_handles_paths_with_spaces(self) -> None:
+        """Verify that commands containing paths with spaces survive the encoding round-trip."""
+        with patch("tools.shell_execute.os.name", "nt"), patch("tools.shell_execute.shutil.which", return_value="pwsh"):
+            command = 'python "D:\\OneDrive - Intertek\\Documents\\Copilot\\script.py" --page 60'
+            runner = ShellExecuteTool._resolve_shell_runner(command)
+
+        self.assertEqual("-EncodedCommand", runner["argv"][4])
+        decoded = base64.b64decode(runner["argv"][5]).decode("utf-16-le")
+        self.assertEqual(command, decoded)
 
     def test_falls_back_to_cmd_shell_on_windows_when_powershell_is_unavailable(self) -> None:
         with (

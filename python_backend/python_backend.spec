@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
 import importlib
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 # Collect all submodules, data files, and binaries for key dependencies.
 # PyInstaller's static analysis sometimes misses lazy-loaded or
@@ -23,15 +24,47 @@ _PACKAGES = (
     'python_multipart',
 )
 
+# CRITICAL: For packages that are direct runtime deps of pydantic/fastapi,
+# always include them even if they are not importable at build time
+# (e.g. vendor/embedded Python may not have them pre-installed).
+# Fall back to collect_submodules for pure-Python packages if collect_all fails.
+_CRITICAL_PYTHON_ONLY = (
+    'typing_extensions', 'annotated_types', 'sniffio', 'certifi', 'idna',
+    'h11', 'hpack', 'hyperframe', 'anyio', 'anyio._backends',
+    'anyio._backends._asyncio', 'pydantic_core', 'email_validator',
+)
+
 for _pkg in _PACKAGES:
     try:
-        importlib.import_module(_pkg)
-    except ImportError:
-        continue
-    _datas, _binaries, _hidden = collect_all(_pkg)
-    _all_datas.extend(_datas)
-    _all_binaries.extend(_binaries)
-    _all_hidden.extend(_hidden)
+        _datas, _binaries, _hidden = collect_all(_pkg)
+        _all_datas.extend(_datas)
+        _all_binaries.extend(_binaries)
+        _all_hidden.extend(_hidden)
+    except Exception:
+        # collect_all failed — try collect_submodules as a lighter fallback
+        # for pure-Python packages that may have no data/binaries anyway.
+        try:
+            _hidden = collect_submodules(_pkg)
+            _all_hidden.extend(_hidden)
+        except Exception:
+            pass
+
+# Belt-and-suspenders: explicitly list typing_extensions and annotated_types.
+# These are the most common hidden deps that break pydantic v2 at runtime
+# when PyInstaller's static analysis misses them.
+_ESSENTIAL_HIDDEN = [
+    'typing_extensions',
+    'annotated_types',
+    'pydantic_core',
+    'email_validator',
+    'sniffio',
+    'anyio',
+    'anyio._backends',
+    'anyio._backends._asyncio',
+]
+for _mod in _ESSENTIAL_HIDDEN:
+    if _mod not in _all_hidden:
+        _all_hidden.append(_mod)
 
 a = Analysis(
     ['main.py'],

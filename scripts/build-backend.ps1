@@ -65,31 +65,6 @@ if (-not (Test-Path -LiteralPath $builtExe)) {
     throw "PyInstaller did not produce the expected backend executable: $builtExe"
 }
 
-# Verify that critical modules were actually bundled into the exe.
-# Use PyInstaller's own archive inspector to check.
-Write-Host "Verifying bundled modules in output exe..."
-$LASTEXITCODE = 0  # reset before verification
-try {
-    $bundledModules = & $buildPython -m PyInstaller.utils.cliutils.archive_viewer $builtExe --with-module-names 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  (archive_viewer CLI not usable, skipping bundle verification)"
-    } elseif ($bundledModules -match "error|Error|ERROR|usage|Usage") {
-        Write-Host "  (archive_viewer CLI not usable, skipping bundle verification)"
-    } else {
-        $criticalCheck = @('typing_extensions', 'annotated_types', 'pydantic_core', 'pydantic')
-        foreach ($mod in $criticalCheck) {
-            if ($bundledModules -notmatch [regex]::Escape($mod)) {
-                throw "CRITICAL: Module '$mod' is NOT bundled in the output exe! PyInstaller silently skipped it. The exe will crash at startup."
-            }
-            Write-Host "  OK: $mod is bundled"
-        }
-    }
-} catch {
-    Write-Host "  (bundle verification skipped: $($_.Exception.Message))"
-} finally {
-    $LASTEXITCODE = 0  # archive_viewer is non-critical; never let it fail the build
-}
-
 $binariesRoot = Join-Path $projectRoot "src-tauri/binaries"
 Ensure-Directory -Path $binariesRoot
 

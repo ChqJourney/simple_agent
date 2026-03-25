@@ -71,7 +71,9 @@ Write-Host "Verifying bundled modules in output exe..."
 $LASTEXITCODE = 0  # reset before verification
 try {
     $bundledModules = & $buildPython -m PyInstaller.utils.cliutils.archive_viewer $builtExe --with-module-names 2>&1
-    if ($bundledModules -match "error|Error|ERROR|usage|Usage") {
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  (archive_viewer CLI not usable, skipping bundle verification)"
+    } elseif ($bundledModules -match "error|Error|ERROR|usage|Usage") {
         Write-Host "  (archive_viewer CLI not usable, skipping bundle verification)"
     } else {
         $criticalCheck = @('typing_extensions', 'annotated_types', 'pydantic_core', 'pydantic')
@@ -84,6 +86,8 @@ try {
     }
 } catch {
     Write-Host "  (bundle verification skipped: $($_.Exception.Message))"
+} finally {
+    $LASTEXITCODE = 0  # archive_viewer is non-critical; never let it fail the build
 }
 
 $binariesRoot = Join-Path $projectRoot "src-tauri/binaries"

@@ -141,8 +141,9 @@ describe("MessageInput", () => {
 
     fireEvent.drop(textarea, { dataTransfer });
 
-    expect((textarea as HTMLTextAreaElement).value).toContain("src/app.ts");
-    expect((textarea as HTMLTextAreaElement).value).toContain("src/components");
+    expect((textarea as HTMLTextAreaElement).value).toBe("");
+    expect(screen.getByText("app.ts")).toBeTruthy();
+    expect(screen.getByText("components")).toBeTruthy();
   });
 
   it("adds dropped images as attachments and sends them with the message", async () => {
@@ -176,7 +177,8 @@ describe("MessageInput", () => {
           mime_type: "image/png",
           data_url: expect.stringMatching(/^data:image\/png;base64,/),
         }),
-      ]
+      ],
+      "Review this screenshot",
     );
   });
 
@@ -208,7 +210,8 @@ describe("MessageInput", () => {
           name: "diagram.png",
           data_url: expect.stringMatching(/^data:image\/png;base64,/),
         }),
-      ]
+      ],
+      "",
     );
   });
 
@@ -253,14 +256,15 @@ describe("MessageInput", () => {
     render(<MessageInput onSend={vi.fn()} />);
 
     const composer = screen.getByTestId("composer-shell");
-    const selector = screen.getByLabelText("Execution mode") as HTMLSelectElement;
+    const selector = screen.getByLabelText("Execution mode");
     const sendButton = screen.getByRole("button", { name: "Send message" });
     const textarea = screen.getByPlaceholderText("Type your message...") as HTMLTextAreaElement;
 
-    expect(selector.value).toBe("regular");
-    expect(screen.getByRole("option", { name: "Regular" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Free" })).toBeTruthy();
-    expect(textarea.rows).toBe(4);
+    expect(selector.textContent).toContain("Regular");
+    fireEvent.click(selector);
+    expect(screen.getByRole("option", { name: /Regular/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /Free/ })).toBeTruthy();
+    expect(textarea.rows).toBe(5);
     expect(composer.contains(selector)).toBe(true);
     expect(composer.contains(sendButton)).toBe(true);
   });

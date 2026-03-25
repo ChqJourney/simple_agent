@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { WelcomePage, WorkspacePage, SettingsPage } from './pages';
+import { WelcomePage, WorkspacePage, SettingsPage, AboutPage } from './pages';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { LoadingOverlay } from './components/common';
 import { useUIStore } from './stores';
@@ -15,6 +15,7 @@ function RoutedContent() {
       <Route path="/" element={<WelcomePage />} />
       <Route path="/workspace/:workspaceId" element={<WorkspacePage />} />
       <Route path="/settings" element={<SettingsPage />} />
+      <Route path="/about" element={<AboutPage />} />
     </Routes>
   );
 

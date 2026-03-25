@@ -38,6 +38,13 @@ describe("SessionList", () => {
           updated_at: "2026-03-12T11:00:00.000Z",
           title: "Other workspace session",
         },
+        {
+          session_id: "session-d",
+          workspace_path: "/workspace-a",
+          created_at: "2026-03-12T08:00:00.000Z",
+          updated_at: "2026-03-12T08:00:00.000Z",
+          title: "",
+        },
       ],
       currentSessionId: "session-a",
     }));
@@ -54,6 +61,7 @@ describe("SessionList", () => {
 
     expect(screen.queryByText("Other workspace session")).toBeNull();
     expect(screen.getByTestId("session-list-scroll")).toBeTruthy();
+    expect(screen.getByText("3")).toBeTruthy();
   });
 
   it("sorts workspace sessions by the most recent update first", () => {
@@ -65,5 +73,11 @@ describe("SessionList", () => {
     expect(listText.indexOf("Most recent workspace session")).toBeLessThan(
       listText.indexOf("Investigate runtime contracts")
     );
+  });
+
+  it("shows 'new session' when a session has no title yet", () => {
+    render(<SessionList workspacePath="/workspace-a" />);
+
+    expect(screen.getByText("new session")).toBeTruthy();
   });
 });

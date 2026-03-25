@@ -71,7 +71,7 @@ export const ChatContainer = () => {
     })
   );
 
-  const handleSend = useCallback((content: string, attachments?: Attachment[]) => {
+  const handleSend = useCallback((content: string, attachments?: Attachment[], displayContent?: string) => {
     if (!canSendMessage) {
       return;
     }
@@ -104,7 +104,7 @@ export const ChatContainer = () => {
     }
 
     useChatStore.getState().clearPendingQuestion(sessionId);
-    useChatStore.getState().addUserMessage(sessionId, content, attachments);
+    useChatStore.getState().addUserMessage(sessionId, displayContent ?? content, attachments);
     sendMessage(sessionId, content, attachments, currentWorkspace?.path);
   }, [canSendMessage, config, currentSessionId, createSession, draftExecutionMode, sendMessage, currentWorkspace?.path, sessionExecutionModes, setExecutionMode, updateSession]);
 

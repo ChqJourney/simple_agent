@@ -2,6 +2,7 @@ use std::{path::Path, sync::Mutex};
 use tauri::Manager;
 
 mod session_storage;
+mod skill_catalog;
 mod workspace_paths;
 
 const EMBEDDED_PYTHON_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_PYTHON";
@@ -74,7 +75,9 @@ fn open_workspace_folder(selected_path: String) -> Result<(), String> {
     }
 
     if !workspace_path.is_dir() {
-        return Err(format!("Workspace path is not a directory: {selected_path}"));
+        return Err(format!(
+            "Workspace path is not a directory: {selected_path}"
+        ));
     }
 
     #[cfg(target_os = "windows")]
@@ -104,11 +107,26 @@ fn open_workspace_folder(selected_path: String) -> Result<(), String> {
         .map_err(|error| format!("Failed to open workspace folder: {error}"))
 }
 
+#[tauri::command]
+fn scan_system_skills(app: tauri::AppHandle) -> Result<skill_catalog::SkillCatalogPayload, String> {
+    skill_catalog::scan_system_skills(&app)
+}
+
+#[tauri::command]
+fn scan_workspace_skills(
+    app: tauri::AppHandle,
+    workspace_path: String,
+) -> Result<skill_catalog::SkillCatalogPayload, String> {
+    skill_catalog::scan_workspace_skills(&app, &workspace_path)
+}
+
 pub struct BackendAuthToken(Mutex<Option<String>>);
 pub struct PythonSidecar(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
 #[tauri::command]
-fn get_backend_auth_token(auth_token: tauri::State<'_, BackendAuthToken>) -> Result<String, String> {
+fn get_backend_auth_token(
+    auth_token: tauri::State<'_, BackendAuthToken>,
+) -> Result<String, String> {
     let guard = auth_token
         .0
         .lock()
@@ -154,7 +172,10 @@ where
 }
 
 fn embedded_python_dir(resource_dir: &Path) -> std::path::PathBuf {
-    resource_dir.join("resources").join("runtimes").join("python")
+    resource_dir
+        .join("resources")
+        .join("runtimes")
+        .join("python")
 }
 
 fn embedded_node_dir(resource_dir: &Path) -> std::path::PathBuf {
@@ -274,16 +295,14 @@ fn kill_sidecar(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let initial_auth_token = std::env::var(AUTH_TOKEN_ENV_VAR)
-        .ok()
-        .and_then(|value| {
-            let trimmed = value.trim().to_string();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        });
+    let initial_auth_token = std::env::var(AUTH_TOKEN_ENV_VAR).ok().and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -299,6 +318,8 @@ pub fn run() {
             read_session_history,
             delete_session_history,
             open_workspace_folder,
+            scan_system_skills,
+            scan_workspace_skills,
             get_backend_auth_token
         ])
         .setup(|_app| {
@@ -449,7 +470,10 @@ mod tests {
         let resource_dir = Path::new(r"C:\release-root\custom-product\resources");
 
         assert_eq!(
-            resource_dir.join("resources").join("runtimes").join("python"),
+            resource_dir
+                .join("resources")
+                .join("runtimes")
+                .join("python"),
             embedded_python_dir(resource_dir)
         );
         assert_eq!(

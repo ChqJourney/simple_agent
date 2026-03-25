@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProviderConfigForm } from '../components/Settings/ProviderConfig';
+import { CustomSelect } from '../components/common';
 import { useConfigStore } from '../stores/configStore';
 import { useUIStore } from '../stores';
 import { ModelProfile, ProviderConfig, ProviderType } from '../types';
@@ -15,20 +16,39 @@ import {
 } from '../utils/config';
 import { buildBackendAuthHeaders, getBackendAuthToken } from '../utils/backendAuth';
 import { backendTestConfigUrl } from '../utils/backendEndpoint';
+import { listSystemSkills, SkillEntry } from '../utils/systemSkills';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 type ProfileName = 'primary' | 'secondary';
+type SettingsTab = 'model' | 'runtime' | 'skills' | 'ui';
 
 interface ConnectionTestState {
   status: TestStatus;
   error: string | null;
 }
 
+const SETTINGS_TABS: Array<{ value: SettingsTab; label: string; description: string }> = [
+  { value: 'model', label: 'Model', description: 'Primary and secondary model profiles' },
+  { value: 'runtime', label: 'Runtime', description: 'Context, output, retries, and tool limits' },
+  { value: 'skills', label: 'Skill', description: 'System-level skills and local skill scanning' },
+  { value: 'ui', label: 'UI', description: 'Theme, typography, and display preferences' },
+];
+
+const THEME_OPTIONS = [
+  { value: 'system', label: 'System', hint: 'Follow the operating system preference' },
+  { value: 'light', label: 'Light', hint: 'Bright interface for daytime use' },
+  { value: 'dark', label: 'Dark', hint: 'Low-glare interface for darker environments' },
+];
+
+const APP_FONT_LABEL = 'Inter';
+const APP_FONT_STACK = "'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif";
+
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const { config, setConfig } = useConfigStore();
   const { theme, setTheme, baseFontSize, setBaseFontSize } = useUIStore();
   const { sendConfig } = useWebSocket();
+  const [activeTab, setActiveTab] = useState<SettingsTab>('model');
   const [draftConfig, setDraftConfig] = useState<Partial<ProviderConfig>>(config || {});
   const [draftBaseFontSize, setDraftBaseFontSize] = useState<number>(
     normalizeBaseFontSize(config?.appearance?.base_font_size ?? baseFontSize)
@@ -37,12 +57,47 @@ export const SettingsPage: React.FC = () => {
     primary: { status: 'idle', error: null },
     secondary: { status: 'idle', error: null },
   });
+  const [systemSkills, setSystemSkills] = useState<SkillEntry[]>([]);
+  const [skillsRootPath, setSkillsRootPath] = useState('');
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraftConfig(config || {});
     setDraftBaseFontSize(normalizeBaseFontSize(config?.appearance?.base_font_size ?? baseFontSize));
-  }, [baseFontSize, config]);
+  }, [config]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSkills = async () => {
+      setSkillsLoading(true);
+      setSkillsError(null);
+      try {
+        const catalog = await listSystemSkills();
+        if (!cancelled) {
+          setSystemSkills(catalog.skills);
+          setSkillsRootPath(catalog.rootPath);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSkillsError(error instanceof Error ? error.message : 'Failed to scan system skills.');
+          setSystemSkills([]);
+          setSkillsRootPath('');
+        }
+      } finally {
+        if (!cancelled) {
+          setSkillsLoading(false);
+        }
+      }
+    };
+
+    void loadSkills();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const primaryProfile: Partial<ModelProfile> = draftConfig.profiles?.primary || draftConfig;
   const secondaryProfile: Partial<ModelProfile> = draftConfig.profiles?.secondary || {};
@@ -52,12 +107,14 @@ export const SettingsPage: React.FC = () => {
     ...acc,
     [provider]: Boolean(entry?.api_key || entry?.base_url),
   }), {} as Partial<Record<ProviderType, boolean>>);
+
   if (primaryProfile.provider) {
     configuredProviders[primaryProfile.provider] = Boolean(primaryProfile.api_key || primaryProfile.base_url);
   }
   if (secondaryProfile.provider) {
     configuredProviders[secondaryProfile.provider] = Boolean(secondaryProfile.api_key || secondaryProfile.base_url);
   }
+
   const resolvedRuntime = {
     context_length: draftConfig.runtime?.context_length ?? DEFAULT_RUNTIME_POLICY.context_length,
     max_output_tokens: draftConfig.runtime?.max_output_tokens ?? DEFAULT_RUNTIME_POLICY.max_output_tokens,
@@ -285,92 +342,103 @@ export const SettingsPage: React.FC = () => {
     navigate(-1);
   };
 
-  return (
-    <div className="min-h-screen bg-white dark:bg-gray-900">
-      <header className="h-14 flex items-center px-4 border-b border-gray-200 dark:border-gray-700">
-        <button
-          onClick={() => navigate(-1)}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-        >
-          <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h1 className="ml-4 text-lg font-semibold text-gray-900 dark:text-white">
-          Settings
-        </h1>
-      </header>
-
-      <main className="max-w-2xl mx-auto p-6 space-y-8">
-        <section>
-          <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
-            Provider Configuration
-          </h2>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-4">
-            <ProviderConfigForm
-              title="Primary Model"
-              config={primaryProfile}
-              configuredProviders={configuredProviders}
-              onChange={(nextConfig) => updateProfile('primary', nextConfig)}
-            />
-            <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
-              <ProviderConfigForm
-                title="Secondary Model"
-                config={secondaryProfile}
-                configuredProviders={configuredProviders}
-                onChange={(nextConfig) => updateProfile('secondary', nextConfig)}
-              />
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Used for background helper tasks such as title generation. Falls back to the primary model when unset.
+  const renderTabContent = () => {
+    if (activeTab === 'model') {
+      return (
+        <div className="space-y-6">
+          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Model Configuration</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Configure the main conversation model and the background helper model.
               </p>
             </div>
-            <div className="space-y-3 pt-2">
-              <div className="flex items-center gap-3">
+
+            <div className="space-y-5">
+              <ProviderConfigForm
+                title="Primary Model"
+                config={primaryProfile}
+                configuredProviders={configuredProviders}
+                onChange={(nextConfig) => updateProfile('primary', nextConfig)}
+              />
+
+              <div className="rounded-2xl border border-dashed border-gray-200 p-4 dark:border-gray-700">
+                <ProviderConfigForm
+                  title="Secondary Model"
+                  config={secondaryProfile}
+                  configuredProviders={configuredProviders}
+                  onChange={(nextConfig) => updateProfile('secondary', nextConfig)}
+                />
+                <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                  Used for background helper tasks such as title generation. Falls back to the primary model when unset.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Connection Tests</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Verify that the configured providers can be reached before saving.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => handleTest('primary')}
                   disabled={connectionTests.primary.status === 'testing' || !isProfileTestable(primaryProfile)}
-                  className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
                 >
                   {connectionTests.primary.status === 'testing' ? 'Testing Primary...' : 'Test Primary Connection'}
                 </button>
                 {connectionTests.primary.status === 'success' && (
-                  <span className="text-green-500 text-sm">Primary connected</span>
+                  <span className="text-sm text-emerald-600 dark:text-emerald-400">Primary connected</span>
                 )}
                 {connectionTests.primary.status === 'error' && (
-                  <span className="text-red-500 text-sm">
+                  <span className="text-sm text-red-500">
                     Primary failed{connectionTests.primary.error ? `: ${connectionTests.primary.error}` : ''}
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => handleTest('secondary')}
                   disabled={connectionTests.secondary.status === 'testing' || !isProfileTestable(secondaryProfile)}
-                  className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                  className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
                 >
                   {connectionTests.secondary.status === 'testing' ? 'Testing Secondary...' : 'Test Secondary Connection'}
                 </button>
                 {connectionTests.secondary.status === 'success' && (
-                  <span className="text-green-500 text-sm">Secondary connected</span>
+                  <span className="text-sm text-emerald-600 dark:text-emerald-400">Secondary connected</span>
                 )}
                 {connectionTests.secondary.status === 'error' && (
-                  <span className="text-red-500 text-sm">
+                  <span className="text-sm text-red-500">
                     Secondary failed{connectionTests.secondary.error ? `: ${connectionTests.secondary.error}` : ''}
                   </span>
                 )}
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
+      );
+    }
 
-        <section>
-          <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
-            Runtime Limits
-          </h2>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-4">
+    if (activeTab === 'runtime') {
+      return (
+        <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Runtime Limits</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Tune conversation context, output size, tool rounds, and retry behavior.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label htmlFor="context-length" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label htmlFor="context-length" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Context Length
               </label>
               <input
@@ -387,12 +455,12 @@ export const SettingsPage: React.FC = () => {
                     },
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               />
             </div>
 
             <div>
-              <label htmlFor="max-output-tokens" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label htmlFor="max-output-tokens" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Max Output Tokens
               </label>
               <input
@@ -409,12 +477,12 @@ export const SettingsPage: React.FC = () => {
                     },
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               />
             </div>
 
             <div>
-              <label htmlFor="max-tool-rounds" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label htmlFor="max-tool-rounds" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Max Tool Rounds
               </label>
               <input
@@ -431,12 +499,12 @@ export const SettingsPage: React.FC = () => {
                     },
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               />
             </div>
 
             <div>
-              <label htmlFor="max-retries" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label htmlFor="max-retries" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Max Retries
               </label>
               <input
@@ -453,23 +521,31 @@ export const SettingsPage: React.FC = () => {
                     },
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               />
             </div>
           </div>
         </section>
+      );
+    }
 
-        <section>
-          <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
-            Context Providers
-          </h2>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-4">
-            <div className="flex items-center justify-between gap-4">
+    if (activeTab === 'skills') {
+      return (
+        <div className="space-y-6">
+          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Skill Runtime</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Control whether local skills participate in the system prompt and inspect the app-level skill catalog.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
               <div>
                 <label htmlFor="enable-local-skills" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   Enable Local Skills
                 </label>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   Scan local skill metadata into the system prompt and allow the agent to load full instructions with `skill_loader`.
                 </p>
               </div>
@@ -491,41 +567,130 @@ export const SettingsPage: React.FC = () => {
                     },
                   })
                 }
-                className="rounded border-gray-300 dark:border-gray-600"
+                className="h-5 w-5 rounded border-gray-300 dark:border-gray-600"
               />
             </div>
+          </section>
 
-            <div className="border-t border-gray-200 pt-4 dark:border-gray-700 space-y-4">
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Local skills contribute YAML frontmatter to the system prompt; full skill instructions are loaded on demand.
-              </p>
+          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">System Skills</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  App-level skills discovered outside the current workspace.
+                </p>
+              </div>
+              {skillsRootPath && (
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {systemSkills.length} loaded
+                </span>
+              )}
             </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                Skill Root
+              </div>
+              <div className="mt-2 break-all font-mono text-sm text-gray-900 dark:text-gray-100">
+                {skillsRootPath || 'Unavailable'}
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {skillsLoading && (
+                <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  Scanning system skills...
+                </div>
+              )}
+
+              {!skillsLoading && skillsError && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                  {skillsError}
+                </div>
+              )}
+
+              {!skillsLoading && !skillsError && systemSkills.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  No system-level skills were found in the configured app skill directory.
+                </div>
+              )}
+
+              {!skillsLoading && !skillsError && systemSkills.map((skill) => (
+                <div
+                  key={skill.path}
+                  className="rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-800"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-white">{skill.name}</div>
+                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 dark:bg-sky-950/50 dark:text-sky-200">
+                      system
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                    {skill.description || 'No description found in frontmatter.'}
+                  </p>
+                  <div className="mt-3 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+                    {skill.path}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Display Mode</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Switch between system, light, and dark themes using the custom UI selector.
+            </p>
+          </div>
+
+          <div className="max-w-md space-y-2">
+            <label id="theme-label" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Theme
+            </label>
+            <CustomSelect
+              id="theme"
+              ariaLabel="Theme"
+              ariaLabelledBy="theme-label"
+              value={theme}
+              onChange={(nextTheme) => setTheme(nextTheme as 'light' | 'dark' | 'system')}
+              options={THEME_OPTIONS}
+            />
           </div>
         </section>
 
-        <section>
-          <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
-            Appearance
-          </h2>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <label className="text-sm text-gray-700 dark:text-gray-300" htmlFor="theme">
-                Theme
-              </label>
-              <select
-                id="theme"
-                value={theme}
-                onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'system')}
-                className="px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white"
-              >
-                <option value="system">System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
+        <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Typography</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Review the current app font and adjust the base font size.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),220px]">
+            <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(14,165,233,0.08),rgba(99,102,241,0.08))] p-5 dark:bg-[linear-gradient(135deg,rgba(14,165,233,0.14),rgba(99,102,241,0.14))]">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                Current Font
+              </div>
+              <div className="mt-3 text-2xl font-semibold text-gray-900 dark:text-white" style={{ fontFamily: APP_FONT_STACK }}>
+                {APP_FONT_LABEL}
+              </div>
+              <div className="mt-2 text-sm text-gray-600 dark:text-gray-300" style={{ fontFamily: APP_FONT_STACK }}>
+                The quick brown fox jumps over the lazy dog.
+              </div>
+              <div className="mt-3 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+                {APP_FONT_STACK}
+              </div>
             </div>
 
-            <div className="flex items-center justify-between gap-4">
-              <label htmlFor="base-font-size" className="text-sm text-gray-700 dark:text-gray-300">
+            <div>
+              <label htmlFor="base-font-size" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Base Font Size
               </label>
               <input
@@ -540,24 +705,88 @@ export const SettingsPage: React.FC = () => {
                   setDraftBaseFontSize(normalizedSize);
                   setBaseFontSize(normalizedSize);
                 }}
-                className="w-24 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               />
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Applies immediately so you can preview the result before saving.
+              </p>
             </div>
           </div>
         </section>
+      </div>
+    );
+  };
 
-        <div className="space-y-2">
-          {saveError && (
-            <p className="text-sm text-red-500">{saveError}</p>
-          )}
-          <div className="flex justify-end">
-            <button
-              onClick={handleSave}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-            >
-              Save
-            </button>
+  return (
+    <div className="min-h-screen bg-[linear-gradient(180deg,rgba(241,245,249,0.9),rgba(255,255,255,1))] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.98),rgba(15,23,42,1))]">
+      <header className="flex h-16 items-center justify-between border-b border-gray-200/70 px-4 dark:border-gray-800">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate(-1)}
+            className="rounded-xl p-2 text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+            aria-label="Go back"
+            title="Go back"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Settings</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Tabs on the left, detailed controls on the right.</p>
           </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => navigate('/about')}
+          className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+        >
+          About
+        </button>
+      </header>
+
+      <main className="mx-auto max-w-6xl p-6">
+        <div className="flex items-start gap-6">
+          <aside className="w-60 shrink-0 rounded-[1.75rem] border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="space-y-1.5">
+              {SETTINGS_TABS.map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => setActiveTab(tab.value)}
+                  className={`w-full rounded-2xl px-4 py-3 text-left transition-colors ${
+                    activeTab === tab.value
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <div className="text-sm font-semibold">{tab.label}</div>
+                  <div className={`mt-1 text-xs ${activeTab === tab.value ? 'text-white/80 dark:text-slate-700' : 'text-gray-500 dark:text-gray-400'}`}>
+                    {tab.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <section className="min-w-0 flex-1 space-y-5">
+            {renderTabContent()}
+
+            <div className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              {saveError && (
+                <p className="mb-4 text-sm text-red-500">{saveError}</p>
+              )}
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSave}
+                  className="rounded-xl bg-blue-600 px-6 py-2.5 font-medium text-white transition-colors hover:bg-blue-700"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </section>
         </div>
       </main>
     </div>

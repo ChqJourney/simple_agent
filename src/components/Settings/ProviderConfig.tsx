@@ -1,6 +1,7 @@
 import React from 'react';
 import { ProviderType, ProviderConfig } from '../../types';
 import { getImageSupportStatus, ImageSupportStatus, supportsReasoning } from '../../utils/modelCapabilities';
+import { CustomSelect } from '../common';
 
 interface ProviderConfigProps {
   config: Partial<ProviderConfig>;
@@ -51,12 +52,17 @@ function getImageSupportDescription(status: ImageSupportStatus): string {
   }
 }
 
+function fieldIdPrefix(title?: string): string {
+  return (title || 'model').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
 export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   config,
   onChange,
   configuredProviders = {},
   title,
 }) => {
+  const idPrefix = fieldIdPrefix(title);
   const provider = config.provider;
   const hasSavedProviderConfig = provider ? Boolean(configuredProviders[provider]) : false;
 
@@ -95,22 +101,24 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
         </h3>
       )}
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        <label
+          id={`${idPrefix}-provider-label`}
+          className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
+        >
           Provider
         </label>
-        <select
-          aria-label={`${title || 'Model'} Provider`}
+        <CustomSelect
+          ariaLabel={`${title || 'Model'} Provider`}
+          ariaLabelledBy={`${idPrefix}-provider-label`}
           value={config.provider || ''}
-          onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-        >
-          <option value="">Select a provider</option>
-          {PROVIDERS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {configuredProviders[p.value] ? `${p.label} · Saved` : p.label}
-            </option>
-          ))}
-        </select>
+          onChange={(nextValue) => handleProviderChange(nextValue as ProviderType)}
+          placeholder="Select a provider"
+          options={PROVIDERS.map((item) => ({
+            value: item.value,
+            label: item.label,
+            hint: configuredProviders[item.value] ? 'Saved configuration available' : undefined,
+          }))}
+        />
         {provider && hasSavedProviderConfig && (
           <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
             Saved API configuration found for this provider.
@@ -121,22 +129,24 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
       {provider && (
         <>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label
+              id={`${idPrefix}-model-label`}
+              className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
               Model
             </label>
-            <select
-              aria-label={`${title || 'Model'} Model`}
+            <CustomSelect
+              ariaLabel={`${title || 'Model'} Model`}
+              ariaLabelledBy={`${idPrefix}-model-label`}
               value={config.model || ''}
-              onChange={(e) => handleModelChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-            >
-              <option value="">Select a model</option>
-              {MODELS[provider].map((m) => (
-                <option key={m} value={m}>
-                  {`${m} · ${getImageSupportBadge(getImageSupportStatus(provider, m))}`}
-                </option>
-              ))}
-            </select>
+              onChange={handleModelChange}
+              placeholder="Select a model"
+              options={MODELS[provider].map((modelName) => ({
+                value: modelName,
+                label: modelName,
+                hint: getImageSupportBadge(getImageSupportStatus(provider, modelName)),
+              }))}
+            />
             {config.model && (
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                 {getImageSupportDescription(selectedImageSupport)}
@@ -176,12 +186,12 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
-                id="enable_reasoning"
+                id={`${idPrefix}-enable-reasoning`}
                 checked={config.enable_reasoning ?? true}
                 onChange={(e) => handleChange('enable_reasoning', e.target.checked)}
                 className="rounded border-gray-300 dark:border-gray-600"
               />
-              <label htmlFor="enable_reasoning" className="text-sm text-gray-700 dark:text-gray-300">
+              <label htmlFor={`${idPrefix}-enable-reasoning`} className="text-sm text-gray-700 dark:text-gray-300">
                 Enable reasoning
               </label>
             </div>

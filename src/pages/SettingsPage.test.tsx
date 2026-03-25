@@ -6,6 +6,7 @@ import { useConfigStore, useUIStore } from "../stores";
 const navigateMock = vi.hoisted(() => vi.fn());
 const sendConfigMock = vi.hoisted(() => vi.fn());
 const setConfigMock = vi.hoisted(() => vi.fn());
+const listSystemSkillsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../contexts/WebSocketContext", () => ({
   useWebSocket: () => ({
@@ -21,13 +22,47 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
+vi.mock("../utils/systemSkills", () => ({
+  listSystemSkills: listSystemSkillsMock,
+}));
+
+function openTab(name: "Runtime" | "Skill" | "UI") {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}`) }));
+}
+
+function listOpenOptions() {
+  return screen.getAllByRole("option").map((option) => option.textContent || "");
+}
+
+function openSelect(label: string) {
+  fireEvent.click(screen.getByLabelText(label));
+}
+
+function selectOption(label: string, optionText: string) {
+  openSelect(label);
+  const target = screen.getAllByRole("option").find((option) => option.textContent?.includes(optionText));
+  expect(target).toBeTruthy();
+  fireEvent.click(target!);
+}
+
 describe("SettingsPage", () => {
   beforeEach(() => {
     localStorage.clear();
     navigateMock.mockReset();
     sendConfigMock.mockReset();
     setConfigMock.mockReset();
+    listSystemSkillsMock.mockReset();
     globalThis.fetch = vi.fn();
+    listSystemSkillsMock.mockResolvedValue({
+      rootPath: "/system-skills",
+      skills: [
+        {
+          name: "deploy-checks",
+          description: "System skill",
+          path: "/system-skills/deploy-checks/SKILL.md",
+        },
+      ],
+    });
     useConfigStore.setState({
       config: {
         provider: "openai",
@@ -84,11 +119,17 @@ describe("SettingsPage", () => {
     expect(
       screen.getByText("Used for background helper tasks such as title generation. Falls back to the primary model when unset.")
     ).toBeTruthy();
+
+    openTab("Runtime");
     expect(screen.getByLabelText("Context Length")).toBeTruthy();
     expect(screen.getByLabelText("Max Output Tokens")).toBeTruthy();
     expect(screen.getByLabelText("Max Tool Rounds")).toBeTruthy();
     expect(screen.getByLabelText("Max Retries")).toBeTruthy();
+
+    openTab("Skill");
     expect(screen.getByLabelText("Enable Local Skills")).toBeTruthy();
+
+    openTab("UI");
     expect(screen.getByLabelText("Base Font Size")).toBeTruthy();
   });
 
@@ -123,6 +164,7 @@ describe("SettingsPage", () => {
 
     render(<SettingsPage />);
 
+    openTab("Runtime");
     expect((screen.getByLabelText("Context Length") as HTMLInputElement).value).toBe("64000");
     expect((screen.getByLabelText("Max Output Tokens") as HTMLInputElement).value).toBe("4000");
     expect((screen.getByLabelText("Max Tool Rounds") as HTMLInputElement).value).toBe("20");
@@ -132,13 +174,13 @@ describe("SettingsPage", () => {
   it("offers hosted providers in the provider selector", () => {
     render(<SettingsPage />);
 
-    const providerSelects = screen.getAllByRole("combobox") as HTMLSelectElement[];
-    const providerOptions = Array.from(providerSelects[0].options).map((option) => option.textContent);
+    openSelect("Primary Model Provider");
+    const providerOptions = listOpenOptions();
 
-    expect(providerOptions).toContain("DeepSeek");
-    expect(providerOptions).toContain("Kimi (Moonshot)");
-    expect(providerOptions).toContain("GLM (Zhipu)");
-    expect(providerOptions).toContain("MiniMax");
+    expect(providerOptions.some((option) => option.includes("DeepSeek"))).toBe(true);
+    expect(providerOptions.some((option) => option.includes("Kimi (Moonshot)"))).toBe(true);
+    expect(providerOptions.some((option) => option.includes("GLM (Zhipu)"))).toBe(true);
+    expect(providerOptions.some((option) => option.includes("MiniMax"))).toBe(true);
   });
 
   it("includes backend auth header when testing provider connectivity", async () => {
@@ -168,29 +210,32 @@ describe("SettingsPage", () => {
   it("marks configured providers in the selector and shows a saved hint", () => {
     render(<SettingsPage />);
 
-    const providerSelects = screen.getAllByRole("combobox") as HTMLSelectElement[];
-    const providerOptions = Array.from(providerSelects[0].options).map((option) => option.textContent);
+    openSelect("Primary Model Provider");
+    const providerOptions = listOpenOptions();
 
-    expect(providerOptions).toContain("OpenAI · Saved");
+    expect(providerOptions.some((option) => option.includes("OpenAI") && option.includes("Saved configuration available"))).toBe(true);
     expect(screen.getAllByText("Saved API configuration found for this provider.").length).toBeGreaterThan(0);
   });
 
   it("shows image support status in the primary model list", () => {
     render(<SettingsPage />);
 
-    const modelSelect = screen.getByLabelText("Primary Model Model") as HTMLSelectElement;
-    const modelOptions = Array.from(modelSelect.options).map((option) => option.textContent);
+    openSelect("Primary Model Model");
+    const modelOptions = listOpenOptions();
 
-    expect(modelOptions).toContain("gpt-4o · Images");
-    expect(modelOptions).toContain("gpt-4-turbo · Unknown");
-    expect(modelOptions).toContain("o1-preview · Text only");
+    expect(modelOptions.some((option) => option.includes("gpt-4o") && option.includes("Images"))).toBe(true);
+    expect(modelOptions.some((option) => option.includes("gpt-4-turbo") && option.includes("Unknown"))).toBe(true);
+    expect(modelOptions.some((option) => option.includes("o1-preview") && option.includes("Text only"))).toBe(true);
     expect(screen.getAllByText("Image input is supported for this model.").length).toBeGreaterThan(0);
   });
 
   it("saves context provider settings through normalized config", () => {
     render(<SettingsPage />);
 
+    openTab("Skill");
     fireEvent.click(screen.getByLabelText("Enable Local Skills"));
+
+    openTab("Runtime");
     fireEvent.change(screen.getByLabelText("Max Output Tokens"), {
       target: { value: "2048" },
     });
@@ -235,6 +280,7 @@ describe("SettingsPage", () => {
   it("saves base font size into appearance config", () => {
     render(<SettingsPage />);
 
+    openTab("UI");
     fireEvent.change(screen.getByLabelText("Base Font Size"), {
       target: { value: "18" },
     });
@@ -278,11 +324,8 @@ describe("SettingsPage", () => {
   it("remembers api key and base url per provider when switching providers", () => {
     render(<SettingsPage />);
 
-    const providerSelect = screen.getByLabelText("Primary Model Provider");
-    const modelSelect = screen.getByLabelText("Primary Model Model");
-
-    fireEvent.change(providerSelect, { target: { value: "kimi" } });
-    fireEvent.change(modelSelect, { target: { value: "kimi-k2.5" } });
+    selectOption("Primary Model Provider", "Kimi (Moonshot)");
+    selectOption("Primary Model Model", "kimi-k2.5");
     fireEvent.change(screen.getAllByPlaceholderText("Enter your API key")[0], {
       target: { value: "kimi-key" },
     });
@@ -290,18 +333,14 @@ describe("SettingsPage", () => {
       target: { value: "https://api.moonshot.cn/v1" },
     });
 
-    fireEvent.change(screen.getByLabelText("Primary Model Provider"), {
-      target: { value: "deepseek" },
-    });
+    selectOption("Primary Model Provider", "DeepSeek");
 
     expect((screen.getAllByPlaceholderText("Enter your API key")[0] as HTMLInputElement).value).toBe("");
     expect((screen.getAllByPlaceholderText("Custom API endpoint")[0] as HTMLInputElement).value).toBe("");
 
-    fireEvent.change(screen.getByLabelText("Primary Model Provider"), {
-      target: { value: "kimi" },
-    });
+    selectOption("Primary Model Provider", "Kimi (Moonshot)");
 
-    expect((screen.getByLabelText("Primary Model Model") as HTMLSelectElement).value).toBe("kimi-k2.5");
+    expect(screen.getByLabelText("Primary Model Model").textContent).toContain("kimi-k2.5");
     expect((screen.getAllByPlaceholderText("Enter your API key")[0] as HTMLInputElement).value).toBe("kimi-key");
     expect((screen.getAllByPlaceholderText("Custom API endpoint")[0] as HTMLInputElement).value).toBe("https://api.moonshot.cn/v1");
   });

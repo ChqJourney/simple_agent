@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useSessionStore } from '../../stores/sessionStore';
-import { formatTimestamp, truncateText } from '../../utils/storage';
+import { formatTimestamp } from '../../utils/storage';
 import { useSession } from '../../hooks/useSession';
 
 interface SessionListProps {
@@ -57,7 +57,12 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">Sessions</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">Sessions</h3>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+            {sortedSessions.length}
+          </span>
+        </div>
         <button
           onClick={handleNewSession}
           className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 transition-colors"
@@ -85,7 +90,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
                   }`}
                 >
                   <div className="font-medium truncate">
-                    {session.title || truncateText(session.session_id, 20)}
+                    {session.title?.trim() || 'new session'}
                   </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     {formatTimestamp(session.updated_at)}

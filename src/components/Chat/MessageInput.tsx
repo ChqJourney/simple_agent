@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Attachment, ExecutionMode } from '../../types';
 import { isImagePath } from '../../utils/fileTypes';
 import { clearActiveDraggedFileDescriptors, getActiveDraggedFileDescriptors } from '../../utils/internalDragState';
+import { CustomSelect } from '../common';
 
 const FILE_TREE_DRAG_MIME = 'application/x-tauri-agent-file';
 const FILE_TREE_IMAGE_DRAG_MIME = 'application/x-tauri-agent-image';
@@ -13,8 +14,13 @@ interface DraggedFileDescriptor {
   isImage?: boolean;
 }
 
+interface PromptPathReference {
+  absolutePath: string;
+  displayName: string;
+}
+
 interface MessageInputProps {
-  onSend: (content: string, attachments?: Attachment[]) => void;
+  onSend: (content: string, attachments?: Attachment[], displayContent?: string) => void;
   onExecutionModeChange?: (mode: ExecutionMode) => void;
   onInterrupt?: () => void;
   isStreaming?: boolean;
@@ -83,7 +89,7 @@ function descriptorsToImageAttachments(descriptors: DraggedFileDescriptor[]): At
     .map((descriptor) => ({
       kind: 'image' as const,
       path: descriptor.path,
-      name: descriptor.name || descriptor.path.split(/[\\/]/).pop() || descriptor.path,
+      name: descriptor.name || descriptor.path.split(/[\\/]/).filter(Boolean).pop() || descriptor.path,
       mime_type: undefined,
     }));
 }
@@ -132,18 +138,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 }) => {
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [promptPaths, setPromptPaths] = useState<PromptPathReference[]>([]);
   const [isImageDragActive, setIsImageDragActive] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageDragDepthRef = useRef(0);
   const isInputDisabled = disabled || isStreaming;
   const canAttachImages = supportsImageAttachments && !isStreaming;
-
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, [content]);
 
   const resetImageDragState = () => {
     imageDragDepthRef.current = 0;
@@ -160,12 +159,29 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   }, [attachments.length, supportsImageAttachments]);
 
+  const buildPromptContent = (paths: string[]) => {
+    const normalizedPaths = paths.filter(Boolean);
+    const normalizedContent = content.trim();
+
+    if (normalizedPaths.length === 0) {
+      return normalizedContent;
+    }
+
+    return normalizedContent
+      ? `${normalizedContent}\n${normalizedPaths.join('\n')}`
+      : normalizedPaths.join('\n');
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if ((content.trim() || attachments.length > 0) && !isInputDisabled) {
-      onSend(content.trim(), attachments);
+    const actualContent = buildPromptContent(promptPaths.map((item) => item.absolutePath));
+    const displayContent = buildPromptContent(promptPaths.map((item) => item.displayName));
+
+    if ((actualContent || attachments.length > 0) && !isInputDisabled) {
+      onSend(actualContent, attachments, displayContent);
       setContent('');
       setAttachments([]);
+      setPromptPaths([]);
     }
   };
 
@@ -180,15 +196,21 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   };
 
-  const insertPathsIntoPrompt = (paths: string[]) => {
-    const normalizedPaths = paths.filter(Boolean);
-    if (normalizedPaths.length === 0) {
+  const appendPromptPaths = (descriptors: DraggedFileDescriptor[]) => {
+    const normalizedDescriptors = descriptors.filter((descriptor) => Boolean(descriptor.path));
+    if (normalizedDescriptors.length === 0) {
       return;
     }
 
-    setContent((previous) => {
-      const prefix = previous.trim() ? `${previous.trim()}\n` : '';
-      return `${prefix}${normalizedPaths.join('\n')}`;
+    setPromptPaths((previous) => {
+      const seen = new Set(previous.map((item) => item.absolutePath));
+      const nextItems = normalizedDescriptors
+        .filter((descriptor) => !seen.has(descriptor.path))
+        .map((descriptor) => ({
+          absolutePath: descriptor.path,
+          displayName: descriptor.name || descriptor.path.split(/[\\/]/).filter(Boolean).pop() || descriptor.path,
+        }));
+      return [...previous, ...nextItems];
     });
   };
 
@@ -206,6 +228,18 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     });
   };
 
+  const appendDroppedImageAttachments = async (dataTransfer: DataTransfer) => {
+    const descriptors = parseDraggedDescriptors(dataTransfer.getData(FILE_TREE_DRAG_MIME));
+    const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
+    const descriptorAttachments = descriptorsToImageAttachments(effectiveDescriptors);
+    const fileAttachments = (await Promise.all(
+      Array.from(dataTransfer.files || []).map((file) => fileToAttachment(file))
+    ))
+      .filter((attachment): attachment is Attachment => attachment !== null);
+
+    appendImageAttachments([...descriptorAttachments, ...fileAttachments]);
+  };
+
   const handlePromptDrop = async (e: React.DragEvent<HTMLTextAreaElement>) => {
     e.preventDefault();
     if (canAttachImages && hasImagePayload(e.dataTransfer)) {
@@ -217,20 +251,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
     const descriptors = parseDraggedDescriptors(e.dataTransfer.getData(FILE_TREE_DRAG_MIME));
     const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
-    insertPathsIntoPrompt(effectiveDescriptors.map((descriptor) => descriptor.path));
+    appendPromptPaths(effectiveDescriptors);
     clearActiveDraggedFileDescriptors();
-  };
-
-  const appendDroppedImageAttachments = async (dataTransfer: DataTransfer) => {
-    const descriptors = parseDraggedDescriptors(dataTransfer.getData(FILE_TREE_DRAG_MIME));
-    const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
-    const descriptorAttachments = descriptorsToImageAttachments(effectiveDescriptors);
-    const fileAttachments = (await Promise.all(
-      Array.from(dataTransfer.files || []).map((file) => fileToAttachment(file))
-    ))
-      .filter((attachment): attachment is Attachment => attachment !== null);
-
-    appendImageAttachments([...descriptorAttachments, ...fileAttachments]);
   };
 
   const handleAttachmentDrop = async (e: React.DragEvent<HTMLDivElement>) => {
@@ -291,9 +313,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     );
   };
 
-  const handleExecutionModeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value === 'free' ? 'free' : 'regular';
-    onExecutionModeChange?.(value);
+  const removePromptPath = (target: PromptPathReference) => {
+    setPromptPaths((previous) =>
+      previous.filter((item) => item.absolutePath !== target.absolutePath)
+    );
   };
 
   return (
@@ -318,8 +341,20 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           </div>
         )}
 
-        {attachments.length > 0 && (
+        {(promptPaths.length > 0 || attachments.length > 0) && (
           <div className="mb-3 flex flex-wrap gap-2">
+            {promptPaths.map((item) => (
+              <button
+                key={item.absolutePath}
+                type="button"
+                onClick={() => removePromptPath(item)}
+                className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                title={item.absolutePath}
+              >
+                {item.displayName}
+              </button>
+            ))}
+
             {attachments.map((attachment) => (
               <button
                 key={`${attachment.name}:${attachment.path}`}
@@ -333,9 +368,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           </div>
         )}
 
-        <div className={`relative overflow-hidden rounded-xl border border-gray-200 bg-gray-50/90 dark:border-gray-700 dark:bg-gray-800/85 ${attachments.length > 0 || (canAttachImages && isImageDragActive) ? '' : 'mt-0'}`}>
+        <div className={`relative overflow-visible rounded-xl border border-gray-200 bg-gray-50/90 dark:border-gray-700 dark:bg-gray-800/85 ${promptPaths.length > 0 || attachments.length > 0 || (canAttachImages && isImageDragActive) ? '' : 'mt-0'}`}>
           <textarea
-            ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -343,8 +377,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onDrop={handlePromptDrop}
             placeholder={placeholder}
             disabled={isInputDisabled}
-            rows={4}
-            className="min-h-[4rem] max-h-60 w-full resize-none bg-transparent px-4 py-4 pb-16 pr-20 text-gray-900 outline-none transition-colors placeholder:text-gray-500 dark:text-gray-100 dark:placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-70"
+            rows={5}
+            className="h-[8.25rem] w-full resize-none overflow-y-auto bg-transparent px-4 py-4 pb-16 pr-20 text-gray-900 outline-none transition-colors placeholder:text-gray-500 dark:text-gray-100 dark:placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-70"
           />
           {isStreaming ? (
             <button
@@ -362,7 +396,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           ) : (
             <button
               type="submit"
-              disabled={disabled || (!content.trim() && attachments.length === 0)}
+              disabled={disabled || (!content.trim() && attachments.length === 0 && promptPaths.length === 0)}
               aria-label="Send message"
               title="Send message"
               className="absolute bottom-3 right-3 flex h-8 w-20 items-center justify-center rounded-lg bg-slate-600 text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"
@@ -373,20 +407,27 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             </button>
           )}
           <div className="flex items-center border-gray-200/80 px-4 py-3 dark:border-gray-700/80">
-            <label htmlFor="execution-mode-select" className="text-xs font-semibold tracking-[0.12em] text-gray-600 dark:text-gray-300">
+            <label id="execution-mode-label" className="text-xs font-semibold tracking-[0.12em] text-gray-600 dark:text-gray-300">
               Approval
             </label>
-            <select
-              id="execution-mode-select"
-              aria-label="Execution mode"
-              value={executionMode}
-              onChange={handleExecutionModeChange}
-              disabled={isInputDisabled}
-              className="rounded-lg ml-2 border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 outline-none focus:border-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              <option value="regular">Regular</option>
-              <option value="free">Free</option>
-            </select>
+            <div className="ml-2 w-[148px] shrink-0">
+              <CustomSelect
+                id="execution-mode-select"
+                ariaLabel="Execution mode"
+                ariaLabelledBy="execution-mode-label"
+                value={executionMode}
+                onChange={(nextValue) => onExecutionModeChange?.(nextValue === 'free' ? 'free' : 'regular')}
+                disabled={isInputDisabled}
+                options={[
+                  { value: 'regular', label: 'Regular', hint: 'Ask before sensitive actions' },
+                  { value: 'free', label: 'Free', hint: 'Let the agent run with fewer blocks' },
+                ]}
+                showSelectedHint={false}
+                menuPlacement="top"
+                buttonClassName="min-h-0 rounded-lg px-2.5 py-1 text-xs"
+                menuClassName="min-w-[220px]"
+              />
+            </div>
           </div>
         </div>
       </div>

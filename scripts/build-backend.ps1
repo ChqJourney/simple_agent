@@ -38,6 +38,18 @@ Write-Host "Using build interpreter: $buildPython"
 
 Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt", "pyinstaller") -WorkingDirectory $backendRoot
 
+# Force-install critical transitive deps that pip may skip on embedded Python.
+# Python 3.13 embeddable sometimes satisfies typing_extensions via a stdlib stub
+# that does NOT actually provide the module at import time, so pip thinks it is
+# already installed and skips it.  Using --force-reinstall ensures the real
+# package lands in site-packages regardless.
+Write-Host "Force-installing critical transitive dependencies..."
+$forceInstallPackages = @('typing_extensions', 'annotated_types')
+foreach ($pkg in $forceInstallPackages) {
+    Write-Host "  Force-installing $pkg..."
+    Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "pip", "install", "--force-reinstall", $pkg) -WorkingDirectory $backendRoot
+}
+
 # Verify that key runtime deps are actually importable before building.
 # PyInstaller silently skips hidden imports that don't exist on the build
 # system, so if typing_extensions (or similar) failed to install, the

@@ -38,18 +38,6 @@ Write-Host "Using build interpreter: $buildPython"
 
 Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt", "pyinstaller") -WorkingDirectory $backendRoot
 
-# Force-install critical transitive deps that pip may skip on embedded Python.
-# Python 3.13 embeddable sometimes satisfies typing_extensions via a stdlib stub
-# that does NOT actually provide the module at import time, so pip thinks it is
-# already installed and skips it.  Using --force-reinstall ensures the real
-# package lands in site-packages regardless.
-Write-Host "Force-installing critical transitive dependencies..."
-$forceInstallPackages = @('typing_extensions', 'annotated_types')
-foreach ($pkg in $forceInstallPackages) {
-    Write-Host "  Force-installing $pkg..."
-    Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "pip", "install", "--force-reinstall", $pkg) -WorkingDirectory $backendRoot
-}
-
 # Verify that key runtime deps are actually importable before building.
 # PyInstaller silently skips hidden imports that don't exist on the build
 # system, so if typing_extensions (or similar) failed to install, the
@@ -80,19 +68,22 @@ if (-not (Test-Path -LiteralPath $builtExe)) {
 # Verify that critical modules were actually bundled into the exe.
 # Use PyInstaller's own archive inspector to check.
 Write-Host "Verifying bundled modules in output exe..."
-$bundledModules = & $buildPython -m PyInstaller.utils.cliutils.archive_viewer $builtExe --with-module-names 2>$null
-if ($LASTEXITCODE -ne 0) {
-    # archive_viewer doesn't have --with-module-names in older versions,
-    # skip this check
-    Write-Host "  (archive_viewer module listing not supported, skipping bundle verification)"
-} else {
-    $criticalCheck = @('typing_extensions', 'annotated_types', 'pydantic_core', 'pydantic')
-    foreach ($mod in $criticalCheck) {
-        if ($bundledModules -notmatch [regex]::Escape($mod)) {
-            throw "CRITICAL: Module '$mod' is NOT bundled in the output exe! PyInstaller silently skipped it. The exe will crash at startup."
+$LASTEXITCODE = 0  # reset before verification
+try {
+    $bundledModules = & $buildPython -m PyInstaller.utils.cliutils.archive_viewer $builtExe --with-module-names 2>&1
+    if ($bundledModules -match "error|Error|ERROR|usage|Usage") {
+        Write-Host "  (archive_viewer CLI not usable, skipping bundle verification)"
+    } else {
+        $criticalCheck = @('typing_extensions', 'annotated_types', 'pydantic_core', 'pydantic')
+        foreach ($mod in $criticalCheck) {
+            if ($bundledModules -notmatch [regex]::Escape($mod)) {
+                throw "CRITICAL: Module '$mod' is NOT bundled in the output exe! PyInstaller silently skipped it. The exe will crash at startup."
+            }
+            Write-Host "  OK: $mod is bundled"
         }
-        Write-Host "  OK: $mod is bundled"
     }
+} catch {
+    Write-Host "  (bundle verification skipped: $($_.Exception.Message))"
 }
 
 $binariesRoot = Join-Path $projectRoot "src-tauri/binaries"

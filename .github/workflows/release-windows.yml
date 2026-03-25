@@ -102,7 +102,13 @@ jobs:
         shell: pwsh
         run: |
           $releaseVersion = "${{ github.event.inputs.release_version }}"
-          if ([string]::IsNullOrWhiteSpace($releaseVersion) -and $env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("v")) {
+
+          if (-not [string]::IsNullOrWhiteSpace($releaseVersion)) {
+            # Strip leading 'v' if present (e.g. "v0.5.17" -> "0.5.17")
+            if ($releaseVersion.StartsWith("v")) {
+              $releaseVersion = $releaseVersion.Substring(1)
+            }
+          } elseif ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("v")) {
             $releaseVersion = $env:GITHUB_REF_NAME.Substring(1)
           }
 

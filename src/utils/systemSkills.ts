@@ -8,17 +8,21 @@ export interface SkillEntry {
 
 export interface SkillCatalog {
   rootPath: string;
+  rootPaths: string[];
   skills: SkillEntry[];
 }
 
 interface SkillCatalogPayload {
   root_path: string;
+  root_paths?: string[];
   skills: SkillEntry[];
 }
 
 function normalizeCatalog(payload: SkillCatalogPayload): SkillCatalog {
+  const rootPaths = payload.root_paths?.filter(Boolean) ?? (payload.root_path ? [payload.root_path] : []);
   return {
-    rootPath: payload.root_path,
+    rootPath: rootPaths[0] ?? payload.root_path ?? '',
+    rootPaths,
     skills: payload.skills,
   };
 }

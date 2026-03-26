@@ -23,6 +23,8 @@ This document records the plan only. It does not change runtime behavior.
 - Batch 2 item 4: clipboard image paste is supported, composer thumbnails are rendered, dragged workspace images render previews, and each thumbnail now has an explicit delete button
 - Batch 2 item 5: workspace left and right panels are resizable, width preferences persist locally, and double-clicking the resize handle resets the panel to its default width
 - Batch 2 item 6: the file tree can import external files into the current workspace root, refreshes after successful copies, highlights new files, and surfaces basic same-name conflict messages
+- Batch 3 item 7: system-level skill scanning now covers both the deployed Tauri app directory and the app-data skill directory, with user-level app-data skills overriding bundled app-directory skills when names collide
+- Batch 3 item 8: Settings now exposes an append-only custom system prompt, normalized config persists it, and the backend appends it after the built-in system instructions
 
 ### In progress
 
@@ -30,7 +32,7 @@ This document records the plan only. It does not change runtime behavior.
 
 ### Pending
 
-- Batch 3 and Batch 4 items remain pending
+- Batch 4 item 9 remains pending
 
 ## Confirmed Product Decisions
 
@@ -48,11 +50,11 @@ Validated against the current codebase:
 - Workspace left and right panels now support persisted resizing in `src/pages/WorkspacePage.tsx` and `src/stores/uiStore.ts`.
 - The composer now remains editable during streaming, while submission stays blocked until the run completes or is interrupted.
 - Image attachments now support thumbnail rendering in the composer and explicit deletion controls.
-- Tool result rendering for `skill_loader` currently includes the full skill content in `src/utils/toolMessages.ts`.
+- Tool result rendering for `skill_loader` now shows a short preview instead of the full skill body.
 - Session-level latest usage recovery already exists in `src/stores/chatStore.ts` and `src/utils/storage.ts`, but the product semantics are still "latest completed request snapshot", not "session cumulative usage".
-- Backend skill discovery currently uses app-data skill roots plus workspace `.agent/skills` in `python_backend/skills/local_loader.py`.
+- Backend skill discovery now considers the deployed Tauri app directory and the app-data directory for system-level skills, and workspace `.agent/skills` remains the workspace-level root.
 - There is no locale infrastructure yet; strings are still hardcoded across the UI.
-- There is no config field yet for custom system prompt in either frontend or backend runtime normalization.
+- Custom system prompt is now part of frontend and backend runtime normalization and is appended to the built-in system prompt rather than replacing it.
 
 ## Recommended Delivery Order
 

@@ -15,11 +15,13 @@ describe("systemSkills", () => {
   it("scans system skills through the Tauri backend", async () => {
     invokeMock.mockResolvedValue({
       root_path: "/system-skills",
+      root_paths: ["/portable/skills", "/system-skills"],
       skills: [{ name: "deploy-checks", description: "System skill", path: "/system-skills/deploy-checks/SKILL.md" }],
     });
 
     await expect(listSystemSkills()).resolves.toEqual({
-      rootPath: "/system-skills",
+      rootPath: "/portable/skills",
+      rootPaths: ["/portable/skills", "/system-skills"],
       skills: [{ name: "deploy-checks", description: "System skill", path: "/system-skills/deploy-checks/SKILL.md" }],
     });
     expect(invokeMock).toHaveBeenCalledWith("scan_system_skills");
@@ -33,6 +35,7 @@ describe("systemSkills", () => {
 
     await expect(listWorkspaceSkills("/workspace")).resolves.toEqual({
       rootPath: "/workspace/.agent/skills",
+      rootPaths: ["/workspace/.agent/skills"],
       skills: [{ name: "repo-helper", description: "Workspace skill", path: "/workspace/.agent/skills/repo-helper/SKILL.md" }],
     });
     expect(invokeMock).toHaveBeenCalledWith("scan_workspace_skills", { workspacePath: "/workspace" });

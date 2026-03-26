@@ -46,6 +46,7 @@ class RuntimeContractTests(unittest.TestCase):
             },
             normalized["context_providers"],
         )
+        self.assertEqual("", normalized["system_prompt"])
 
     def test_normalize_runtime_config_supports_deepseek(self) -> None:
         normalized = normalize_runtime_config(
@@ -125,6 +126,20 @@ class RuntimeContractTests(unittest.TestCase):
         )
 
         self.assertEqual({"base_font_size": 18}, normalized["appearance"])
+
+    def test_normalize_runtime_config_trims_custom_system_prompt(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_key": "test-key",
+                "base_url": "https://api.openai.com/v1",
+                "enable_reasoning": False,
+                "system_prompt": "  Prefer concise answers.  ",
+            }
+        )
+
+        self.assertEqual("Prefer concise answers.", normalized["system_prompt"])
 
     def test_run_event_serializes_stable_fields(self) -> None:
         event = RunEvent(

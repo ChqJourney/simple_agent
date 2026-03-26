@@ -105,6 +105,13 @@ def _normalize_appearance(data: Dict[str, Any]) -> Dict[str, int]:
     }
 
 
+def _normalize_system_prompt(data: Dict[str, Any]) -> str:
+    raw_value = data.get("system_prompt")
+    if raw_value is None:
+        return ""
+    return str(raw_value).strip()
+
+
 def _normalize_profile(
     data: Dict[str, Any],
     *,
@@ -175,6 +182,7 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
             "primary": primary_profile,
             **({"secondary": secondary_profile} if secondary_profile else {}),
         },
+        "system_prompt": _normalize_system_prompt(data),
         "runtime": runtime,
         "appearance": appearance,
         "context_providers": _normalize_context_providers(data),

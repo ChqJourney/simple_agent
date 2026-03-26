@@ -38,6 +38,19 @@ describe("normalizeProviderConfig", () => {
     });
   });
 
+  it("trims and preserves a custom system prompt", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+      system_prompt: "  Prefer concise answers.  ",
+    });
+
+    expect(normalized.system_prompt).toBe("Prefer concise answers.");
+  });
+
   it("fills appearance defaults when appearance values are omitted", () => {
     const normalized = normalizeProviderConfig({
       provider: "openai",

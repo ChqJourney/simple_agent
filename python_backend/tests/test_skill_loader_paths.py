@@ -21,6 +21,25 @@ class SkillLoaderPathTests(unittest.TestCase):
             roots,
         )
 
+    def test_backend_runtime_prefers_user_skill_root_over_portable_app_skill_root(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "TAURI_AGENT_APP_DIR": "/opt/simple-agent",
+                "TAURI_AGENT_APP_DATA_DIR": "/tmp/work-agent-data",
+            },
+            clear=False,
+        ):
+            roots = default_skill_search_roots()
+
+        self.assertEqual(
+            [
+                Path("/opt/simple-agent") / "skills",
+                Path("/tmp/work-agent-data") / "skills",
+            ],
+            roots,
+        )
+
     def test_local_skill_loader_scans_workspace_agent_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace_path = Path(temp_dir)

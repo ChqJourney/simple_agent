@@ -52,6 +52,10 @@ export function normalizeContextProviders(contextProviders?: ContextProviderConf
   };
 }
 
+export function normalizeSystemPrompt(systemPrompt?: string): string {
+  return systemPrompt?.trim() || '';
+}
+
 function normalizeProviderMemoryEntry(entry?: ProviderMemoryEntry): ProviderMemoryEntry {
   return {
     model: entry?.model?.trim() || '',
@@ -157,6 +161,7 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
       primary: primaryProfile,
       ...(secondaryProfile ? { secondary: secondaryProfile } : {}),
     },
+    system_prompt: normalizeSystemPrompt(config.system_prompt),
     provider_memory: normalizeProviderMemory(config.provider_memory),
     runtime: normalizeRuntimePolicy(config.runtime),
     appearance: normalizeAppearanceConfig(config.appearance),

@@ -55,6 +55,7 @@ describe("SettingsPage", () => {
     globalThis.fetch = vi.fn();
     listSystemSkillsMock.mockResolvedValue({
       rootPath: "/system-skills",
+      rootPaths: ["/portable/skills", "/system-skills"],
       skills: [
         {
           name: "deploy-checks",
@@ -140,6 +141,17 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("button", { name: "Test Secondary Connection" })).toBeTruthy();
   });
 
+  it("renders all configured system skill roots", async () => {
+    render(<SettingsPage />);
+
+    openTab("Skill");
+
+    await waitFor(() => {
+      expect(screen.getByText("/portable/skills")).toBeTruthy();
+      expect(screen.getByText("/system-skills")).toBeTruthy();
+    });
+  });
+
   it("shows default runtime values when runtime config is missing", () => {
     useConfigStore.setState({
       config: {
@@ -169,6 +181,27 @@ describe("SettingsPage", () => {
     expect((screen.getByLabelText("Max Output Tokens") as HTMLInputElement).value).toBe("4000");
     expect((screen.getByLabelText("Max Tool Rounds") as HTMLInputElement).value).toBe("20");
     expect((screen.getByLabelText("Max Retries") as HTMLInputElement).value).toBe("3");
+  });
+
+  it("saves a custom system prompt through normalized config", () => {
+    render(<SettingsPage />);
+
+    openTab("Runtime");
+    fireEvent.change(screen.getByLabelText("Additional Instructions"), {
+      target: { value: "  Prefer concise answers.  " },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(setConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system_prompt: "Prefer concise answers.",
+      })
+    );
+    expect(sendConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system_prompt: "Prefer concise answers.",
+      })
+    );
   });
 
   it("offers hosted providers in the provider selector", () => {

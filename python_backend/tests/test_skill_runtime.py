@@ -116,6 +116,32 @@ class SkillRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("app", result.output["skill"]["source"])
         self.assertIn("Always verify traffic before deploy.", result.output["skill"]["content"])
 
+    async def test_agent_appends_custom_system_prompt_after_builtin_sections(self) -> None:
+        session = await self.user_manager.create_session(self.temp_dir.name, "session-system-prompt")
+        await self.user_manager.bind_session_to_connection("session-system-prompt", "conn-1")
+
+        llm = RecordingLLM()
+        agent = Agent(
+            llm,
+            ToolRegistry(),
+            self.user_manager,
+            custom_system_prompt="Prefer concise answers and mention risks first.",
+        )
+
+        await agent.run("hello", session)
+
+        first_request_messages = llm.captured_messages[0]
+        self.assertEqual("system", first_request_messages[0]["role"])
+        self.assertIn("Runtime environment:", first_request_messages[0]["content"])
+        self.assertIn(
+            "Additional user-configured system instructions:",
+            first_request_messages[0]["content"],
+        )
+        self.assertIn(
+            "Prefer concise answers and mention risks first.",
+            first_request_messages[0]["content"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

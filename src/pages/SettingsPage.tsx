@@ -58,7 +58,7 @@ export const SettingsPage: React.FC = () => {
     secondary: { status: 'idle', error: null },
   });
   const [systemSkills, setSystemSkills] = useState<SkillEntry[]>([]);
-  const [skillsRootPath, setSkillsRootPath] = useState('');
+  const [skillsRootPaths, setSkillsRootPaths] = useState<string[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -78,13 +78,13 @@ export const SettingsPage: React.FC = () => {
         const catalog = await listSystemSkills();
         if (!cancelled) {
           setSystemSkills(catalog.skills);
-          setSkillsRootPath(catalog.rootPath);
+          setSkillsRootPaths(catalog.rootPaths);
         }
       } catch (error) {
         if (!cancelled) {
           setSkillsError(error instanceof Error ? error.message : 'Failed to scan system skills.');
           setSystemSkills([]);
-          setSkillsRootPath('');
+          setSkillsRootPaths([]);
         }
       } finally {
         if (!cancelled) {
@@ -330,6 +330,7 @@ export const SettingsPage: React.FC = () => {
         max_tool_rounds: resolvedRuntime.max_tool_rounds,
         max_retries: resolvedRuntime.max_retries,
       },
+      system_prompt: draftConfig.system_prompt || '',
       appearance: {
         base_font_size: normalizeBaseFontSize(draftBaseFontSize),
       },
@@ -428,104 +429,134 @@ export const SettingsPage: React.FC = () => {
 
     if (activeTab === 'runtime') {
       return (
-        <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <div className="mb-4">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Runtime Limits</h2>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Tune conversation context, output size, tool rounds, and retry behavior.
-            </p>
-          </div>
+        <div className="space-y-6">
+          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Runtime Limits</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Tune conversation context, output size, tool rounds, and retry behavior.
+              </p>
+            </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label htmlFor="context-length" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Context Length
-              </label>
-              <input
-                id="context-length"
-                type="number"
-                min={0}
-                value={resolvedRuntime.context_length}
-                onChange={(e) =>
-                  setDraftConfig({
-                    ...draftConfig,
-                    runtime: {
-                      ...draftConfig.runtime,
-                      context_length: e.target.value ? Number(e.target.value) : undefined,
-                    },
-                  })
-                }
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              />
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label htmlFor="context-length" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Context Length
+                </label>
+                <input
+                  id="context-length"
+                  type="number"
+                  min={0}
+                  value={resolvedRuntime.context_length}
+                  onChange={(e) =>
+                    setDraftConfig({
+                      ...draftConfig,
+                      runtime: {
+                        ...draftConfig.runtime,
+                        context_length: e.target.value ? Number(e.target.value) : undefined,
+                      },
+                    })
+                  }
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="max-output-tokens" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Max Output Tokens
+                </label>
+                <input
+                  id="max-output-tokens"
+                  type="number"
+                  min={1}
+                  value={resolvedRuntime.max_output_tokens}
+                  onChange={(e) =>
+                    setDraftConfig({
+                      ...draftConfig,
+                      runtime: {
+                        ...draftConfig.runtime,
+                        max_output_tokens: e.target.value ? Number(e.target.value) : undefined,
+                      },
+                    })
+                  }
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="max-tool-rounds" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Max Tool Rounds
+                </label>
+                <input
+                  id="max-tool-rounds"
+                  type="number"
+                  min={1}
+                  value={resolvedRuntime.max_tool_rounds}
+                  onChange={(e) =>
+                    setDraftConfig({
+                      ...draftConfig,
+                      runtime: {
+                        ...draftConfig.runtime,
+                        max_tool_rounds: e.target.value ? Number(e.target.value) : undefined,
+                      },
+                    })
+                  }
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="max-retries" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Max Retries
+                </label>
+                <input
+                  id="max-retries"
+                  type="number"
+                  min={1}
+                  value={resolvedRuntime.max_retries}
+                  onChange={(e) =>
+                    setDraftConfig({
+                      ...draftConfig,
+                      runtime: {
+                        ...draftConfig.runtime,
+                        max_retries: e.target.value ? Number(e.target.value) : undefined,
+                      },
+                    })
+                  }
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Custom System Prompt</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                This text is appended after the built-in system instructions. Leave blank to use the default prompt only.
+              </p>
             </div>
 
             <div>
-              <label htmlFor="max-output-tokens" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Max Output Tokens
+              <label htmlFor="custom-system-prompt" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Additional Instructions
               </label>
-              <input
-                id="max-output-tokens"
-                type="number"
-                min={1}
-                value={resolvedRuntime.max_output_tokens}
+              <textarea
+                id="custom-system-prompt"
+                rows={8}
+                value={draftConfig.system_prompt || ''}
                 onChange={(e) =>
                   setDraftConfig({
                     ...draftConfig,
-                    runtime: {
-                      ...draftConfig.runtime,
-                      max_output_tokens: e.target.value ? Number(e.target.value) : undefined,
-                    },
+                    system_prompt: e.target.value,
                   })
                 }
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                placeholder="Example: Prefer concise answers. Mention risks before implementation details."
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-mono text-sm text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               />
             </div>
-
-            <div>
-              <label htmlFor="max-tool-rounds" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Max Tool Rounds
-              </label>
-              <input
-                id="max-tool-rounds"
-                type="number"
-                min={1}
-                value={resolvedRuntime.max_tool_rounds}
-                onChange={(e) =>
-                  setDraftConfig({
-                    ...draftConfig,
-                    runtime: {
-                      ...draftConfig.runtime,
-                      max_tool_rounds: e.target.value ? Number(e.target.value) : undefined,
-                    },
-                  })
-                }
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="max-retries" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Max Retries
-              </label>
-              <input
-                id="max-retries"
-                type="number"
-                min={1}
-                value={resolvedRuntime.max_retries}
-                onChange={(e) =>
-                  setDraftConfig({
-                    ...draftConfig,
-                    runtime: {
-                      ...draftConfig.runtime,
-                      max_retries: e.target.value ? Number(e.target.value) : undefined,
-                    },
-                  })
-                }
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              />
-            </div>
-          </div>
-        </section>
+          </section>
+        </div>
       );
     }
 
@@ -577,10 +608,10 @@ export const SettingsPage: React.FC = () => {
               <div>
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">System Skills</h2>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  App-level skills discovered outside the current workspace.
+                  App-level skills discovered outside the current workspace, including the deployed app directory and app data directory.
                 </p>
               </div>
-              {skillsRootPath && (
+              {skillsRootPaths.length > 0 && (
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                   {systemSkills.length} loaded
                 </span>
@@ -589,11 +620,21 @@ export const SettingsPage: React.FC = () => {
 
             <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                Skill Root
+                Skill Roots
               </div>
-              <div className="mt-2 break-all font-mono text-sm text-gray-900 dark:text-gray-100">
-                {skillsRootPath || 'Unavailable'}
-              </div>
+              {skillsRootPaths.length > 0 ? (
+                <div className="mt-2 space-y-2">
+                  {skillsRootPaths.map((rootPath) => (
+                    <div key={rootPath} className="break-all font-mono text-sm text-gray-900 dark:text-gray-100">
+                      {rootPath}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-2 break-all font-mono text-sm text-gray-900 dark:text-gray-100">
+                  Unavailable
+                </div>
+              )}
             </div>
 
             <div className="mt-4 space-y-3">
@@ -611,7 +652,7 @@ export const SettingsPage: React.FC = () => {
 
               {!skillsLoading && !skillsError && systemSkills.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  No system-level skills were found in the configured app skill directory.
+                  No system-level skills were found in the configured app skill directories.
                 </div>
               )}
 

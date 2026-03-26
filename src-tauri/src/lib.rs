@@ -16,6 +16,8 @@ const EMBEDDED_NODE_ENV_VAR: &str = "TAURI_AGENT_EMBEDDED_NODE";
 const STRICT_RUNTIME_ENV_VAR: &str = "TAURI_AGENT_RUNTIME_STRICT";
 #[cfg_attr(debug_assertions, allow(dead_code))]
 const APP_DATA_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DATA_DIR";
+#[cfg_attr(debug_assertions, allow(dead_code))]
+const APP_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DIR";
 const AUTH_TOKEN_ENV_VAR: &str = "TAURI_AGENT_AUTH_TOKEN";
 
 #[tauri::command]
@@ -486,6 +488,7 @@ pub fn run() {
                     )?)
                     .env(STRICT_RUNTIME_ENV_VAR, "1")
                     .env(AUTH_TOKEN_ENV_VAR, auth_token)
+                    .env(APP_DIR_ENV_VAR, executable_dir.display().to_string())
                     .env(APP_DATA_DIR_ENV_VAR, app_data_dir.display().to_string());
 
                 let (mut rx, child) = sidecar_command.spawn().map_err(|error| {
@@ -549,7 +552,8 @@ pub fn run() {
 mod tests {
     use super::{
         embedded_node_dir, embedded_python_dir, embedded_runtime_envs, sidecar_event_log_entry,
-        with_sidecar_slot, APP_DATA_DIR_ENV_VAR, EMBEDDED_NODE_ENV_VAR, EMBEDDED_PYTHON_ENV_VAR,
+        with_sidecar_slot, APP_DATA_DIR_ENV_VAR, APP_DIR_ENV_VAR, EMBEDDED_NODE_ENV_VAR,
+        EMBEDDED_PYTHON_ENV_VAR,
     };
     use std::{
         fs,
@@ -686,6 +690,7 @@ mod tests {
             envs[1].1
         );
         assert_eq!("TAURI_AGENT_APP_DATA_DIR", APP_DATA_DIR_ENV_VAR);
+        assert_eq!("TAURI_AGENT_APP_DIR", APP_DIR_ENV_VAR);
     }
 
     #[test]

@@ -394,6 +394,7 @@ async def get_or_create_agent(
                 tool_registry=tool_registry,
                 user_manager=user_manager,
                 skill_provider=runtime_state.current_context_bundle.skill_provider,
+                custom_system_prompt=str(runtime_state.current_config.get("system_prompt") or ""),
                 max_tool_rounds=_runtime_policy_value(
                     effective_runtime_policy,
                     "max_tool_rounds",

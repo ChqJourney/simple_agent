@@ -11,14 +11,26 @@ from .base import ResolvedSkill, SkillProvider, SkillSource, SkillSummary
 logger = logging.getLogger(__name__)
 MAX_SKILL_FILE_SIZE_BYTES = 256 * 1024
 APP_DATA_SKILL_DIR_ENV_VAR = "TAURI_AGENT_APP_DATA_DIR"
+APP_DIR_ENV_VAR = "TAURI_AGENT_APP_DIR"
 APP_PRODUCT_NAME = "tauri_agent"
 SKILL_FILE_NAMES = ("SKILL.md", "skill.md")
 
 
 def default_skill_search_roots() -> List[Path]:
+    roots: List[Path] = []
+    app_dir = os.getenv(APP_DIR_ENV_VAR, "").strip()
     app_data_dir = os.getenv(APP_DATA_SKILL_DIR_ENV_VAR, "").strip()
+
+    if app_dir:
+        roots.append(Path(app_dir) / "skills")
+
     if app_data_dir:
-        return [Path(app_data_dir) / "skills"]
+        app_data_root = Path(app_data_dir) / "skills"
+        if app_data_root not in roots:
+            roots.append(app_data_root)
+
+    if roots:
+        return roots
 
     if sys.platform == "darwin":
         return [Path.home() / "Library" / "Application Support" / APP_PRODUCT_NAME / "skills"]

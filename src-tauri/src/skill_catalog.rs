@@ -17,6 +17,7 @@ pub struct SkillEntryPayload {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SkillCatalogPayload {
     pub root_path: String,
+    pub root_paths: Vec<String>,
     pub skills: Vec<SkillEntryPayload>,
 }
 
@@ -29,12 +30,26 @@ fn authorize_workspace_path<R: Runtime, M: Manager<R>>(
     Ok(PathBuf::from(authorized.canonical_path))
 }
 
-fn system_skill_root<R: Runtime, M: Manager<R>>(manager: &M) -> Result<PathBuf, String> {
-    manager
+fn system_skill_roots<R: Runtime, M: Manager<R>>(manager: &M) -> Result<Vec<PathBuf>, String> {
+    let mut roots = Vec::new();
+
+    if let Ok(executable_path) = std::env::current_exe() {
+        if let Some(executable_dir) = executable_path.parent() {
+            roots.push(executable_dir.join("skills"));
+        }
+    }
+
+    let app_data_root = manager
         .path()
         .app_data_dir()
         .map(|path| path.join("skills"))
-        .map_err(|error| format!("Failed to resolve app data directory: {error}"))
+        .map_err(|error| format!("Failed to resolve app data directory: {error}"))?;
+
+    if !roots.iter().any(|root| root == &app_data_root) {
+        roots.push(app_data_root);
+    }
+
+    Ok(roots)
 }
 
 fn workspace_skill_root(workspace_path: &Path) -> PathBuf {
@@ -132,21 +147,30 @@ fn build_skill_entry(skill_path: PathBuf) -> Option<SkillEntryPayload> {
     })
 }
 
-fn scan_skill_root(root_path: PathBuf) -> Result<SkillCatalogPayload, String> {
+fn scan_skill_entries(root_path: &Path) -> Result<Vec<SkillEntryPayload>, String> {
     if !root_path.exists() || !root_path.is_dir() {
-        return Ok(SkillCatalogPayload {
-            root_path: root_path.to_string_lossy().into_owned(),
-            skills: Vec::new(),
-        });
+        return Ok(Vec::new());
     }
 
     let mut skill_files = Vec::new();
-    collect_skill_files(&root_path, &mut skill_files)?;
+    collect_skill_files(root_path, &mut skill_files)?;
 
-    let mut skills: Vec<_> = skill_files
+    Ok(skill_files
         .into_iter()
         .filter_map(build_skill_entry)
-        .collect();
+        .collect())
+}
+
+fn build_catalog(root_paths: Vec<PathBuf>) -> Result<SkillCatalogPayload, String> {
+    let mut resolved_by_name: HashMap<String, SkillEntryPayload> = HashMap::new();
+
+    for root_path in &root_paths {
+        for skill in scan_skill_entries(root_path)? {
+            resolved_by_name.insert(skill.name.to_lowercase(), skill);
+        }
+    }
+
+    let mut skills: Vec<_> = resolved_by_name.into_values().collect();
 
     skills.sort_by(|left, right| {
         left.name
@@ -155,8 +179,14 @@ fn scan_skill_root(root_path: PathBuf) -> Result<SkillCatalogPayload, String> {
             .then_with(|| left.path.cmp(&right.path))
     });
 
+    let normalized_root_paths = root_paths
+        .into_iter()
+        .map(|root_path| root_path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
     Ok(SkillCatalogPayload {
-        root_path: root_path.to_string_lossy().into_owned(),
+        root_path: normalized_root_paths.first().cloned().unwrap_or_default(),
+        root_paths: normalized_root_paths,
         skills,
     })
 }
@@ -164,8 +194,8 @@ fn scan_skill_root(root_path: PathBuf) -> Result<SkillCatalogPayload, String> {
 pub fn scan_system_skills<R: Runtime, M: Manager<R>>(
     manager: &M,
 ) -> Result<SkillCatalogPayload, String> {
-    let root_path = system_skill_root(manager)?;
-    scan_skill_root(root_path)
+    let root_paths = system_skill_roots(manager)?;
+    build_catalog(root_paths)
 }
 
 pub fn scan_workspace_skills<R: Runtime, M: Manager<R>>(
@@ -173,12 +203,12 @@ pub fn scan_workspace_skills<R: Runtime, M: Manager<R>>(
     workspace_path: &str,
 ) -> Result<SkillCatalogPayload, String> {
     let workspace_path = authorize_workspace_path(manager, workspace_path)?;
-    scan_skill_root(workspace_skill_root(&workspace_path))
+    build_catalog(vec![workspace_skill_root(&workspace_path)])
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_frontmatter, scan_skill_root};
+    use super::{build_catalog, parse_frontmatter};
     use std::fs;
     use tempfile::tempdir;
 
@@ -213,11 +243,51 @@ mod tests {
         .expect("repo helper skill");
         fs::write(second_dir.join("skill.md"), "# Deploy checks").expect("deploy checks skill");
 
-        let catalog = scan_skill_root(skills_root.clone()).expect("skill catalog");
+        let catalog = build_catalog(vec![skills_root.clone()]).expect("skill catalog");
 
         assert_eq!(catalog.root_path, skills_root.to_string_lossy());
+        assert_eq!(catalog.root_paths, vec![skills_root.to_string_lossy()]);
         assert_eq!(catalog.skills.len(), 2);
         assert_eq!(catalog.skills[0].name, "deploy-checks");
         assert_eq!(catalog.skills[1].name, "repo-helper");
+    }
+
+    #[test]
+    fn later_system_roots_override_duplicate_skill_names() {
+        let temp = tempdir().expect("temp dir");
+        let app_dir_root = temp.path().join("portable-skills");
+        let app_data_root = temp.path().join("app-data-skills");
+        let shared_app_dir = app_dir_root.join("repo-helper");
+        let shared_app_data = app_data_root.join("repo-helper");
+
+        fs::create_dir_all(&shared_app_dir).expect("portable dir");
+        fs::create_dir_all(&shared_app_data).expect("app data dir");
+        fs::write(
+            shared_app_dir.join("SKILL.md"),
+            "---\nname: repo-helper\ndescription: Portable bundled skill\n---\n# Portable",
+        )
+        .expect("portable skill");
+        fs::write(
+            shared_app_data.join("SKILL.md"),
+            "---\nname: repo-helper\ndescription: User override skill\n---\n# Override",
+        )
+        .expect("override skill");
+
+        let catalog =
+            build_catalog(vec![app_dir_root.clone(), app_data_root.clone()]).expect("skill catalog");
+
+        assert_eq!(
+            catalog.root_paths,
+            vec![
+                app_dir_root.to_string_lossy().into_owned(),
+                app_data_root.to_string_lossy().into_owned()
+            ]
+        );
+        assert_eq!(catalog.skills.len(), 1);
+        assert_eq!(catalog.skills[0].description, "User override skill");
+        assert_eq!(
+            catalog.skills[0].path,
+            shared_app_data.join("SKILL.md").to_string_lossy()
+        );
     }
 }

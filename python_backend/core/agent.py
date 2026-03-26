@@ -34,6 +34,7 @@ class Agent:
         tool_registry: ToolRegistry,
         user_manager: UserManager,
         skill_provider: Optional[SkillProvider] = None,
+        custom_system_prompt: str = "",
         max_tool_rounds: int = 10,
         max_retries: int = 3,
     ):
@@ -41,6 +42,7 @@ class Agent:
         self.tool_registry = tool_registry
         self.user_manager = user_manager
         self.skill_provider = skill_provider
+        self.custom_system_prompt = custom_system_prompt.strip()
         self.max_tool_rounds = max_tool_rounds
         self.max_retries = max_retries
         self._interrupt_event = asyncio.Event()
@@ -982,7 +984,12 @@ class Agent:
 
     async def _build_llm_messages(self, session: Session, run_id: str) -> List[Dict[str, Any]]:
         messages = session.get_messages_for_llm()
-        prompt_sections: List[str] = [self._format_runtime_environment_section(session)]
+        prompt_sections: List[str] = []
+
+        if self.custom_system_prompt:
+            prompt_sections.append(self._format_custom_system_prompt_section(self.custom_system_prompt))
+
+        prompt_sections.append(self._format_runtime_environment_section(session))
 
         if self.skill_provider:
             skills = self.skill_provider.list_skills(workspace_path=session.workspace_path)
@@ -1000,6 +1007,10 @@ class Agent:
 
         system_message = {"role": "system", "content": "\n\n".join(prompt_sections)} if prompt_sections else None
         return self._trim_messages_to_context_window(messages, system_message)
+
+    @staticmethod
+    def _format_custom_system_prompt_section(custom_system_prompt: str) -> str:
+        return f"Additional user-configured system instructions:\n{custom_system_prompt}"
 
     @staticmethod
     def _format_runtime_environment_section(session: Session) -> str:

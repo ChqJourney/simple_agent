@@ -138,6 +138,7 @@ export interface ProviderConfig extends ModelProfile {
     primary: ModelProfile;
     secondary?: ModelProfile;
   };
+  system_prompt?: string;
   provider_memory?: Partial<Record<ProviderType, ProviderMemoryEntry>>;
   runtime?: RuntimePolicy;
   appearance?: AppearanceConfig;
@@ -186,6 +187,7 @@ export interface ClientConfig {
   enable_reasoning: boolean;
   input_type?: InputType;
   profiles?: ProviderConfig['profiles'];
+  system_prompt?: string;
   provider_memory?: ProviderConfig['provider_memory'];
   runtime?: RuntimePolicy;
   appearance?: AppearanceConfig;

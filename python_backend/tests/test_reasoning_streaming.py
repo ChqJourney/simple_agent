@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sys
 import tempfile
 import unittest
@@ -216,6 +217,15 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(4096, completed[0]['usage']['prompt_tokens'])
         self.assertEqual(128000, completed[0]['usage']['context_length'])
         self.assertEqual(4096, session.messages[-1].usage['prompt_tokens'])
+
+        session_path = Path(temp_dir.name) / '.agent' / 'sessions' / 'session-1.jsonl'
+        persisted_entries = [
+            json.loads(line)
+            for line in session_path.read_text(encoding='utf-8').splitlines()
+            if line.strip()
+        ]
+        self.assertEqual(4096, persisted_entries[-1]['usage']['prompt_tokens'])
+        self.assertEqual(128000, persisted_entries[-1]['usage']['context_length'])
 
         temp_dir.cleanup()
 

@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspacePage } from "./WorkspacePage";
 import { useSessionStore, useUIStore, useWorkspaceStore } from "../stores";
-import { scanSessions } from "../utils/storage";
+import { useChatStore } from "../stores/chatStore";
+import { loadSessionHistory, scanSessions } from "../utils/storage";
 
 const navigateMock = vi.hoisted(() => vi.fn());
 const invokeMock = vi.hoisted(() => vi.fn());
@@ -17,6 +18,7 @@ vi.mock("../utils/storage", async () => {
   const actual = await vi.importActual<typeof import("../utils/storage")>("../utils/storage");
   return {
     ...actual,
+    loadSessionHistory: vi.fn(),
     scanSessions: vi.fn(),
     deleteSessionHistory: vi.fn(),
   };
@@ -57,6 +59,7 @@ vi.mock("react-router-dom", async () => {
 });
 
 const scanSessionsMock = vi.mocked(scanSessions);
+const loadSessionHistoryMock = vi.mocked(loadSessionHistory);
 
 describe("WorkspacePage", () => {
   beforeEach(() => {
@@ -66,7 +69,9 @@ describe("WorkspacePage", () => {
     invokeMock.mockReset();
     sendWorkspaceMock.mockReset();
     scanSessionsMock.mockReset();
+    loadSessionHistoryMock.mockReset();
     scanSessionsMock.mockResolvedValue([]);
+    loadSessionHistoryMock.mockResolvedValue([]);
     invokeMock.mockResolvedValue({
       canonical_path: "C:/Users/patri/source/repos/repo",
     });
@@ -107,6 +112,9 @@ describe("WorkspacePage", () => {
       sessions: [],
       currentSessionId: null,
     }));
+    useChatStore.setState({
+      sessions: {},
+    });
   });
 
   it("re-authorizes the saved workspace path before loading desktop files", async () => {
@@ -149,6 +157,45 @@ describe("WorkspacePage", () => {
     const { queryByText } = render(<WorkspacePage />);
 
     expect(queryByText("Locked: openai/gpt-4o")).toBeNull();
+  });
+
+  it("auto-loads the first session history after entering the workspace", async () => {
+    scanSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: "session-a",
+        workspace_path: "C:/Users/patri/source/repos/repo",
+        created_at: "2026-03-12T10:00:00.000Z",
+        updated_at: "2026-03-12T10:00:00.000Z",
+        title: "First session",
+      },
+    ]);
+    loadSessionHistoryMock.mockResolvedValueOnce([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "loaded automatically",
+        status: "completed",
+      },
+    ]);
+
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(loadSessionHistoryMock).toHaveBeenCalledWith(
+        "C:/Users/patri/source/repos/repo",
+        "session-a"
+      );
+    });
+
+    expect(useSessionStore.getState().currentSessionId).toBe("session-a");
+    expect(useChatStore.getState().sessions["session-a"]?.messages).toEqual([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "loaded automatically",
+        status: "completed",
+      },
+    ]);
   });
 
   it("opens the timeline modal from the top bar even when there is no current session", async () => {

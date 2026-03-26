@@ -17,7 +17,7 @@ This document records the plan only. It does not change runtime behavior.
 
 ### Completed
 
-- Batch 1 item 1: clarified the token widget as "last request usage" and kept the existing latest-usage recovery path intact
+- Batch 1 item 1: clarified the token widget as "last request usage", kept the existing latest-usage recovery path intact, and fixed backend session persistence so newly completed assistant messages now write usage into session history and run logs
 - Batch 1 item 2: the composer stays editable while streaming, but message submission remains blocked until the run completes or is interrupted
 - Batch 1 item 3: `skill_loader` results now render an instructions preview instead of the full skill body
 - Batch 2 item 4: clipboard image paste is supported, composer thumbnails are rendered, dragged workspace images render previews, and each thumbnail now has an explicit delete button
@@ -100,6 +100,8 @@ Validated against the current codebase:
 - Historical sessions recover and display the latest persisted usage when available.
 - The UI message or tooltip wording should make it clear this is the last request's usage, used as a lower-bound context occupancy signal for the next request.
 - The frontend should not fabricate tool-result-specific or session-cumulative token counts.
+- Completed assistant turns persist usage into both session history and `run_completed` logs when the provider reports it.
+- Historical sessions created before this fix may still show no usage if their persisted records already contain `usage: null` and no run log usage snapshot exists.
 
 **Implementation steps:**
 
@@ -108,6 +110,8 @@ Validated against the current codebase:
 3. Confirm history restoration behavior by loading the latest assistant message that contains `usage`.
 4. Refine header copy or tooltip so the meaning matches the product requirement: "last request usage" as current context occupancy signal.
 5. Record negative cases: when a provider does not return usage, the widget remains empty rather than guessed.
+6. Persist usage onto the final assistant message before appending it to session history.
+7. Include usage in the `run_completed` event payload for auditability and possible future repair tooling.
 
 **Files:**
 
@@ -137,6 +141,8 @@ Validated against the current codebase:
 - Tool-heavy sessions do not create extra client-side token math.
 - Missing provider usage yields an empty widget, not incorrect numbers.
 - Tooltip text matches the confirmed product meaning.
+- Newly created session history files persist assistant `usage` fields when the provider returns them.
+- Newly created run logs persist `run_completed.payload.usage` when the provider returns it.
 
 ### 2. Keep the composer editable while streaming
 

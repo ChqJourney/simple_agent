@@ -111,19 +111,21 @@ class Agent:
                 if not assistant_message:
                     continue
 
-                session.add_message(assistant_message)
-
                 if not assistant_message.tool_calls:
                     latest_usage = None
                     if callable(getattr(self.llm, "get_latest_usage", None)):
                         latest_usage = self.llm.get_latest_usage()
                     if latest_usage:
                         assistant_message.usage = latest_usage
+                    session.add_message(assistant_message)
+                    completed_payload: Dict[str, Any] = {"finish_reason": "assistant_response"}
+                    if latest_usage:
+                        completed_payload["usage"] = latest_usage
                     await self._emit_run_event(
                         session,
                         run_id,
                         "run_completed",
-                        {"finish_reason": "assistant_response"},
+                        completed_payload,
                     )
                     await self.user_manager.send_to_frontend({
                         "type": "completed",
@@ -132,6 +134,7 @@ class Agent:
                     })
                     return
 
+                session.add_message(assistant_message)
                 tool_results = await self._execute_tools(assistant_message.tool_calls, session, run_id)
 
                 for result in tool_results:

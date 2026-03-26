@@ -50,6 +50,30 @@ class RetryOnceLLM:
         }
 
 
+class UsageReportingLLM:
+    def __init__(self) -> None:
+        self.latest_usage = {
+            "prompt_tokens": 4096,
+            "completion_tokens": 256,
+            "total_tokens": 4352,
+            "context_length": 128000,
+        }
+
+    async def stream(self, _messages, _tools):
+        yield {
+            "choices": [
+                {
+                    "delta": {
+                        "content": "done",
+                    }
+                }
+            ]
+        }
+
+    def get_latest_usage(self):
+        return dict(self.latest_usage)
+
+
 class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -107,6 +131,24 @@ class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertTrue(any(entry["event_type"] == "retry_scheduled" for entry in log_entries))
         self.assertTrue(any(entry["event_type"] == "run_completed" for entry in log_entries))
+
+    async def test_run_completed_log_persists_usage_when_available(self) -> None:
+        session = await self.user_manager.create_session(self.temp_dir.name, "session-usage")
+        await self.user_manager.bind_session_to_connection("session-usage", "conn-1")
+
+        agent = Agent(UsageReportingLLM(), ToolRegistry(), self.user_manager)
+        await agent.run("hello", session)
+
+        log_path = Path(self.temp_dir.name) / ".agent" / "logs" / "session-usage.jsonl"
+        log_entries = [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+        completed_entry = next(entry for entry in log_entries if entry["event_type"] == "run_completed")
+        self.assertEqual(4096, completed_entry["payload"]["usage"]["prompt_tokens"])
+        self.assertEqual(128000, completed_entry["payload"]["usage"]["context_length"])
 
     async def test_logs_and_session_history_preserve_unicode_text(self) -> None:
         session = Session("session-unicode", self.temp_dir.name)

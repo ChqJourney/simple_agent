@@ -7,6 +7,8 @@ import { ChatContainer } from '../components/Chat';
 import { RunTimeline } from '../components/Run';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { backendHealthUrl, backendHttpBase } from '../utils/backendEndpoint';
+import { loadSessionHistory } from '../utils/storage';
+import { useChatStore } from '../stores/chatStore';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -96,6 +98,25 @@ export const WorkspacePage: React.FC = () => {
 
         setCurrentSession(null);
         await loadSessionsFromDisk(authorizedPath);
+
+        if (cancelled || !isLatestRequest() || !matchesWorkspaceSnapshot()) {
+          return;
+        }
+
+        const { currentSessionId: nextSessionId, sessions } = useSessionStore.getState();
+        const nextSession = nextSessionId
+          ? sessions.find((session) => session.session_id === nextSessionId && session.workspace_path === authorizedPath)
+          : undefined;
+
+        if (nextSessionId && nextSession) {
+          const messages = await loadSessionHistory(authorizedPath, nextSessionId);
+
+          if (cancelled || !isLatestRequest() || !matchesWorkspaceSnapshot()) {
+            return;
+          }
+
+          useChatStore.getState().loadSession(nextSessionId, messages);
+        }
       } catch (error) {
         console.error('Failed to prepare workspace:', error);
         if (!cancelled) {

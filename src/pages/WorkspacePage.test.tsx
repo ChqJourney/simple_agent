@@ -160,6 +160,35 @@ describe("WorkspacePage", () => {
     expect(screen.getByText("No session selected")).toBeTruthy();
   });
 
+  it("applies persisted left and right panel widths from ui state", async () => {
+    useUIStore.setState((state) => ({
+      ...state,
+      leftPanelWidth: 312,
+      rightPanelWidth: 344,
+    }));
+
+    render(<WorkspacePage />);
+
+    expect((screen.getByTestId("workspace-left-panel") as HTMLDivElement).style.width).toBe("312px");
+    expect((screen.getByTestId("workspace-right-panel") as HTMLDivElement).style.width).toBe("344px");
+  });
+
+  it("updates the left panel width while dragging the resize handle", async () => {
+    render(<WorkspacePage />);
+
+    fireEvent.mouseDown(screen.getByTestId("workspace-left-resize-handle"), {
+      clientX: 256,
+    });
+    fireEvent.mouseMove(window, {
+      clientX: 340,
+    });
+    fireEvent.mouseUp(window);
+
+    await waitFor(() => {
+      expect(useUIStore.getState().leftPanelWidth).toBe(340);
+    });
+  });
+
   it("ignores stale workspace authorization results after the current workspace changes", async () => {
     let resolveFirst: ((value: { canonical_path: string }) => void) | undefined;
     let resolveSecond: ((value: { canonical_path: string }) => void) | undefined;

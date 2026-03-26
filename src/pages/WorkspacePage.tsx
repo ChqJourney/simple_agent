@@ -14,11 +14,23 @@ interface AuthorizedWorkspacePath {
   canonical_path: string;
 }
 
+type ResizeSide = 'left' | 'right';
+
 export const WorkspacePage: React.FC = () => {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const navigate = useNavigate();
   const { workspaces, setCurrentWorkspace, currentWorkspace, syncWorkspacePath } = useWorkspaceStore();
-  const { leftPanelCollapsed, rightPanelCollapsed, setPageLoading } = useUIStore();
+  const {
+    leftPanelCollapsed,
+    leftPanelWidth,
+    rightPanelCollapsed,
+    rightPanelWidth,
+    setLeftPanelWidth,
+    resetLeftPanelWidth,
+    setRightPanelWidth,
+    resetRightPanelWidth,
+    setPageLoading,
+  } = useUIStore();
   const { isConnected, sendWorkspace } = useWebSocket();
   const { loadSessionsFromDisk, setCurrentSession, currentSessionId } = useSessionStore();
   const [backendReady, setBackendReady] = useState(!IS_DEV);
@@ -26,6 +38,7 @@ export const WorkspacePage: React.FC = () => {
   const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
   const prevWorkspaceIdRef = useRef<string | null>(null);
   const workspaceLoadRequestIdRef = useRef(0);
+  const activeResizeSideRef = useRef<ResizeSide | null>(null);
 
   useEffect(() => {
     if (workspaceId && workspaceId !== prevWorkspaceIdRef.current) {
@@ -152,6 +165,40 @@ export const WorkspacePage: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isTimelineModalOpen]);
 
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (activeResizeSideRef.current === 'left') {
+        setLeftPanelWidth(event.clientX);
+      } else if (activeResizeSideRef.current === 'right') {
+        setRightPanelWidth(window.innerWidth - event.clientX);
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (!activeResizeSideRef.current) {
+        return;
+      }
+
+      activeResizeSideRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [setLeftPanelWidth, setRightPanelWidth]);
+
+  const startResize = (side: ResizeSide) => (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    activeResizeSideRef.current = side;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
   if (!currentWorkspace) {
     return (
       <div className="flex h-screen items-center justify-center bg-white dark:bg-gray-900">
@@ -165,9 +212,25 @@ export const WorkspacePage: React.FC = () => {
 
       <div className="flex flex-1 overflow-hidden">
         {!leftPanelCollapsed && (
-          <div className="w-64 bg-white/70 dark:bg-gray-900/60">
+          <div
+            data-testid="workspace-left-panel"
+            className="bg-white/70 dark:bg-gray-900/60"
+            style={{ width: `${leftPanelWidth}px`, minWidth: `${leftPanelWidth}px` }}
+          >
             <LeftPanel />
           </div>
+        )}
+
+        {!leftPanelCollapsed && (
+          <div
+            data-testid="workspace-left-resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize left panel"
+            className="w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-200/70 dark:hover:bg-blue-900/70"
+            onMouseDown={startResize('left')}
+            onDoubleClick={resetLeftPanelWidth}
+          />
         )}
 
         <main className="flex-1 overflow-hidden">
@@ -193,7 +256,23 @@ export const WorkspacePage: React.FC = () => {
         </main>
 
         {!rightPanelCollapsed && (
-          <div className="w-72 bg-white/70 dark:bg-gray-900/60">
+          <div
+            data-testid="workspace-right-resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize right panel"
+            className="w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-200/70 dark:hover:bg-blue-900/70"
+            onMouseDown={startResize('right')}
+            onDoubleClick={resetRightPanelWidth}
+          />
+        )}
+
+        {!rightPanelCollapsed && (
+          <div
+            data-testid="workspace-right-panel"
+            className="bg-white/70 dark:bg-gray-900/60"
+            style={{ width: `${rightPanelWidth}px`, minWidth: `${rightPanelWidth}px` }}
+          >
             <RightPanel />
           </div>
         )}

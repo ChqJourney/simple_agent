@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { readDir } from '@tauri-apps/plugin-fs';
+import { open } from '@tauri-apps/plugin-dialog';
+import { copyFile, exists, readDir } from '@tauri-apps/plugin-fs';
 import { useWorkspaceStore } from '../../stores';
 import { getFileIconKind, isImagePath } from '../../utils/fileTypes';
 import { clearActiveDraggedFileDescriptors, setActiveDraggedFileDescriptors } from '../../utils/internalDragState';
@@ -38,6 +39,14 @@ function attachChildren(nodes: FileNode[], targetPath: string, children: FileNod
       children: attachChildren(node.children, targetPath, children),
     };
   });
+}
+
+function getPathBaseName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
+function joinWorkspacePath(rootPath: string, name: string): string {
+  return `${rootPath.replace(/[\\/]+$/, '')}/${name}`;
 }
 
 function renderFileIcon(kind: ReturnType<typeof getFileIconKind>) {
@@ -126,11 +135,14 @@ function renderFileIcon(kind: ReturnType<typeof getFileIconKind>) {
 }
 
 export const FileTree: React.FC = () => {
-  const { currentWorkspace, changedFiles } = useWorkspaceStore();
+  const { currentWorkspace, changedFiles, markChangedFile } = useWorkspaceStore();
   const [tree, setTree] = useState<FileNode[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
+  const [importError, setImportError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const treeGenerationRef = useRef(0);
 
   const readDirectory = async (dirPath: string): Promise<FileNode[]> => {
@@ -184,7 +196,7 @@ export const FileTree: React.FC = () => {
         treeGenerationRef.current += 1;
       }
     };
-  }, [currentWorkspace?.path]);
+  }, [currentWorkspace?.path, refreshKey]);
 
   const toggleExpand = async (node: FileNode) => {
     if (!node.isDirectory) return;
@@ -228,6 +240,62 @@ export const FileTree: React.FC = () => {
         next.delete(node.path);
         return next;
       });
+    }
+  };
+
+  const handleImportFiles = async () => {
+    if (!currentWorkspace?.path || isImporting) {
+      return;
+    }
+
+    setImportError(null);
+    setIsImporting(true);
+
+    try {
+      const selected = await open({
+        multiple: true,
+        directory: false,
+        title: 'Import files into workspace',
+      });
+
+      const selectedPaths = Array.isArray(selected)
+        ? selected.filter((value): value is string => typeof value === 'string' && value.length > 0)
+        : typeof selected === 'string' && selected
+          ? [selected]
+          : [];
+
+      if (selectedPaths.length === 0) {
+        return;
+      }
+
+      const conflicts: string[] = [];
+      let copiedCount = 0;
+
+      for (const sourcePath of selectedPaths) {
+        const fileName = getPathBaseName(sourcePath);
+        const targetPath = joinWorkspacePath(currentWorkspace.path, fileName);
+
+        if (await exists(targetPath)) {
+          conflicts.push(fileName);
+          continue;
+        }
+
+        await copyFile(sourcePath, targetPath);
+        markChangedFile(targetPath, 'created');
+        copiedCount += 1;
+      }
+
+      if (copiedCount > 0) {
+        setRefreshKey((value) => value + 1);
+      }
+
+      if (conflicts.length > 0) {
+        setImportError(`Skipped existing files: ${conflicts.join(', ')}`);
+      }
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Failed to import files.');
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -320,6 +388,26 @@ export const FileTree: React.FC = () => {
 
   return (
     <div className="h-full overflow-y-auto">
+      <div className="sticky top-0 z-10 border-b border-gray-200/80 bg-white/95 px-2 py-2 backdrop-blur dark:border-gray-800/80 dark:bg-gray-900/95">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
+            Files
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleImportFiles()}
+            disabled={!currentWorkspace?.path || isImporting}
+            className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+          >
+            {isImporting ? 'Importing...' : 'Import files'}
+          </button>
+        </div>
+        {importError && (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
+            {importError}
+          </div>
+        )}
+      </div>
       <div className="py-2">
         {tree.map((node) => renderNode(node))}
       </div>

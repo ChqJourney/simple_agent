@@ -1,6 +1,6 @@
 # Workspace Feature Delivery Plan
 
-> **Status:** Drafted on 2026-03-26
+> **Status:** In progress on 2026-03-26
 
 ## Goal
 
@@ -12,6 +12,25 @@ Turn the confirmed workspace and settings requests into a delivery plan with:
 - focused testing and acceptance criteria
 
 This document records the plan only. It does not change runtime behavior.
+
+## Progress
+
+### Completed
+
+- Batch 1 item 1: clarified the token widget as "last request usage" and kept the existing latest-usage recovery path intact
+- Batch 1 item 2: the composer stays editable while streaming, but message submission remains blocked until the run completes or is interrupted
+- Batch 1 item 3: `skill_loader` results now render an instructions preview instead of the full skill body
+- Batch 2 item 4: clipboard image paste is supported, composer thumbnails are rendered, dragged workspace images render previews, and each thumbnail now has an explicit delete button
+- Batch 2 item 5: workspace left and right panels are resizable, width preferences persist locally, and double-clicking the resize handle resets the panel to its default width
+- Batch 2 item 6: the file tree can import external files into the current workspace root, refreshes after successful copies, highlights new files, and surfaces basic same-name conflict messages
+
+### In progress
+
+- no active implementation in progress at the time of this update
+
+### Pending
+
+- Batch 3 and Batch 4 items remain pending
 
 ## Confirmed Product Decisions
 
@@ -26,9 +45,9 @@ This document records the plan only. It does not change runtime behavior.
 
 Validated against the current codebase:
 
-- Workspace left and right panels are fixed-width in `src/pages/WorkspacePage.tsx`.
-- The composer disables the textarea during streaming in `src/components/Chat/MessageInput.tsx`.
-- Image attachments already exist as typed input data, but the composer only renders text chips, not thumbnails.
+- Workspace left and right panels now support persisted resizing in `src/pages/WorkspacePage.tsx` and `src/stores/uiStore.ts`.
+- The composer now remains editable during streaming, while submission stays blocked until the run completes or is interrupted.
+- Image attachments now support thumbnail rendering in the composer and explicit deletion controls.
 - Tool result rendering for `skill_loader` currently includes the full skill content in `src/utils/toolMessages.ts`.
 - Session-level latest usage recovery already exists in `src/stores/chatStore.ts` and `src/utils/storage.ts`, but the product semantics are still "latest completed request snapshot", not "session cumulative usage".
 - Backend skill discovery currently uses app-data skill roots plus workspace `.agent/skills` in `python_backend/skills/local_loader.py`.
@@ -70,6 +89,8 @@ Validated against the current codebase:
 ### 1. Token usage semantics and historical recovery
 
 **Priority:** P0
+
+**Status:** Completed on 2026-03-26
 
 **Target behavior:**
 
@@ -119,6 +140,8 @@ Validated against the current codebase:
 
 **Priority:** P0
 
+**Status:** Completed on 2026-03-26
+
 **Target behavior:**
 
 - While the assistant is streaming, the user can keep typing, selecting, deleting, and preparing the next message.
@@ -150,6 +173,8 @@ Validated against the current codebase:
 
 **Priority:** P0
 
+**Status:** Completed on 2026-03-26
+
 **Target behavior:**
 
 - `skill_loader` results should show a short preview instead of the full `SKILL.md` body.
@@ -177,6 +202,8 @@ Validated against the current codebase:
 
 **Priority:** P1
 
+**Status:** Completed on 2026-03-26
+
 **Target behavior:**
 
 - `Ctrl+V` or paste of image clipboard data inserts image attachments into the composer.
@@ -202,11 +229,14 @@ Validated against the current codebase:
 
 - Pasting an image creates a previewable attachment.
 - Dragging an image from the file tree also renders a thumbnail preview.
+- Thumbnail cards expose an explicit delete button rather than relying on clicking the whole card.
 - Unsupported models still prevent image attachment entry points.
 
 ### 5. Add resizable left and right workspace panels
 
 **Priority:** P1
+
+**Status:** Completed on 2026-03-26
 
 **Target behavior:**
 
@@ -237,6 +267,8 @@ Validated against the current codebase:
 ### 6. Add file import to the file tree panel
 
 **Priority:** P1
+
+**Status:** Completed on 2026-03-26
 
 **Target behavior:**
 

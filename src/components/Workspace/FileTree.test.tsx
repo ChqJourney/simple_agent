@@ -4,18 +4,33 @@ import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { FileTree } from "./FileTree";
 
 const readDirMock = vi.hoisted(() => vi.fn());
+const copyFileMock = vi.hoisted(() => vi.fn());
+const existsMock = vi.hoisted(() => vi.fn());
+const openMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
   readDir: readDirMock,
+  copyFile: copyFileMock,
+  exists: existsMock,
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: openMock,
 }));
 
 describe("FileTree", () => {
   beforeEach(() => {
     readDirMock.mockReset();
+    copyFileMock.mockReset();
+    existsMock.mockReset();
+    openMock.mockReset();
     readDirMock.mockResolvedValue([
       { name: "existing.txt", isDirectory: false },
       { name: "new.txt", isDirectory: false },
     ]);
+    copyFileMock.mockResolvedValue(undefined);
+    existsMock.mockResolvedValue(false);
+    openMock.mockResolvedValue(null);
 
     useWorkspaceStore.setState((state) => ({
       ...state,
@@ -122,5 +137,51 @@ describe("FileTree", () => {
     expect(screen.getByText("package.json").previousElementSibling?.getAttribute("data-icon-kind")).toBe("json");
     expect(screen.getByText("notes.md").previousElementSibling?.getAttribute("data-icon-kind")).toBe("markdown");
     expect(screen.getByText("screenshot.png").previousElementSibling?.getAttribute("data-icon-kind")).toBe("image");
+  });
+
+  it("imports external files into the current workspace root and refreshes the tree", async () => {
+    readDirMock
+      .mockResolvedValueOnce([
+        { name: "existing.txt", isDirectory: false },
+      ])
+      .mockResolvedValueOnce([
+        { name: "existing.txt", isDirectory: false },
+        { name: "imported.md", isDirectory: false },
+      ]);
+    openMock.mockResolvedValue(["C:/Downloads/imported.md"]);
+
+    render(<FileTree />);
+
+    await waitFor(() => {
+      expect(screen.getByText("existing.txt")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Import files" }));
+
+    await waitFor(() => {
+      expect(copyFileMock).toHaveBeenCalledWith("C:/Downloads/imported.md", "C:/repo/imported.md");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("imported.md")).toBeTruthy();
+    });
+  });
+
+  it("shows a conflict message when an imported filename already exists", async () => {
+    openMock.mockResolvedValue(["C:/Downloads/existing.txt"]);
+    existsMock.mockResolvedValue(true);
+
+    render(<FileTree />);
+
+    await waitFor(() => {
+      expect(screen.getByText("existing.txt")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Import files" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Skipped existing files: existing.txt")).toBeTruthy();
+    });
+    expect(copyFileMock).not.toHaveBeenCalled();
   });
 });

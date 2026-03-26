@@ -6,6 +6,7 @@ import { CustomSelect } from '../common';
 
 const FILE_TREE_DRAG_MIME = 'application/x-tauri-agent-file';
 const FILE_TREE_IMAGE_DRAG_MIME = 'application/x-tauri-agent-image';
+const COMPOSER_TEXT_METRICS_CLASS = 'text-[0.95rem] leading-6 tracking-normal font-normal';
 
 interface DraggedFileDescriptor {
   path: string;
@@ -239,7 +240,7 @@ function renderHighlightedContent(text: string, references: PromptPathReference[
     nodes.push(
       <span
         key={reference.id}
-        className="rounded border border-amber-200 bg-amber-100/95 px-1.5 py-[1px] text-[0.78rem] font-semibold leading-5 text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-900/45 dark:text-amber-100"
+        className="rounded-[3px] bg-amber-100/95 text-inherit dark:bg-amber-900/35"
       >
         {reference.displayName}
       </span>
@@ -662,9 +663,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           <div
             ref={highlightRef}
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 overflow-hidden px-4 py-4 pb-16 pr-20 text-gray-900 dark:text-gray-100"
+            className={`pointer-events-none absolute inset-0 overflow-hidden px-4 py-4 pb-16 pr-20 text-gray-900 dark:text-gray-100 ${COMPOSER_TEXT_METRICS_CLASS}`}
+            style={{
+              fontFamily: 'inherit',
+              fontKerning: 'normal',
+              textRendering: 'auto',
+            }}
           >
-            <div className="min-h-[8.25rem] whitespace-pre-wrap break-words">
+            <div className="min-h-[8.25rem] whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
               {content
                 ? renderHighlightedContent(content, promptPaths)
                 : <span className="text-gray-500 dark:text-gray-400">{placeholder}</span>}
@@ -691,7 +697,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             placeholder={placeholder}
             disabled={isInputDisabled}
             rows={5}
-            className="relative z-10 h-[8.25rem] w-full resize-none overflow-y-auto bg-transparent px-4 py-4 pb-16 pr-20 text-transparent caret-gray-900 outline-none transition-colors selection:bg-blue-200/80 dark:caret-gray-100 dark:selection:bg-blue-700/40 disabled:cursor-not-allowed disabled:opacity-70"
+            className={`relative z-10 h-[8.25rem] w-full resize-none overflow-y-auto bg-transparent px-4 py-4 pb-16 pr-20 text-transparent caret-gray-900 outline-none transition-colors selection:bg-blue-200/80 dark:caret-gray-100 dark:selection:bg-blue-700/40 disabled:cursor-not-allowed disabled:opacity-70 ${COMPOSER_TEXT_METRICS_CLASS}`}
+            style={{
+              fontFamily: 'inherit',
+              fontKerning: 'normal',
+              textRendering: 'auto',
+            }}
           />
           {isStreaming ? (
             <button

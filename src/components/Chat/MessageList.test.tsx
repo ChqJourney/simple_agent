@@ -77,10 +77,116 @@ describe("MessageList", () => {
     expect(messageListText.indexOf("Assistant")).toBeLessThan(messageListText.indexOf("thinking 1"));
     expect(messageListText.indexOf("thinking 1")).toBeLessThan(messageListText.indexOf("Workspace looks healthy."));
 
-    fireEvent.click(screen.getByRole("button", { name: /thinking 1/i }));
+    fireEvent.click(screen.getByRole("button", { name: /thinking 1 .*tool calls 1 .*tool results 1/i }));
 
     expect(screen.getByText("Need to inspect the repository first.")).toBeTruthy();
     expect(screen.getByText(/exit_code: 0/)).toBeTruthy();
+  });
+
+  it("renders friendly tool decision details when expanded", () => {
+    const messages: Message[] = [
+      {
+        id: "user-1",
+        role: "user",
+        content: "Please inspect the files",
+        status: "completed",
+      },
+      {
+        id: "assistant-tool-call",
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            tool_call_id: "tool-1",
+            name: "search_files",
+            arguments: { query: "ISO 17025" },
+          },
+        ],
+        status: "completed",
+      },
+      {
+        id: "tool-decision-1",
+        role: "tool",
+        content: "已允许 search_files 本次执行",
+        tool_call_id: "tool-1",
+        name: "search_files",
+        toolMessage: {
+          kind: "decision",
+          toolName: "search_files",
+          decision: "approve_once",
+          scope: "session",
+        },
+        status: "completed",
+      },
+      {
+        id: "assistant-final",
+        role: "assistant",
+        content: "已开始分析。",
+        status: "completed",
+      },
+    ];
+
+    render(<MessageList messages={messages} isStreaming={false} assistantStatus="completed" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /tool calls 1/i }));
+
+    expect(screen.getByText("该操作已获本次批准。")).toBeTruthy();
+    expect(screen.getByText("这类操作通常不会修改原文件。")).toBeTruthy();
+  });
+
+  it("keeps in-progress reasoning after earlier detail messages within the same turn", async () => {
+    const messages: Message[] = [
+      {
+        id: "user-1",
+        role: "user",
+        content: "Analyze the standard",
+        status: "completed",
+      },
+      {
+        id: "assistant-tool-call",
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            tool_call_id: "tool-1",
+            name: "search_files",
+            arguments: { query: "4.1" },
+          },
+        ],
+        status: "completed",
+      },
+      {
+        id: "tool-result-1",
+        role: "tool",
+        content: "文件搜索完成",
+        tool_call_id: "tool-1",
+        name: "search_files",
+        toolMessage: {
+          kind: "result",
+          toolName: "search_files",
+          success: true,
+          details: "搜索完成\n命中数: 2\n涉及文件: 1",
+        },
+        status: "completed",
+      },
+    ];
+
+    render(
+      <MessageList
+        messages={messages}
+        isStreaming={true}
+        currentReasoningContent="现在开始第二轮判断"
+        assistantStatus="thinking"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("现在开始第二轮判断")).toBeTruthy();
+      expect(screen.getByText("文件搜索完成")).toBeTruthy();
+    });
+
+    const detailContent = screen.getByText("现在开始第二轮判断").closest(".space-y-3")?.textContent || "";
+    expect(detailContent.indexOf("文件搜索完成")).toBeLessThan(detailContent.indexOf("现在开始第二轮判断"));
   });
 
   it("copies visible user and assistant message bodies from the message list", async () => {

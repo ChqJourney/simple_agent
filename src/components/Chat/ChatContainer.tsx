@@ -126,7 +126,7 @@ export const ChatContainer = () => {
 
   const handleToolDecision = useCallback((decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
     if (!currentSessionId || !pendingToolConfirm) return;
-    const sent = confirmTool(pendingToolConfirm.tool_call_id, decision, scope);
+    const sent = confirmTool(currentSessionId, pendingToolConfirm.tool_call_id, decision, scope);
     if (sent) {
       useChatStore.getState().clearPendingToolConfirm(currentSessionId, pendingToolConfirm.tool_call_id);
     }

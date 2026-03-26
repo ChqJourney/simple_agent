@@ -74,7 +74,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
         </button>
       </div>
 
-      <div data-testid="session-list-scroll" className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div data-testid="session-list-scroll" className="min-h-0 flex-1 overflow-y-auto pr-1 pt-2">
         {sortedSessions.length === 0 ? (
           <p className="text-xs text-gray-400 dark:text-gray-500">No sessions yet</p>
         ) : (

@@ -1,5 +1,13 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { ToolCall, ToolDecision, ToolDecisionScope } from '../../types';
+import {
+  createToolCallSummary,
+  createToolConfirmationMessage,
+  createToolConfirmationTitle,
+  formatToolTechnicalValue,
+  getToolCategoryLabel,
+  getToolImpactLabel,
+} from '../../utils/toolMessages';
 
 interface ToolConfirmModalProps {
   toolCall: ToolCall;
@@ -12,6 +20,11 @@ export const ToolConfirmModal: React.FC<ToolConfirmModalProps> = ({
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const summary = createToolCallSummary(toolCall);
+  const title = createToolConfirmationTitle(toolCall.name);
+  const message = createToolConfirmationMessage(toolCall);
+  const category = getToolCategoryLabel(toolCall.name);
+  const impact = getToolImpactLabel(toolCall.name);
 
   useEffect(() => {
     const previousActiveElement = document.activeElement instanceof HTMLElement
@@ -76,17 +89,30 @@ export const ToolConfirmModal: React.FC<ToolConfirmModalProps> = ({
         className="w-full max-w-2xl rounded-[1.75rem] border border-gray-200 bg-white p-7 shadow-2xl dark:border-gray-700 dark:bg-gray-800"
         onClick={(event) => event.stopPropagation()}
       >
-        <h3 id={titleId} className="mb-5 text-xl font-semibold text-gray-900 dark:text-gray-100">Confirm Tool Execution</h3>
+        <h3 id={titleId} className="mb-5 text-xl font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
 
         <div className="mb-6">
           <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">
-            The assistant wants to execute the following tool:
+            {message}
           </p>
           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/70">
-            <p className="font-semibold text-blue-600 dark:text-blue-400">{toolCall.name}</p>
-            <pre className="mt-3 max-h-72 overflow-auto rounded-xl bg-white/80 p-3 text-xs leading-5 text-gray-900 dark:bg-gray-900/70 dark:text-gray-100">
-              {JSON.stringify(toolCall.arguments, null, 2)}
-            </pre>
+            <p className="font-semibold text-blue-600 dark:text-blue-400">{summary}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:border-gray-600 dark:text-gray-300">
+                {category}
+              </span>
+              <span className="rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:border-gray-600 dark:text-gray-300">
+                {impact}
+              </span>
+            </div>
+            <details className="mt-3">
+              <summary className="cursor-pointer text-xs font-medium text-gray-700 dark:text-gray-200">
+                技术详情
+              </summary>
+              <pre className="mt-3 max-h-72 overflow-auto rounded-xl bg-white/80 p-3 text-xs leading-5 text-gray-900 dark:bg-gray-900/70 dark:text-gray-100">
+                {formatToolTechnicalValue(toolCall.arguments)}
+              </pre>
+            </details>
           </div>
         </div>
 

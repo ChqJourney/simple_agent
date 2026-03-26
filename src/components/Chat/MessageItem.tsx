@@ -4,7 +4,7 @@ import { Message, AssistantStatus } from '../../types';
 import { StreamingMessage } from './StreamingMessage';
 import { markdownComponents, markdownRemarkPlugins, parseMarkdown } from '../../utils/markdown';
 import { ReasoningBlock } from '../Reasoning/ReasoningBlock';
-import { ToolCallDisplay, ToolCard } from '../Tools';
+import { ToolCallDisplay, ToolMessageDisplay } from '../Tools';
 import { UserStatusIndicator } from './UserStatusIndicator';
 import { AssistantStatusIndicator } from './AssistantStatusIndicator';
 import { CopyMessageButton } from './CopyMessageButton';
@@ -34,48 +34,7 @@ export const MessageItem = memo<MessageItemProps>(({
   const isTool = message.role === 'tool';
 
   if (isTool) {
-    const toolSummary = message.content || message.name || 'Tool';
-
-    if (message.toolMessage?.kind === 'decision') {
-      const tone = message.toolMessage.decision === 'reject' ? 'danger' : 'success';
-
-      return (
-        <div className="w-full">
-          <ToolCard summary={toolSummary} tone={tone} collapsible={true}>
-            <div className="text-xs leading-5">
-              <div>scope: {message.toolMessage.scope}</div>
-              {message.toolMessage.reason && message.toolMessage.reason !== 'user_action' && (
-                <div>reason: {message.toolMessage.reason}</div>
-              )}
-            </div>
-          </ToolCard>
-        </div>
-      );
-    }
-
-    if (message.toolMessage?.kind === 'result') {
-      return (
-        <div className="w-full">
-          <ToolCard summary={toolSummary} collapsible={true}>
-            <pre className="overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
-              {message.toolMessage.details}
-            </pre>
-          </ToolCard>
-        </div>
-      );
-    }
-
-    return (
-      <div className="w-full">
-        <ToolCard summary={toolSummary} collapsible={Boolean(message.content)}>
-          {message.content && (
-            <pre className="overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
-              {message.content}
-            </pre>
-          )}
-        </ToolCard>
-      </div>
-    );
+    return <ToolMessageDisplay message={message} collapsible={true} />;
   }
 
   if (isReasoning) {

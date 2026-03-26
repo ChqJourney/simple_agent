@@ -13,6 +13,7 @@
 - 多模型 Provider 配置与 profile 路由
 - 基于 WebSocket 的流式对话与 reasoning 展示
 - Tool calling、用户审批、交互式提问
+- 基础文档工具优先、高级执行工具兜底的工具体系
 - Local skills metadata catalog 注入与按需加载
 - 工作区会话持久化、run timeline、token usage 展示
 - 图片输入与工作区文件联动
@@ -30,7 +31,7 @@ flowchart LR
     Backend --> Runtime["Runtime State<br/>config / provider bundle / active agents"]
     Backend --> Agent["Agent Loop"]
     Agent --> LLM["LLM Providers<br/>OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama"]
-    Agent --> Tools["Tool Registry<br/>file/shell/python/node/todo/question/skill_loader"]
+    Agent --> Tools["Tool Registry<br/>directory/search/excerpt/outline/file/exec/task/question/skill"]
     Agent --> Context["Context Providers<br/>Local Skills"]
     Agent --> Persist["Workspace Persistence<br/>.agent/sessions / .agent/logs"]
 
@@ -72,7 +73,7 @@ flowchart LR
 | 状态层 | `src/stores/*.ts` | Zustand 持有聊天、会话、工作区、配置、运行状态、UI 状态 | WebSocket 事件、用户操作 | 组件渲染数据 |
 | 工作区 UI | `src/components/Workspace/*` | TopBar、SessionList、FileTree、TaskList | workspace/session/chat store | 工作区侧栏、文件变化高亮 |
 | 聊天 UI | `src/components/Chat/*` | 消息流渲染、输入框、流式输出、interrupt、Markdown/GFM 正文展示 | chat store、WebSocket actions | 消息发送、reasoning/tool 展示 |
-| 工具交互 UI | `src/components/Tools/*` | ToolConfirmModal、PendingQuestionCard、ToolCallDisplay | tool_confirm_request / question_request | 审批、答复回传 |
+| 工具交互 UI | `src/components/Tools/*` | ToolConfirmModal、PendingQuestionCard、ToolCallDisplay、ToolMessageDisplay | tool_confirm_request / question_request / tool_result | 审批、答复回传、业务化工具摘要 |
 | 运行观测 UI | `src/components/Run/RunTimeline.tsx` | 渲染 `run_event` 为时间线 | run store、chat store | run 过程可视化 |
 | 本地读取工具 | `src/utils/storage.ts` | 通过 Tauri command 恢复 session 列表与历史，并派生 UI 数据 | Tauri invoke | Session 列表、历史消息恢复 |
 
@@ -98,7 +99,7 @@ flowchart LR
 | Context Provider 注册 | `python_backend/runtime/provider_registry.py` | 构建 skill provider bundle | normalized config | `ContextProviderBundle` |
 | 运行事件 | `python_backend/runtime/events.py` `python_backend/runtime/logs.py` | 定义并写入 run_event | Agent loop 阶段事件 | `.agent/logs/*.jsonl` |
 | LLM Provider | `python_backend/llms/*.py` | 对接 OpenAI 兼容 API、provider 特定 reasoning/usage 适配、Kimi 温度约束 | messages、tools、runtime policy | 流式 chunk / completion |
-| Tool 系统 | `python_backend/tools/*.py` | 文件、执行、任务、提问、skill 加载等工具 | tool call arguments | ToolResult |
+| Tool 系统 | `python_backend/tools/*.py` | 文档读取/搜索/结构提取、文件写入、执行、任务、提问、skill 加载等工具 | tool call arguments | ToolResult + descriptor metadata |
 | Context Providers | `python_backend/skills/*` | 扫描本地 skill metadata catalog，并按名称加载 skill 正文 | app data skill root、workspace path | 附加到 system prompt 的 metadata 与 `skill_loader` 运行时加载结果 |
 
 ## 4. 关键功能视图
@@ -110,9 +111,10 @@ flowchart LR
 | 主/辅模型 profile | `src/types/index.ts` `python_backend/runtime/router.py` | `primary` 负责主对话，`secondary` 负责标题生成等后台任务 |
 | 会话锁模 | `src/components/Chat/ChatContainer.tsx` `python_backend/main.py` | 首次发送消息时锁定 session 的 provider/model，后续必须匹配 |
 | 流式文本与 reasoning | `src/contexts/WebSocketContext.tsx` `python_backend/core/agent.py` | 分别消费 `token` 与 `reasoning_token`，最后由 `reasoning_complete` 收束 |
-| Tool Calling | `python_backend/core/agent.py` `python_backend/tools/base.py` | LLM 输出 tool calls，后端并发执行工具并回传结果 |
-| Tool 审批 | `src/components/Tools/ToolConfirmModal.tsx` `python_backend/core/user.py` | 对需要确认的工具建立 pending future，前端审批后恢复执行 |
+| Tool Calling | `python_backend/core/agent.py` `python_backend/tools/base.py` | LLM 输出 tool calls，后端并发执行工具并回传结果，schema 中附带 `x-tool-meta` descriptor 扩展信息 |
+| Tool 审批 | `src/components/Tools/ToolConfirmModal.tsx` `python_backend/core/user.py` | 对需要确认的工具建立 pending future，前端按只读/写入/高级执行风险展示审批文案 |
 | 交互式提问 | `src/components/Tools/PendingQuestionCard.tsx` `python_backend/core/agent.py` | `ask_question` 工具通过 WebSocket 向用户发问并等待回答 |
+| 工具业务化展示 | `src/components/Tools/ToolCallDisplay.tsx` `src/components/Tools/ToolMessageDisplay.tsx` `src/utils/toolMessages.ts` | 把工具调用与结果渲染成“正在做什么 / 风险类型 / 结果摘要 / 技术详情” |
 | Run Timeline | `src/components/Run/RunTimeline.tsx` `python_backend/runtime/events.py` | run_event 同时写入前端和磁盘日志 |
 | 工作区文件联动 | `src/utils/storage.ts` `src/components/Workspace/FileTree.tsx` | 前端经 Tauri 读取工作区文件；`file_write` 成功后高亮变更文件 |
 | Session 历史恢复 | `src/utils/storage.ts` `src-tauri/src/session_storage.rs` | session list / transcript 通过 Tauri command 读取，不再直接走前端 `plugin-fs` |
@@ -199,6 +201,7 @@ sequenceDiagram
    - 若启用 local skills，则扫描 app data 与 workspace 两处 skill root
    - 把每个 skill 的 YAML frontmatter catalog 拼入 system prompt
    - 需要完整 skill 指令时，由模型调用 `skill_loader`
+   - 工具列表通过 OpenAI-compatible function schema 暴露，并附带 `x-tool-meta`
 4. 调用 provider 的 `stream()`
 
 #### E. 流式回传与工具执行
@@ -274,7 +277,7 @@ flowchart TD
 其中最关键的一点是：
 
 - 后端落盘的是“原始消息”
-- 前端加载历史时会重新派生 `reasoning` 消息、tool decision 文案、tool result 摘要
+- 前端加载历史时会重新派生 `reasoning` 消息、tool decision 文案、tool result 摘要与业务化工具展示
 
 也就是说，历史 UI 是“磁盘原始数据 + 前端派生逻辑”的组合，不是完整的 UI snapshot。
 
@@ -333,15 +336,20 @@ flowchart TD
 1. 写入用户消息
 2. 发 `run_started`
 3. 扫描 local skill catalog metadata，并在需要时通过 `skill_loader` 加载正文
-4. 调用 LLM 流式输出
-5. 若无工具调用则直接结束
-6. 若有工具调用则执行并写入 tool message
-7. 进入下一轮，直到生成完成或达到 `max_tool_rounds`
+4. 向模型暴露完整工具 schema 与 descriptor metadata
+5. 调用 LLM 流式输出
+6. 若无工具调用则直接结束
+7. 若有工具调用则执行并写入 tool message
+8. 进入下一轮，直到生成完成或达到 `max_tool_rounds`
 
 ### 7.3 Tool 执行模型
 
 Tool 系统当前注册了以下内置工具：
 
+- `list_directory_tree`
+- `search_files`
+- `read_file_excerpt`
+- `get_document_outline`
 - `file_read`
 - `file_write`
 - `shell_execute`
@@ -349,8 +357,51 @@ Tool 系统当前注册了以下内置工具：
 - `node_execute`
 - `todo_task`
 - `ask_question`
+- `skill_loader`
 
 它们统一通过 `ToolRegistry` 暴露为 OpenAI-compatible function schemas，供 LLM 生成 tool call。
+
+当前工具体系按职责大致分为四层：
+
+- 基础文档工具：
+  - `list_directory_tree`
+  - `search_files`
+  - `read_file_excerpt`
+  - `get_document_outline`
+- 通用工作区工具：
+  - `file_read`
+  - `file_write`
+  - `skill_loader`
+- 高级 fallback 执行工具：
+  - `shell_execute`
+  - `python_execute`
+  - `node_execute`
+- UI/交互工具：
+  - `todo_task`
+  - `ask_question`
+
+当前不按任务场景裁剪工具集合，而是通过 descriptor 元数据来影响模型偏好与前端展示。
+
+`ToolDescriptor` 除基础字段外，还包含：
+
+- `display_name`
+- `read_only`
+- `risk_level`
+- `preferred_order`
+- `use_when`
+- `avoid_when`
+- `user_summary_template`
+- `result_preview_fields`
+- `tags`
+
+这些信息会通过 schema 中的 `x-tool-meta` 一起暴露。
+
+设计约束如下：
+
+- 基础文档工具优先解决“知道有什么、搜到在哪、读局部证据、理解章节结构”
+- `shell_execute`、`python_execute`、`node_execute` 保留给 LLM 作为最后的强力兜底工具
+- 认证/条款/规则判断等更强业务语义，优先放在 skill 层而不是继续膨胀底层工具数
+- 路径访问统一通过共享 path utils 做 workspace 边界校验与安全解析
 
 执行阶段的统一输出结构是：
 
@@ -365,6 +416,12 @@ Tool 系统当前注册了以下内置工具：
 
 - `file_write`：标记文件树中的变更文件
 - `todo_task`：更新任务面板
+
+而通用展示层会额外基于工具 metadata 和结果内容，生成：
+
+- 业务动作摘要
+- 风险标签，如 `只读`、`会修改文件`、`高级执行`
+- 技术详情折叠视图
 
 ## 8. 接口契约
 
@@ -401,7 +458,7 @@ Tool 系统当前注册了以下内置工具：
 | `tool_confirm_request` | `chatStore.setPendingToolConfirm` | 打开工具审批弹窗 |
 | `tool_decision` | `chatStore.addToolDecision` | 记录审批结果 |
 | `question_request` | `chatStore.setPendingQuestion` | 打开提问卡片 |
-| `tool_result` | `chatStore.setToolResult` | 展示工具结果并触发派生更新 |
+| `tool_result` | `chatStore.setToolResult` | 展示工具结果并触发任务面板、文件高亮与业务摘要派生更新 |
 | `completed` | `chatStore.setCompleted` | 固化 assistant 消息并记录 usage |
 | `retry` | 控制台日志 | 提示本轮重试 |
 | `error` | `chatStore.setError` | 记录错误消息 |

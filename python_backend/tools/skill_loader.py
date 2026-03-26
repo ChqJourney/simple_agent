@@ -9,6 +9,15 @@ from tools.base import BaseTool, ToolResult
 class SkillLoaderTool(BaseTool):
     name = "skill_loader"
     description = "Load the full instructions for a local skill from the scanned skill catalog."
+    category = "general"
+    read_only = True
+    risk_level = "low"
+    preferred_order = 30
+    use_when = "Use when a local skill may provide better workflow instructions for the task."
+    avoid_when = "Avoid when the task can already be completed with the active instructions and tools."
+    user_summary_template = "Loading skill {skill_name}"
+    result_preview_fields = ["event", "skill"]
+    tags = ["skill", "safe-read"]
     parameters = {
         "type": "object",
         "properties": {

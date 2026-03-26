@@ -107,8 +107,8 @@ export const LeftPanel: React.FC = () => {
               </svg>
             </button>
           </div>
-          <div className="text-gray-600 dark:text-gray-400" title={currentWorkspace.path}>
-            <span className="block break-all whitespace-normal">{currentWorkspace.path}</span>
+          <div className="text-gray-600 my-4 dark:text-gray-400" title={currentWorkspace.path}>
+            <span className="block truncate whitespace-normal">{currentWorkspace.path}</span>
           </div>
           <button
             type="button"
@@ -132,7 +132,7 @@ export const LeftPanel: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden px-2 pb-2">
+      <div className="flex-1 overflow-hidden px-2 pt-2 pb-2">
         <SessionList workspacePath={currentWorkspace.path} />
       </div>
 

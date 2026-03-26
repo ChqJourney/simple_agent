@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { renderToolResultDetails } from "./toolMessages";
+import {
+  createToolCallSummary,
+  formatToolTechnicalValue,
+  renderToolResultDetails,
+} from "./toolMessages";
 
 describe("toolMessages", () => {
   it("formats structured execution outputs for display", () => {
@@ -12,6 +16,32 @@ describe("toolMessages", () => {
     expect(details).toContain("exit_code: 0");
     expect(details).toContain("stdout:");
     expect(details).toContain("hello");
+  });
+
+  it("creates business-friendly summaries for foundational tools", () => {
+    expect(createToolCallSummary({
+      name: "search_files",
+      arguments: { query: "GB/T 19001" },
+    } as never)).toBe('正在搜索 "GB/T 19001"');
+
+    expect(createToolCallSummary({
+      name: "read_file_excerpt",
+      arguments: { path: "report.md", unit: "line", start: 12, end: 20 },
+    } as never)).toBe("正在读取 report.md 的 line 12-20");
+  });
+
+  it("formats directory tree results in a readable way", () => {
+    const details = renderToolResultDetails(true, {
+      event: "directory_tree",
+      summary: {
+        file_count: 42,
+        directory_count: 7,
+      },
+    });
+
+    expect(details).toContain("目录扫描完成");
+    expect(details).toContain("文件数: 42");
+    expect(details).toContain("目录数: 7");
   });
 
   it("formats pending questions in a readable way", () => {
@@ -74,5 +104,14 @@ describe("toolMessages", () => {
     const details = renderToolResultDetails(false, "something broke", "Tool crashed");
 
     expect(details).toBe("Error: Tool crashed");
+  });
+
+  it("truncates oversized technical payload values", () => {
+    const formatted = formatToolTechnicalValue({
+      content: "x".repeat(5000),
+    });
+
+    expect(formatted).toContain("truncated");
+    expect(formatted.length).toBeLessThan(5000);
   });
 });

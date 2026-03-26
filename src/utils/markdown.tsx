@@ -56,8 +56,8 @@ export const markdownComponents: Components = {
       return (
         <Suspense
           fallback={(
-            <pre className="bg-gray-900 dark:bg-black rounded-lg p-3 my-2 overflow-x-auto">
-              <code className="text-sm font-mono text-gray-100" {...props}>
+            <pre className="my-3 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
+              <code className="text-sm font-mono text-slate-800 dark:text-slate-100" {...props}>
                 {codeString}
               </code>
             </pre>
@@ -69,13 +69,20 @@ export const markdownComponents: Components = {
     }
 
     return (
-      <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-red-600 dark:text-red-400 rounded text-sm font-mono" {...props}>
+      <code
+        className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[0.92em] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+        {...props}
+      >
         {children}
       </code>
     );
   },
   pre({ children }) {
-    return <pre className="bg-gray-900 dark:bg-black rounded-lg p-3 my-2 overflow-x-auto">{children}</pre>;
+    return (
+      <pre className="my-3 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
+        {children}
+      </pre>
+    );
   },
   p({ children }) {
     return <p className="mb-3 last:mb-0 whitespace-pre-wrap">{children}</p>;

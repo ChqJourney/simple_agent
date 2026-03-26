@@ -418,6 +418,7 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
             None,
             {
                 "type": "tool_confirm",
+                "session_id": "session-a",
                 "tool_call_id": "tool-1",
                 "decision": "approve_always",
                 "scope": ["workspace"],
@@ -449,6 +450,7 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
             None,
             {
                 "type": "tool_confirm",
+                "session_id": "session-a",
                 "tool_call_id": "tool-2",
                 "decision": {"value": "approve_once"},
                 "scope": "workspace",
@@ -461,6 +463,53 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         result = await asyncio.wait_for(confirmation_task, timeout=1)
         self.assertEqual("reject", result["decision"])
         self.assertEqual("workspace", result["scope"])
+
+    async def test_handle_message_ignores_tool_confirm_for_mismatched_session(self) -> None:
+        await backend_main.user_manager.bind_session_to_connection("session-a", "conn-a")
+
+        confirmation_task = asyncio.create_task(
+            backend_main.user_manager.request_tool_confirmation(
+                session_id="session-a",
+                tool_call_id="tool-3",
+                tool_name="shell_execute",
+                workspace_path=self.temp_dir.name,
+                arguments={"command": "echo hello"},
+            )
+        )
+        await asyncio.sleep(0)
+
+        await backend_main.handle_message(
+            None,
+            {
+                "type": "tool_confirm",
+                "session_id": "session-b",
+                "tool_call_id": "tool-3",
+                "decision": "approve_once",
+                "scope": "session",
+                "approved": True,
+            },
+            self.send_callback,
+            "conn-a",
+        )
+
+        self.assertFalse(confirmation_task.done())
+
+        await backend_main.handle_message(
+            None,
+            {
+                "type": "tool_confirm",
+                "session_id": "session-a",
+                "tool_call_id": "tool-3",
+                "decision": "approve_once",
+                "scope": "session",
+                "approved": True,
+            },
+            self.send_callback,
+            "conn-a",
+        )
+
+        result = await asyncio.wait_for(confirmation_task, timeout=1)
+        self.assertEqual("approve_once", result["decision"])
 
     async def test_existing_untitled_session_generates_title_on_next_text_message(self) -> None:
         title_llm = TitleCapableLLM("Friendly greeting")

@@ -165,7 +165,7 @@ describe("ChatContainer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "approve tool" }));
 
-    expect(confirmToolMock).toHaveBeenCalledWith("tool-1", "approve_once", "session");
+    expect(confirmToolMock).toHaveBeenCalledWith("session-a", "tool-1", "approve_once", "session");
     expect(screen.getByRole("button", { name: "approve tool" })).toBeTruthy();
   });
 

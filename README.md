@@ -6,7 +6,7 @@
 
 - 结构化运行日志与可观测 agent loop
 - 多模型 profile、session 级模型锁定
-- 可扩展工具系统
+- 可扩展工具系统，含基础文档工具与高级 fallback 执行工具
 - 本地 skill metadata catalog 注入与 `skill_loader` 按需加载
 - 图片输入与工作区拖拽交互
 - 会话标题生成与会话元数据持久化
@@ -60,6 +60,7 @@ Workspace
 - 流式聊天响应
 - reasoning 内容展示
 - assistant 正文支持 GFM Markdown，包括表格、任务列表、删除线与单换行
+- 代码块与行内代码在 light / dark mode 下使用与整体界面协调的配色
 - 中断生成并保留已输出内容
 - 可观测 run timeline
 - 结构化 run event 落盘到 `.agent/logs/`
@@ -116,6 +117,10 @@ Workspace
 
 内置工具：
 
+- `list_directory_tree`
+- `search_files`
+- `read_file_excerpt`
+- `get_document_outline`
 - `file_read`
 - `file_write`
 - `shell_execute`
@@ -126,6 +131,27 @@ Workspace
 - `skill_loader`
 
 工具结果会被统一序列化，并映射到前端任务面板、工具摘要和待回答问题卡片。
+
+当前工具系统的设计原则：
+
+- 优先使用基础文档工具完成“看目录、搜内容、读局部、理解结构”
+- `shell_execute`、`python_execute`、`node_execute` 继续保留，作为 LLM 的最后兜底能力
+- 认证/文档/条款判断等更强业务语义，优先放在 skill 层组合实现，而不是堆进底层工具
+- 工具 descriptor 已补充元数据，既帮助 LLM 选工具，也帮助前端更好地解释工具行为
+
+工具 descriptor 当前包含：
+
+- `display_name`
+- `read_only`
+- `risk_level`
+- `preferred_order`
+- `use_when`
+- `avoid_when`
+- `user_summary_template`
+- `result_preview_fields`
+- `tags`
+
+后端在对外 function schema 中，会把这些扩展信息通过 `x-tool-meta` 一并带给模型侧和前端消费层。
 
 ### Context Providers
 
@@ -274,6 +300,34 @@ Workspace
 - Tool argument validation now runs before tool execution for required fields and enum constraints.
 - See also: `docs/tool-system-current-state.md`.
 
+## Tool System Updates (2026-03-26)
+
+- 新增 4 个基础文档工具：
+  - `list_directory_tree`
+  - `search_files`
+  - `read_file_excerpt`
+  - `get_document_outline`
+- 工具元数据从基础 `name/description/parameters` 扩展为更适合 LLM 与前端消费的 descriptor：
+  - `read_only`
+  - `risk_level`
+  - `preferred_order`
+  - `use_when`
+  - `avoid_when`
+  - `user_summary_template`
+  - `result_preview_fields`
+  - `tags`
+- `shell_execute`、`python_execute`、`node_execute` 被明确标记为高级 fallback 执行工具：
+  - 仍然保留
+  - 排序靠后
+  - 更高风险提示
+  - 仅在专用工具不足时优先考虑
+- 文件工具统一复用了共享路径解析逻辑，路径安全与 workspace 边界处理更一致。
+- 前端工具调用展示从“原始 JSON 调试视角”调整为“业务动作 + 技术详情折叠”的展示方式：
+  - 默认显示正在做什么
+  - 默认显示风险类型，如 `只读`、`会修改文件`、`高级执行`
+  - 参数和原始输出降级到技术详情区域
+- 聊天消息中的 tool decision / tool result 也统一走业务化摘要，不再只显示原始字段。
+
 ## Reliability Updates (2026-03-19)
 
 - Workspace loading now ignores stale authorization results after the active workspace changes, preventing old async responses from resetting the wrong session list.
@@ -314,6 +368,7 @@ agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agen
   - 兼容 JSON-escaped Markdown 内容
   - 尽量补齐列表/标题前缺失的空行
 - Markdown 表格使用自定义 table 组件渲染，带边框、表头底色与横向滚动容器
+- `pre` 与 `code` 在 light / dark mode 下都使用与环境协调的中性色卡片样式，不再固定为黑底高对比配色
 
 ## 会话与工作区持久化
 

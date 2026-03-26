@@ -18,6 +18,14 @@ class PythonExecuteTool(BaseTool):
     display_name = "Python Execute"
     category = "execution"
     require_confirmation = True
+    read_only = False
+    risk_level = "high"
+    preferred_order = 91
+    use_when = "Use only as an advanced fallback when specialized tools are insufficient and Python is the most direct way to complete the step."
+    avoid_when = "Avoid for routine document inspection, file search, or file excerpt reading when dedicated tools can answer the task."
+    user_summary_template = "Using advanced Python execution"
+    result_preview_fields = ["exit_code", "stdout", "stderr"]
+    tags = ["execution", "fallback"]
     policy = ToolExecutionPolicy(timeout_seconds=30)
     parameters = {
         "type": "object",

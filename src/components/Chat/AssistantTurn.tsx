@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { AssistantStatus, Message } from '../../types';
 import { markdownComponents, markdownRemarkPlugins, parseMarkdown } from '../../utils/markdown';
 import { ReasoningBlock } from '../Reasoning/ReasoningBlock';
-import { ToolCallDisplay, ToolCard } from '../Tools';
+import { ToolCallDisplay, ToolMessageDisplay } from '../Tools';
 import { MessageItem } from './MessageItem';
 import { AssistantStatusIndicator } from './AssistantStatusIndicator';
 import { CopyMessageButton } from './CopyMessageButton';
@@ -61,42 +61,7 @@ function getRoundDetailsLabel(messages: Message[], hasStreamingReasoning: boolea
 }
 
 function renderToolMessage(message: Message) {
-  const toolSummary = message.content || message.name || 'Tool';
-
-  if (message.toolMessage?.kind === 'decision') {
-    const tone = message.toolMessage.decision === 'reject' ? 'danger' : 'success';
-
-    return (
-      <ToolCard summary={toolSummary} tone={tone}>
-        <div className="text-xs leading-5">
-          <div>scope: {message.toolMessage.scope}</div>
-          {message.toolMessage.reason && message.toolMessage.reason !== 'user_action' && (
-            <div>reason: {message.toolMessage.reason}</div>
-          )}
-        </div>
-      </ToolCard>
-    );
-  }
-
-  if (message.toolMessage?.kind === 'result') {
-    return (
-      <ToolCard summary={toolSummary}>
-        <pre className="overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
-          {message.toolMessage.details}
-        </pre>
-      </ToolCard>
-    );
-  }
-
-  return (
-    <ToolCard summary={toolSummary}>
-      {message.content && (
-        <pre className="overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
-          {message.content}
-        </pre>
-      )}
-    </ToolCard>
-  );
+  return <ToolMessageDisplay message={message} collapsible={false} />;
 }
 
 function renderDetailMessage(message: Message) {
@@ -234,12 +199,6 @@ export const AssistantTurn = ({
 
           {isExpanded && (
             <div className="mt-4 space-y-3 border-t border-gray-200/80 pt-4 dark:border-gray-700/80">
-              {currentReasoningContent && (
-                <div className="rounded-2xl border border-gray-200/80 bg-white/70 p-4 dark:border-gray-700/80 dark:bg-gray-900/50">
-                  <ReasoningBlock content={currentReasoningContent} collapsible={false} defaultExpanded={true} />
-                </div>
-              )}
-
               {detailMessages.map((message) => {
                 const content = renderDetailMessage(message);
                 if (!content) {
@@ -252,6 +211,12 @@ export const AssistantTurn = ({
                   </div>
                 );
               })}
+
+              {currentReasoningContent && (
+                <div className="rounded-2xl border border-gray-200/80 bg-white/70 p-4 dark:border-gray-700/80 dark:bg-gray-900/50">
+                  <ReasoningBlock content={currentReasoningContent} collapsible={false} defaultExpanded={true} />
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -689,7 +689,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="px-4 pb-4 pt-2 md:px-6 md:pb-6">
+    <form onSubmit={handleSubmit} className="px-4 pb-4 pt-2 md:px-8 md:pb-6">
       <div
         data-testid="composer-shell"
         className="relative rounded-2xl bg-white/92 p-3 shadow-lg shadow-gray-200/60 backdrop-blur dark:bg-gray-900/90 dark:shadow-black/20"

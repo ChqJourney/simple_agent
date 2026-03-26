@@ -38,7 +38,8 @@ describe("ToolConfirmModal", () => {
       />
     );
 
-    expect(screen.getByRole("dialog", { name: "Confirm Tool Execution" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "确认执行高级工具" })).toBeTruthy();
+    expect(screen.getByText("助手准备使用高级执行工具作为兜底方案。这类工具更灵活，但可解释性低于专用工具。")).toBeTruthy();
 
     fireEvent.keyDown(window, { key: "Escape" });
 

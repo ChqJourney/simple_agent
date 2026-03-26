@@ -196,6 +196,7 @@ export interface ClientConfig {
 
 export interface ClientToolConfirm {
   type: 'tool_confirm';
+  session_id: string;
   tool_call_id: string;
   approved?: boolean;
   decision?: ToolDecision;

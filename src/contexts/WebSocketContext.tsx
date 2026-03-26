@@ -28,7 +28,7 @@ interface WebSocketContextValue {
   sendMessage: (sessionId: string, content: string, attachments?: Attachment[], workspacePath?: string) => void;
   answerQuestion: (toolCallId: string, answer?: string, action?: 'submit' | 'dismiss') => boolean;
   sendConfig: (configOverride?: ProviderConfig) => void;
-  confirmTool: (toolCallId: string, decision: ToolDecision, scope?: ToolDecisionScope) => boolean;
+  confirmTool: (sessionId: string, toolCallId: string, decision: ToolDecision, scope?: ToolDecisionScope) => boolean;
   interrupt: (sessionId: string) => void;
   sendWorkspace: (workspacePath: string) => void;
   setExecutionMode: (sessionId: string, mode: ExecutionMode) => boolean;
@@ -492,9 +492,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     });
   }, [send]);
 
-  const confirmTool = useCallback((toolCallId: string, decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
+  const confirmTool = useCallback((
+    sessionId: string,
+    toolCallId: string,
+    decision: ToolDecision,
+    scope: ToolDecisionScope = 'session'
+  ) => {
     return send({
       type: 'tool_confirm',
+      session_id: sessionId,
       tool_call_id: toolCallId,
       decision,
       scope,

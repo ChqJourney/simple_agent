@@ -39,8 +39,12 @@ from tools.base import ToolRegistry
 from tools.ask_question import AskQuestionTool
 from tools.file_read import FileReadTool
 from tools.file_write import FileWriteTool
+from tools.get_document_outline import GetDocumentOutlineTool
+from tools.list_directory_tree import ListDirectoryTreeTool
 from tools.node_execute import NodeExecuteTool
 from tools.python_execute import PythonExecuteTool
+from tools.read_file_excerpt import ReadFileExcerptTool
+from tools.search_files import SearchFilesTool
 from tools.skill_loader import SkillLoaderTool
 from tools.shell_execute import ShellExecuteTool
 from tools.todo_task import TodoTaskTool
@@ -94,6 +98,10 @@ app.add_middleware(
 )
 
 tool_registry = ToolRegistry()
+tool_registry.register(ListDirectoryTreeTool())
+tool_registry.register(SearchFilesTool())
+tool_registry.register(ReadFileExcerptTool())
+tool_registry.register(GetDocumentOutlineTool())
 tool_registry.register(FileReadTool())
 tool_registry.register(FileWriteTool())
 tool_registry.register(ShellExecuteTool())
@@ -498,7 +506,7 @@ async def handle_message(
     elif message_type == "message":
         await handle_user_message(data, send_callback, connection_id)
     elif message_type == "tool_confirm":
-        await handle_tool_confirm(data)
+        await handle_tool_confirm(data, connection_id)
     elif message_type == "question_response":
         await handle_question_response(data)
     elif message_type == "interrupt":
@@ -759,11 +767,16 @@ async def run_agent_task(
         )
 
 
-async def handle_tool_confirm(data: Dict[str, Any]) -> None:
+async def handle_tool_confirm(data: Dict[str, Any], connection_id: str) -> None:
+    session_id = _normalize_non_empty_string(data.get("session_id"))
     tool_call_id = _normalize_non_empty_string(data.get("tool_call_id"))
     approved = _normalize_optional_bool(data.get("approved"))
     decision = _normalize_tool_decision(data.get("decision"))
     scope = _normalize_tool_scope(data.get("scope"))
+
+    if not session_id:
+        logger.warning("Tool confirm received without session_id")
+        return
 
     if not tool_call_id:
         logger.warning("Tool confirm received without tool_call_id")
@@ -773,11 +786,14 @@ async def handle_tool_confirm(data: Dict[str, Any]) -> None:
         tool_call_id=tool_call_id,
         approved=approved,
         decision=decision,
-        scope=scope
+        scope=scope,
+        session_id=session_id,
+        connection_id=connection_id,
     )
 
     logger.info(
-        "Tool confirmation processed: %s -> decision=%s approved=%s scope=%s",
+        "Tool confirmation processed: session=%s tool_call=%s -> decision=%s approved=%s scope=%s",
+        session_id,
         tool_call_id,
         decision,
         approved,

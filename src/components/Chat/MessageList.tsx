@@ -73,7 +73,7 @@ export const MessageList = memo<MessageListProps>(({
       ref={listRef}
       data-testid="message-list-scroll"
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto px-5 py-6 md:px-6"
+      className="flex-1 overflow-y-auto px-5 py-6 md:px-8"
     >
       {messages.length === 0 && !isStreaming && (
         <div className="text-center text-gray-500 dark:text-gray-400 py-8">

@@ -19,6 +19,14 @@ class ShellExecuteTool(BaseTool):
     display_name = "Shell Execute"
     category = "execution"
     require_confirmation = True
+    read_only = False
+    risk_level = "high"
+    preferred_order = 90
+    use_when = "Use only as an advanced fallback when specialized workspace, search, read, or outline tools are insufficient."
+    avoid_when = "Avoid for routine document inspection, file discovery, searching, or excerpt reading when specialized tools can handle it."
+    user_summary_template = "Using advanced shell execution"
+    result_preview_fields = ["command", "exit_code", "stdout", "stderr"]
+    tags = ["execution", "fallback"]
     policy = ToolExecutionPolicy(timeout_seconds=30)
     parameters = {
         "type": "object",

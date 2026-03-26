@@ -572,7 +572,9 @@ class UserManager:
         tool_call_id: str,
         approved: Optional[bool] = None,
         decision: Optional[Literal["approve_once", "approve_always", "reject"]] = None,
-        scope: Literal["session", "workspace"] = "session"
+        scope: Literal["session", "workspace"] = "session",
+        session_id: Optional[str] = None,
+        connection_id: Optional[str] = None,
     ) -> bool:
         should_persist = False
         async with self._lock:
@@ -580,8 +582,30 @@ class UserManager:
                 logger.warning(f"No pending confirmation for {tool_call_id}")
                 return False
 
+            context = self.pending_tool_context.get(tool_call_id, {})
+            expected_session_id = context.get("session_id")
+            expected_connection_id = context.get("connection_id")
+
+            if session_id is not None and expected_session_id and session_id != expected_session_id:
+                logger.warning(
+                    "Tool confirmation session mismatch for %s: expected=%s actual=%s",
+                    tool_call_id,
+                    expected_session_id,
+                    session_id,
+                )
+                return False
+
+            if connection_id is not None and expected_connection_id and connection_id != expected_connection_id:
+                logger.warning(
+                    "Tool confirmation connection mismatch for %s: expected=%s actual=%s",
+                    tool_call_id,
+                    expected_connection_id,
+                    connection_id,
+                )
+                return False
+
             future = self.tool_confirmations.pop(tool_call_id)
-            context = self.pending_tool_context.pop(tool_call_id, {})
+            self.pending_tool_context.pop(tool_call_id, None)
 
             normalized_decision = decision
             if normalized_decision is None:

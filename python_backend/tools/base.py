@@ -24,6 +24,14 @@ class ToolDescriptor(BaseModel):
     category: Literal["workspace", "execution", "task", "interaction", "general"] = "general"
     require_confirmation: bool = False
     display_name: Optional[str] = None
+    read_only: bool = False
+    risk_level: Literal["low", "medium", "high"] = "medium"
+    preferred_order: int = 100
+    use_when: str = ""
+    avoid_when: str = ""
+    user_summary_template: str = ""
+    result_preview_fields: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
     policy: ToolExecutionPolicy = Field(default_factory=ToolExecutionPolicy)
 
 
@@ -34,11 +42,21 @@ class BaseTool(ABC):
     category: str = "general"
     display_name: Optional[str] = None
     require_confirmation: bool = False
+    read_only: bool = False
+    risk_level: str = "medium"
+    preferred_order: int = 100
+    use_when: str = ""
+    avoid_when: str = ""
+    user_summary_template: str = ""
+    result_preview_fields: List[str] = []
+    tags: List[str] = []
     policy: ToolExecutionPolicy = ToolExecutionPolicy()
 
     def __init__(self) -> None:
         # Avoid shared mutable class-level policy state leaking across instances/tests.
         self.policy = self.__class__.policy.model_copy(deep=True)
+        self.result_preview_fields = list(getattr(self.__class__, "result_preview_fields", []) or [])
+        self.tags = list(getattr(self.__class__, "tags", []) or [])
 
     def descriptor(self) -> ToolDescriptor:
         return ToolDescriptor(
@@ -48,6 +66,14 @@ class BaseTool(ABC):
             category=self.category,
             require_confirmation=self.require_confirmation,
             display_name=self.display_name,
+            read_only=self.read_only,
+            risk_level=self.risk_level,
+            preferred_order=self.preferred_order,
+            use_when=self.use_when,
+            avoid_when=self.avoid_when,
+            user_summary_template=self.user_summary_template,
+            result_preview_fields=self.result_preview_fields,
+            tags=self.tags,
             policy=self.policy,
         )
 

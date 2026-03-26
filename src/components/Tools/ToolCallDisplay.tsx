@@ -1,6 +1,12 @@
 import React from 'react';
 import { ToolCall } from '../../types';
-import { getToolCategoryLabel } from '../../utils/toolMessages';
+import {
+  createToolCallDetailTitle,
+  createToolCallSummary,
+  formatToolTechnicalValue,
+  getToolCategoryLabel,
+  getToolImpactLabel,
+} from '../../utils/toolMessages';
 import { ToolCard } from './ToolCard';
 
 interface ToolCallDisplayProps {
@@ -17,32 +23,32 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   collapsible = true,
   result,
 }) => {
-  const requestedSkillName =
-    toolCall.name === 'skill_loader' && typeof toolCall.arguments.skill_name === 'string'
-      ? toolCall.arguments.skill_name
-      : null;
-  const summary = requestedSkillName
-    ? `请求加载 skill ${requestedSkillName}`
-    : `请求执行 ${toolCall.name}`;
+  const summary = createToolCallSummary(toolCall);
   const category = getToolCategoryLabel(toolCall.name);
+  const impact = getToolImpactLabel(toolCall.name);
+  const detailTitle = createToolCallDetailTitle(toolCall.name);
 
   return (
-    <ToolCard summary={summary} collapsible={collapsible} badges={[category]}>
+    <ToolCard summary={summary} collapsible={collapsible} badges={[category, impact]}>
       <div className="text-xs text-gray-600 dark:text-gray-400">
-        <div className="font-medium">
-          {toolCall.name === 'skill_loader' ? 'Skill request' : 'Arguments'}
+        <div className="rounded-xl border border-gray-200/80 bg-gray-50/80 px-3 py-2 text-[11px] leading-5 text-gray-700 dark:border-gray-700/80 dark:bg-gray-900/40 dark:text-gray-300">
+          {impact === '只读' ? '该操作为只读，不会修改原文件。' : (
+            impact === '高级兜底工具'
+              ? '该操作属于高级兜底工具，只有在专用工具不足时才应使用。'
+              : impact
+          )}
         </div>
+
+        <div className="mt-3 font-medium">{detailTitle}</div>
         <pre className="mt-1 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
-          {JSON.stringify(toolCall.arguments, null, 2)}
+          {formatToolTechnicalValue(toolCall.arguments)}
         </pre>
 
         {result && (
           <>
             <div className="mt-3 font-medium">Output</div>
             <pre className="mt-1 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
-              {typeof result.output === 'string'
-                ? result.output
-                : JSON.stringify(result.output, null, 2)}
+              {formatToolTechnicalValue(result.output)}
             </pre>
           </>
         )}

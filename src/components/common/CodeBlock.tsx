@@ -68,6 +68,22 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ language, code }) => {
       style={resolvedTheme === 'dark' ? oneDark : oneLight}
       language={language}
       PreTag="div"
+      customStyle={{
+        margin: '0.75rem 0',
+        borderRadius: '1rem',
+        padding: '1rem',
+        overflowX: 'auto',
+        border: resolvedTheme === 'dark' ? '1px solid rgb(51 65 85 / 1)' : '1px solid rgb(226 232 240 / 1)',
+        background: resolvedTheme === 'dark' ? 'rgb(15 23 42 / 0.88)' : 'rgb(248 250 252)',
+        boxShadow: resolvedTheme === 'dark' ? 'none' : '0 1px 2px rgba(15, 23, 42, 0.06)',
+      }}
+      codeTagProps={{
+        style: {
+          fontFamily:
+            'ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace',
+          fontSize: '0.9rem',
+        },
+      }}
     >
       {code}
     </SyntaxHighlighter>

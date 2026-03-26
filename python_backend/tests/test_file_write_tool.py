@@ -31,6 +31,24 @@ class FileWriteToolTests(unittest.IsolatedAsyncioTestCase):
 
         temp_dir.cleanup()
 
+    async def test_write_supports_explicit_encoding(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        tool = FileWriteTool()
+        target_path = Path(temp_dir.name) / 'latin1.txt'
+
+        result = await tool.execute(
+            path='latin1.txt',
+            content='café',
+            encoding='latin-1',
+            tool_call_id='tool-2',
+            workspace_path=temp_dir.name,
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(b'caf\xe9', target_path.read_bytes())
+
+        temp_dir.cleanup()
+
 
 if __name__ == '__main__':
     unittest.main()

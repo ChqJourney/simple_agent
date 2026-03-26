@@ -15,6 +15,14 @@ class NodeExecuteTool(BaseTool):
     display_name = "Node Execute"
     category = "execution"
     require_confirmation = True
+    read_only = False
+    risk_level = "high"
+    preferred_order = 92
+    use_when = "Use only as an advanced fallback when specialized tools are insufficient and JavaScript is the most direct way to complete the step."
+    avoid_when = "Avoid for routine document inspection, search, or excerpt reading when dedicated tools can answer the task."
+    user_summary_template = "Using advanced Node.js execution"
+    result_preview_fields = ["exit_code", "stdout", "stderr"]
+    tags = ["execution", "fallback"]
     policy = ToolExecutionPolicy(timeout_seconds=30)
     parameters = {
         "type": "object",

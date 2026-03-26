@@ -20,6 +20,14 @@ class TodoTaskTool(BaseTool):
     description = "Create or update a task entry that matches the workspace task list UI"
     display_name = "Todo Task"
     category = "task"
+    read_only = True
+    risk_level = "low"
+    preferred_order = 60
+    use_when = "Use when you need to reflect plan progress in the task list UI."
+    avoid_when = "Avoid when the action does not change user-visible task state."
+    user_summary_template = "Updating task list"
+    result_preview_fields = ["event", "action", "task"]
+    tags = ["task", "ui-state"]
     parameters = {
         "type": "object",
         "properties": {

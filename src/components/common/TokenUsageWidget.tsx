@@ -7,6 +7,7 @@ interface TokenUsageWidgetProps {
 
 function formatUsageTitle(usage: TokenUsage): string {
   const lines = [
+    'Last request usage',
     `prompt: ${usage.prompt_tokens}${usage.context_length ? ` / context: ${usage.context_length}` : ''}`,
     `completion: ${usage.completion_tokens}`,
     `total: ${usage.total_tokens}`,

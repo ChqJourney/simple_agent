@@ -36,14 +36,25 @@ describe("toolMessages", () => {
         source: "workspace",
         source_path: "/tmp/workspace/.agent/skills/deploy-checks/SKILL.md",
         frontmatter: "name: deploy-checks\ndescription: Deployment checklist",
-        content: "Always verify traffic before deploy.",
+        content: [
+          "Always verify traffic before deploy.",
+          "Check error budget before deploy.",
+          "Review rollback steps.",
+          "Validate metrics dashboards.",
+          "Confirm on-call ownership.",
+          "Post deployment note.",
+          "Archive screenshots.",
+        ].join("\n"),
       },
     });
 
     expect(details).toContain("Skill: deploy-checks");
     expect(details).toContain("Source: workspace");
     expect(details).toContain("Frontmatter:");
-    expect(details).toContain("Instructions:");
+    expect(details).toContain("Instructions preview:");
+    expect(details).toContain("Post deployment note.");
+    expect(details).not.toContain("Archive screenshots.");
+    expect(details).toContain("...");
   });
 
   it("shows stderr in failed execution outputs", () => {

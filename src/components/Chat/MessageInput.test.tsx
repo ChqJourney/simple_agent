@@ -4,6 +4,16 @@ import type { Attachment } from "../../types";
 import { clearActiveDraggedFileDescriptors, setActiveDraggedFileDescriptors } from "../../utils/internalDragState";
 import { MessageInput } from "./MessageInput";
 
+const readFileMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@tauri-apps/plugin-fs", async () => {
+  const actual = await vi.importActual<typeof import("@tauri-apps/plugin-fs")>("@tauri-apps/plugin-fs");
+  return {
+    ...actual,
+    readFile: readFileMock,
+  };
+});
+
 function createDataTransfer(payloads: Record<string, string>, files: File[] = []) {
   return {
     files,
@@ -40,9 +50,23 @@ function createImageDragMetadata(fileName: string, mimeType: string) {
   };
 }
 
+function createClipboardData(files: File[] = []) {
+  return {
+    files,
+    items: files.map((file) => ({
+      kind: "file",
+      type: file.type,
+      getAsFile: () => file,
+    })),
+    types: files.length > 0 ? ["Files"] : [],
+  };
+}
+
 describe("MessageInput", () => {
   beforeEach(() => {
     clearActiveDraggedFileDescriptors();
+    readFileMock.mockReset();
+    readFileMock.mockResolvedValue(Uint8Array.from([137, 80, 78, 71]));
   });
 
   it("keeps the image drop zone hidden until an image drag enters", () => {
@@ -255,6 +279,7 @@ describe("MessageInput", () => {
     await waitFor(() => {
       expect(screen.getByText("diagram.png")).toBeTruthy();
     });
+    expect(screen.getByAltText("Attachment preview: diagram.png")).toBeTruthy();
 
     const textarea = screen.getByPlaceholderText("Type your message...");
     fireEvent.change(textarea, { target: { value: "Review this screenshot" } });
@@ -361,7 +386,51 @@ describe("MessageInput", () => {
     await waitFor(() => {
       expect(screen.getByText("diagram.png")).toBeTruthy();
     });
+    expect(readFileMock).toHaveBeenCalledWith("/workspace/assets/diagram.png");
+    expect(
+      screen.getByAltText("Attachment preview: diagram.png").getAttribute("src")
+    ).toMatch(/^data:image\/png;base64,/);
     expect((textarea as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("adds pasted images as attachments and shows a thumbnail preview", async () => {
+    render(<MessageInput onSend={vi.fn()} supportsImageAttachments={true} />);
+
+    const textarea = screen.getByLabelText("Message input");
+    const imageFile = new File(["image-bytes"], "clipboard.png", { type: "image/png" });
+
+    fireEvent.paste(textarea, {
+      clipboardData: createClipboardData([imageFile]),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("clipboard.png")).toBeTruthy();
+    });
+
+    expect(
+      screen.getByAltText("Attachment preview: clipboard.png").getAttribute("src")
+    ).toMatch(/^data:image\/png;base64,/);
+  });
+
+  it("removes an attachment through its delete button", async () => {
+    render(<MessageInput onSend={vi.fn()} supportsImageAttachments={true} />);
+
+    const textarea = screen.getByLabelText("Message input");
+    const imageFile = new File(["image-bytes"], "clipboard.png", { type: "image/png" });
+
+    fireEvent.paste(textarea, {
+      clipboardData: createClipboardData([imageFile]),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("clipboard.png")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove attachment clipboard.png" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("clipboard.png")).toBeNull();
+    });
   });
 
   it("shows execution mode selector with Regular and Free options", () => {
@@ -379,5 +448,20 @@ describe("MessageInput", () => {
     expect(textarea.rows).toBe(5);
     expect(composer.contains(selector)).toBe(true);
     expect(composer.contains(sendButton)).toBe(true);
+  });
+
+  it("keeps the textarea editable while streaming but does not send", () => {
+    const onSend = vi.fn();
+    render(<MessageInput onSend={onSend} isStreaming={true} />);
+
+    const textarea = screen.getByLabelText("Message input") as HTMLTextAreaElement;
+    expect(textarea.disabled).toBe(false);
+
+    fireEvent.change(textarea, { target: { value: "Draft next request" } });
+    expect(textarea.value).toBe("Draft next request");
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Stop generating" })).toBeTruthy();
   });
 });

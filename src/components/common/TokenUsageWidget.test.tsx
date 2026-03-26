@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { TokenUsageWidget } from "./TokenUsageWidget";
 
 describe("TokenUsageWidget", () => {
-  it("renders the latest prompt/context percentage and usage details", () => {
+  it("renders the latest request prompt/context percentage and usage details", () => {
     render(
       <TokenUsageWidget
         usage={{
@@ -16,6 +16,7 @@ describe("TokenUsageWidget", () => {
     );
 
     expect(screen.getByText("25%")).toBeTruthy();
+    expect(screen.getByTitle(/Last request/)).toBeTruthy();
     expect(screen.getByTitle(/prompt: 32000 \/ context: 128000/)).toBeTruthy();
   });
 

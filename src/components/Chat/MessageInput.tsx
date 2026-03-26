@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { readFile } from '@tauri-apps/plugin-fs';
 import { Attachment, ExecutionMode } from '../../types';
-import { isImagePath } from '../../utils/fileTypes';
+import { getPathExtension, isImagePath } from '../../utils/fileTypes';
 import { clearActiveDraggedFileDescriptors, getActiveDraggedFileDescriptors } from '../../utils/internalDragState';
 import { CustomSelect } from '../common';
 
@@ -87,15 +88,62 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/') || isImagePath(file.name);
 }
 
-function descriptorsToImageAttachments(descriptors: DraggedFileDescriptor[]): Attachment[] {
-  return descriptors
-    .filter((descriptor) => descriptor.isImage || isImagePath(descriptor.path))
-    .map((descriptor) => ({
-      kind: 'image' as const,
+function guessImageMimeType(path: string): string {
+  switch (getPathExtension(path)) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.gif':
+      return 'image/gif';
+    case '.webp':
+      return 'image/webp';
+    case '.bmp':
+      return 'image/bmp';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.ico':
+      return 'image/x-icon';
+    case '.tif':
+    case '.tiff':
+      return 'image/tiff';
+    case '.png':
+    default:
+      return 'image/png';
+  }
+}
+
+async function descriptorToImageAttachment(descriptor: DraggedFileDescriptor): Promise<Attachment> {
+  const name = descriptor.name || descriptor.path.split(/[\\/]/).filter(Boolean).pop() || descriptor.path;
+  const mimeType = guessImageMimeType(descriptor.path);
+
+  try {
+    const bytes = await readFile(descriptor.path);
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const base64 = arrayBufferToBase64(buffer);
+    return {
+      kind: 'image',
       path: descriptor.path,
-      name: descriptor.name || descriptor.path.split(/[\\/]/).filter(Boolean).pop() || descriptor.path,
-      mime_type: undefined,
-    }));
+      name,
+      mime_type: mimeType,
+      data_url: `data:${mimeType};base64,${base64}`,
+    };
+  } catch {
+    return {
+      kind: 'image',
+      path: descriptor.path,
+      name,
+      mime_type: mimeType,
+    };
+  }
+}
+
+async function descriptorsToImageAttachments(descriptors: DraggedFileDescriptor[]): Promise<Attachment[]> {
+  const imageDescriptors = descriptors.filter((descriptor) => descriptor.isImage || isImagePath(descriptor.path));
+  return Promise.all(imageDescriptors.map((descriptor) => descriptorToImageAttachment(descriptor)));
+}
+
+function getAttachmentPreviewSrc(attachment: Attachment): string | null {
+  return attachment.data_url || null;
 }
 
 function hasImagePayload(dataTransfer: DataTransfer): boolean {
@@ -292,7 +340,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const highlightRef = useRef<HTMLDivElement | null>(null);
   const imageDragDepthRef = useRef(0);
   const selectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
-  const isInputDisabled = disabled || isStreaming;
+  const isInputDisabled = disabled;
+  const canSubmitMessage = !disabled && !isStreaming;
   const canAttachImages = supportsImageAttachments && !isStreaming;
 
   const resetImageDragState = () => {
@@ -445,7 +494,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     const actualContent = buildPromptContent('absolutePath');
     const displayContent = buildPromptContent('displayName');
 
-    if ((actualContent || attachments.length > 0) && !isInputDisabled) {
+    if ((actualContent || attachments.length > 0) && canSubmitMessage) {
       onSend(actualContent, attachments, displayContent);
       setContent('');
       setAttachments([]);
@@ -500,13 +549,30 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const appendDroppedImageAttachments = async (dataTransfer: DataTransfer) => {
     const descriptors = parseDraggedDescriptors(dataTransfer.getData(FILE_TREE_DRAG_MIME));
     const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
-    const descriptorAttachments = descriptorsToImageAttachments(effectiveDescriptors);
+    const descriptorAttachments = await descriptorsToImageAttachments(effectiveDescriptors);
     const fileAttachments = (await Promise.all(
       Array.from(dataTransfer.files || []).map((file) => fileToAttachment(file))
     ))
       .filter((attachment): attachment is Attachment => attachment !== null);
 
     appendImageAttachments([...descriptorAttachments, ...fileAttachments]);
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!canAttachImages) {
+      return;
+    }
+
+    const clipboardData = e.clipboardData;
+    const imageFiles = Array.from(clipboardData.files || []).filter((file) => isImageFile(file));
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    e.preventDefault();
+    const pastedAttachments = (await Promise.all(imageFiles.map((file) => fileToAttachment(file))))
+      .filter((attachment): attachment is Attachment => attachment !== null);
+    appendImageAttachments(pastedAttachments);
   };
 
   const handlePromptDrop = async (e: React.DragEvent<HTMLTextAreaElement>) => {
@@ -647,14 +713,30 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         {attachments.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-2">
             {attachments.map((attachment) => (
-              <button
+              <div
                 key={`${attachment.name}:${attachment.path}`}
-                type="button"
-                onClick={() => removeAttachment(attachment)}
-                className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 shadow-sm transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-100 dark:hover:bg-blue-900"
+                className="relative flex w-[7.5rem] flex-col items-start gap-2 rounded-2xl border border-blue-200 bg-blue-50/90 p-2 text-left text-xs font-medium text-blue-700 shadow-sm dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-100"
               >
-                {attachment.name}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(attachment)}
+                  aria-label={`Remove attachment ${attachment.name}`}
+                  title={`Remove attachment ${attachment.name}`}
+                  className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-blue-700 shadow-sm transition-colors hover:bg-white dark:bg-gray-900/90 dark:text-blue-100"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 5l10 10M15 5L5 15" />
+                  </svg>
+                </button>
+                {getAttachmentPreviewSrc(attachment) && (
+                  <img
+                    src={getAttachmentPreviewSrc(attachment) || undefined}
+                    alt={`Attachment preview: ${attachment.name}`}
+                    className="h-20 w-full rounded-xl object-cover"
+                  />
+                )}
+                <span className="block w-full truncate pr-6">{attachment.name}</span>
+              </div>
             ))}
           </div>
         )}
@@ -694,6 +776,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onScroll={handleTextareaScroll}
             onDragOver={(e) => e.preventDefault()}
             onDrop={handlePromptDrop}
+            onPaste={(e) => void handlePaste(e)}
             placeholder={placeholder}
             disabled={isInputDisabled}
             rows={5}
@@ -720,7 +803,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           ) : (
             <button
               type="submit"
-              disabled={disabled || (!content.trim() && attachments.length === 0)}
+              disabled={!canSubmitMessage || (!content.trim() && attachments.length === 0)}
               aria-label="Send message"
               title="Send message"
               className="absolute bottom-3 right-3 flex h-8 w-20 items-center justify-center rounded-lg bg-slate-600 text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"
@@ -741,7 +824,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 ariaLabelledBy="execution-mode-label"
                 value={executionMode}
                 onChange={(nextValue) => onExecutionModeChange?.(nextValue === 'free' ? 'free' : 'regular')}
-                disabled={isInputDisabled}
+                disabled={disabled || isStreaming}
                 options={[
                   { value: 'regular', label: 'Regular', hint: 'Ask before sensitive actions' },
                   { value: 'free', label: 'Free', hint: 'Let the agent run with fewer blocks' },

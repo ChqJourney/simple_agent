@@ -61,6 +61,15 @@ function isSkillLoaderOutput(value: unknown): value is {
   );
 }
 
+function truncateLines(text: string, maxLines: number): string {
+  const lines = text.split('\n');
+  if (lines.length <= maxLines) {
+    return text;
+  }
+
+  return `${lines.slice(0, maxLines).join('\n')}\n...`;
+}
+
 export function getToolCategoryLabel(toolName: string): string {
   if (toolName === 'skill_loader') {
     return 'skill';
@@ -154,7 +163,7 @@ export function renderToolResultDetails(success: boolean, output: unknown, error
         lines.push(`Frontmatter:\n${output.skill.frontmatter}`);
       }
       if (output.skill.content) {
-        lines.push(`Instructions:\n${output.skill.content}`);
+        lines.push(`Instructions preview:\n${truncateLines(output.skill.content, 6)}`);
       }
       return lines.join('\n\n');
     }

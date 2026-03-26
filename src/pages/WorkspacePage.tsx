@@ -1,7 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useWorkspaceStore, useUIStore, useSessionStore } from '../stores';
+import {
+  MAX_PANEL_WIDTH,
+  MIN_PANEL_WIDTH,
+  useWorkspaceStore,
+  useUIStore,
+  useSessionStore,
+} from '../stores';
 import { TopBar, LeftPanel, RightPanel } from '../components/Workspace';
 import { ChatContainer } from '../components/Chat';
 import { RunTimeline } from '../components/Run';
@@ -17,6 +23,10 @@ interface AuthorizedWorkspacePath {
 }
 
 type ResizeSide = 'left' | 'right';
+
+function clampPanelWidth(width: number): number {
+  return Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, Math.round(width)));
+}
 
 export const WorkspacePage: React.FC = () => {
   const { workspaceId } = useParams<{ workspaceId: string }>();
@@ -38,9 +48,14 @@ export const WorkspacePage: React.FC = () => {
   const [backendReady, setBackendReady] = useState(!IS_DEV);
   const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(null);
   const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
+  const [leftPanelPreviewWidth, setLeftPanelPreviewWidth] = useState<number | null>(null);
+  const [rightPanelPreviewWidth, setRightPanelPreviewWidth] = useState<number | null>(null);
   const prevWorkspaceIdRef = useRef<string | null>(null);
   const workspaceLoadRequestIdRef = useRef(0);
   const activeResizeSideRef = useRef<ResizeSide | null>(null);
+
+  const effectiveLeftPanelWidth = leftPanelPreviewWidth ?? leftPanelWidth;
+  const effectiveRightPanelWidth = rightPanelPreviewWidth ?? rightPanelWidth;
 
   useEffect(() => {
     if (workspaceId && workspaceId !== prevWorkspaceIdRef.current) {
@@ -189,17 +204,27 @@ export const WorkspacePage: React.FC = () => {
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
       if (activeResizeSideRef.current === 'left') {
-        setLeftPanelWidth(event.clientX);
+        setLeftPanelPreviewWidth(clampPanelWidth(event.clientX));
       } else if (activeResizeSideRef.current === 'right') {
-        setRightPanelWidth(window.innerWidth - event.clientX);
+        setRightPanelPreviewWidth(clampPanelWidth(window.innerWidth - event.clientX));
       }
     };
 
     const handleMouseUp = () => {
-      if (!activeResizeSideRef.current) {
+      const activeSide = activeResizeSideRef.current;
+      if (!activeSide) {
         return;
       }
 
+      if (activeSide === 'left' && leftPanelPreviewWidth !== null) {
+        setLeftPanelWidth(leftPanelPreviewWidth);
+      }
+      if (activeSide === 'right' && rightPanelPreviewWidth !== null) {
+        setRightPanelWidth(rightPanelPreviewWidth);
+      }
+
+      setLeftPanelPreviewWidth(null);
+      setRightPanelPreviewWidth(null);
       activeResizeSideRef.current = null;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -211,11 +236,16 @@ export const WorkspacePage: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [setLeftPanelWidth, setRightPanelWidth]);
+  }, [leftPanelPreviewWidth, rightPanelPreviewWidth, setLeftPanelWidth, setRightPanelWidth]);
 
   const startResize = (side: ResizeSide) => (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     activeResizeSideRef.current = side;
+    if (side === 'left') {
+      setLeftPanelPreviewWidth(leftPanelWidth);
+    } else {
+      setRightPanelPreviewWidth(rightPanelWidth);
+    }
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
   };
@@ -236,7 +266,7 @@ export const WorkspacePage: React.FC = () => {
           <div
             data-testid="workspace-left-panel"
             className="bg-white/70 dark:bg-gray-900/60"
-            style={{ width: `${leftPanelWidth}px`, minWidth: `${leftPanelWidth}px` }}
+            style={{ width: `${effectiveLeftPanelWidth}px`, minWidth: `${effectiveLeftPanelWidth}px` }}
           >
             <LeftPanel />
           </div>
@@ -292,7 +322,7 @@ export const WorkspacePage: React.FC = () => {
           <div
             data-testid="workspace-right-panel"
             className="bg-white/70 dark:bg-gray-900/60"
-            style={{ width: `${rightPanelWidth}px`, minWidth: `${rightPanelWidth}px` }}
+            style={{ width: `${effectiveRightPanelWidth}px`, minWidth: `${effectiveRightPanelWidth}px` }}
           >
             <RightPanel />
           </div>

@@ -220,7 +220,7 @@ describe("WorkspacePage", () => {
     expect((screen.getByTestId("workspace-right-panel") as HTMLDivElement).style.width).toBe("344px");
   });
 
-  it("updates the left panel width while dragging the resize handle", async () => {
+  it("only persists the left panel width after the resize drag completes", async () => {
     render(<WorkspacePage />);
 
     fireEvent.mouseDown(screen.getByTestId("workspace-left-resize-handle"), {
@@ -229,6 +229,10 @@ describe("WorkspacePage", () => {
     fireEvent.mouseMove(window, {
       clientX: 340,
     });
+
+    expect(useUIStore.getState().leftPanelWidth).not.toBe(340);
+    expect((screen.getByTestId("workspace-left-panel") as HTMLDivElement).style.width).toBe("340px");
+
     fireEvent.mouseUp(window);
 
     await waitFor(() => {

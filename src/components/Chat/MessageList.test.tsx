@@ -151,4 +151,104 @@ describe("MessageList", () => {
     expect(screen.getByText("技能名称")).toBeTruthy();
     expect(screen.getByText("docx")).toBeTruthy();
   });
+
+  it("keeps the current scroll position when the user is reading older messages", async () => {
+    const { rerender } = render(
+      <MessageList
+        messages={[
+          {
+            id: "assistant-1",
+            role: "assistant",
+            content: "First reply",
+            status: "completed",
+          },
+        ]}
+      />
+    );
+
+    const scroller = screen.getByTestId("message-list-scroll") as HTMLDivElement;
+    let scrollHeight = 300;
+
+    Object.defineProperty(scroller, "clientHeight", {
+      configurable: true,
+      value: 100,
+    });
+    Object.defineProperty(scroller, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+
+    scroller.scrollTop = 140;
+    fireEvent.scroll(scroller);
+
+    scrollHeight = 520;
+    rerender(
+      <MessageList
+        messages={[
+          {
+            id: "assistant-1",
+            role: "assistant",
+            content: "First reply",
+            status: "completed",
+          },
+        ]}
+        currentStreamingContent="streaming update"
+        isStreaming={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(scroller.scrollTop).toBe(140);
+    });
+  });
+
+  it("auto-scrolls when the user is already near the bottom", async () => {
+    const { rerender } = render(
+      <MessageList
+        messages={[
+          {
+            id: "assistant-1",
+            role: "assistant",
+            content: "First reply",
+            status: "completed",
+          },
+        ]}
+      />
+    );
+
+    const scroller = screen.getByTestId("message-list-scroll") as HTMLDivElement;
+    let scrollHeight = 300;
+
+    Object.defineProperty(scroller, "clientHeight", {
+      configurable: true,
+      value: 100,
+    });
+    Object.defineProperty(scroller, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+
+    scroller.scrollTop = 175;
+    fireEvent.scroll(scroller);
+
+    scrollHeight = 520;
+    rerender(
+      <MessageList
+        messages={[
+          {
+            id: "assistant-1",
+            role: "assistant",
+            content: "First reply",
+            status: "completed",
+          },
+        ]}
+        currentStreamingContent="streaming update"
+        isStreaming={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(scroller.scrollTop).toBe(520);
+    });
+  });
 });

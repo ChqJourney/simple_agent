@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
 import { useConfigStore, useUIStore } from "../stores";
@@ -238,6 +238,33 @@ describe("SettingsPage", () => {
         })
       );
     });
+  });
+
+  it("times out a slow connection test and surfaces a helpful error", async () => {
+    vi.useFakeTimers();
+    vi.mocked(globalThis.fetch).mockImplementation((_input, init) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    try {
+      render(<SettingsPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Test Primary Connection" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+      });
+
+      expect(
+        screen.getByText("Primary failed: Connection test timed out after 15 seconds")
+      ).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("marks configured providers in the selector and shows a saved hint", () => {

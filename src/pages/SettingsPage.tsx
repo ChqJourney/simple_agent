@@ -42,6 +42,7 @@ const THEME_OPTIONS = [
 
 const APP_FONT_LABEL = 'Inter';
 const APP_FONT_STACK = "'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif";
+const CONNECTION_TEST_TIMEOUT_MS = 15000;
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -213,6 +214,10 @@ export const SettingsPage: React.FC = () => {
     }
 
     setConnectionTestState(profileName, 'testing', null);
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      abortController.abort();
+    }, CONNECTION_TEST_TIMEOUT_MS);
 
     try {
       const authToken = await getBackendAuthToken({ isTestMode: import.meta.env.MODE === 'test' });
@@ -228,6 +233,7 @@ export const SettingsPage: React.FC = () => {
           'Content-Type': 'application/json',
           ...buildBackendAuthHeaders(authToken),
         },
+        signal: abortController.signal,
         body: JSON.stringify({
           provider: profile.provider,
           model: profile.model,
@@ -250,6 +256,15 @@ export const SettingsPage: React.FC = () => {
       }
       setConnectionTestState(profileName, 'error', payload.error || 'Connection test failed');
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setConnectionTestState(
+          profileName,
+          'error',
+          `Connection test timed out after ${Math.round(CONNECTION_TEST_TIMEOUT_MS / 1000)} seconds`
+        );
+        return;
+      }
+
       const message = error instanceof Error ? error.message : 'Connection failed';
       if (message.toLowerCase().includes('failed to fetch')) {
         setConnectionTestState(
@@ -260,6 +275,8 @@ export const SettingsPage: React.FC = () => {
         return;
       }
       setConnectionTestState(profileName, 'error', message);
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   };
 

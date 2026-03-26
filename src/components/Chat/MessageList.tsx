@@ -1,7 +1,16 @@
-import { Fragment, memo, useRef, useEffect } from 'react';
+import { Fragment, memo, useCallback, useEffect, useRef } from 'react';
 import { Message, AssistantStatus } from '../../types';
 import { MessageItem } from './MessageItem';
 import { AssistantTurn } from './AssistantTurn';
+
+const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 32;
+
+function isNearBottom(element: HTMLDivElement): boolean {
+  return (
+    element.scrollHeight - (element.scrollTop + element.clientHeight)
+    <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX
+  );
+}
 
 interface MessageListProps {
   messages: Message[];
@@ -21,9 +30,18 @@ export const MessageList = memo<MessageListProps>(({
   currentToolName,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    if (!listRef.current) {
+      return;
+    }
+
+    shouldAutoScrollRef.current = isNearBottom(listRef.current);
+  }, []);
 
   useEffect(() => {
-    if (listRef.current) {
+    if (listRef.current && shouldAutoScrollRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
   }, [messages, currentStreamingContent, currentReasoningContent]);
@@ -51,7 +69,12 @@ export const MessageList = memo<MessageListProps>(({
   }
 
   return (
-    <div ref={listRef} className="flex-1 overflow-y-auto px-5 py-6 md:px-6">
+    <div
+      ref={listRef}
+      data-testid="message-list-scroll"
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto px-5 py-6 md:px-6"
+    >
       {messages.length === 0 && !isStreaming && (
         <div className="text-center text-gray-500 dark:text-gray-400 py-8">
           <p>Just input what you want</p>

@@ -41,6 +41,9 @@ $noRuntimePortableFileName = Get-PortableArchiveFileName -Version $releaseVersio
 $expectedNoRuntimePortableFileName = "{0}_{1}_windows_x64_no_runtime.zip" -f (Get-SafeArtifactName -Name (Get-AppName)), $releaseVersion
 Assert-Equal -Actual $noRuntimePortableFileName -Expected $expectedNoRuntimePortableFileName -Message "No-runtime portable archive name should be derived from release metadata."
 
+$portableExecutableName = Get-PortableAppExecutableFileName
+Assert-Equal -Actual $portableExecutableName -Expected "work agent.exe" -Message "Portable app executable should preserve the user-facing product name."
+
 $releaseExecutable = Get-ReleaseExecutablePath
 $expectedExecutable = Join-Path $projectRoot ("src-tauri/target/release/{0}.exe" -f (Get-BinaryBaseName))
 Assert-Equal -Actual $releaseExecutable -Expected $expectedExecutable -Message "Release executable path should resolve from package metadata."

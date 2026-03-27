@@ -18,7 +18,7 @@ describe("tauri.conf bundle configuration", () => {
       bundle?: { externalBin?: string[] };
     };
 
-    expect(config.bundle?.externalBin).toContain("binaries/python_backend");
+    expect(config.bundle?.externalBin).toContain("binaries/core");
   });
 
   it("declares embedded runtimes as packaged resources in the Windows override config", () => {

@@ -476,7 +476,7 @@ pub fn run() {
                     ))
                 })?;
                 let sidecar_command = shell
-                    .sidecar("python_backend")
+                    .sidecar("core")
                     .map_err(|error| {
                         std::io::Error::other(format!(
                             "Failed to create Python sidecar command: {error}"

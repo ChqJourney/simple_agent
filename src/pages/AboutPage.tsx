@@ -11,7 +11,7 @@ interface AboutInfo {
 }
 
 const FALLBACK_INFO: AboutInfo = {
-  name: 'work_agent',
+  name: 'work agent',
   version: '0.1.0',
   identifier: 'photonee',
   tauriVersion: 'unknown',

@@ -15,6 +15,6 @@
     "archive": "node-v22.22.1-win-x64.zip"
   },
   "build": {
-    "backendSidecarBaseName": "python_backend"
+    "backendSidecarBaseName": "core"
   }
 }

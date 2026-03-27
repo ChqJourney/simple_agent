@@ -168,7 +168,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='python_backend',
+    name='core',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

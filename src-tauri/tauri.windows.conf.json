@@ -4,7 +4,7 @@
         "active": true,
         "targets": "msi",
         "externalBin": [
-            "binaries/python_backend"
+            "binaries/core"
         ],
         "resources": [
             "resources/runtimes/python",

@@ -21,6 +21,7 @@ $manifest = Get-RuntimeManifest
 $releaseVersion = Get-ReleaseVersion
 $appName = Get-AppName
 $artifactBaseName = Get-SafeArtifactName -Name $appName
+$portableAppExecutableName = Get-PortableAppExecutableFileName
 $releaseExecutable = Get-ReleaseExecutablePath
 $compiledSidecar = Join-Path $projectRoot "src-tauri/target/release/$($manifest.build.backendSidecarBaseName).exe"
 $portableResources = Get-PortableResourcesPath
@@ -60,7 +61,7 @@ Ensure-Directory -Path $fullPortableRoot
 Ensure-Directory -Path $noRuntimePortableRoot
 
 foreach ($portableRoot in @($fullPortableRoot, $noRuntimePortableRoot)) {
-    Copy-Item -LiteralPath $releaseExecutable -Destination (Join-Path $portableRoot (Split-Path $releaseExecutable -Leaf)) -Force
+    Copy-Item -LiteralPath $releaseExecutable -Destination (Join-Path $portableRoot $portableAppExecutableName) -Force
     Copy-Item -LiteralPath $compiledSidecar -Destination (Join-Path $portableRoot (Split-Path $compiledSidecar -Leaf)) -Force
     Ensure-Directory -Path (Join-Path $portableRoot "resources")
 }

@@ -253,6 +253,15 @@ function Get-SafeArtifactName {
     return (($trimmed -replace "[^A-Za-z0-9._-]+", "_").Trim("_"))
 }
 
+function Get-PortableAppExecutableFileName {
+    $appName = Get-AppName
+    if ([string]::IsNullOrWhiteSpace($appName)) {
+        throw "App name cannot be empty."
+    }
+
+    return ("{0}.exe" -f $appName.Trim())
+}
+
 function Get-PortableArchiveFileName {
     param(
         [Parameter(Mandatory = $true)]

@@ -434,7 +434,7 @@ npm run tauri build
 
 ```bash
 cd python_backend
-pyinstaller --onefile --name python_backend main.py
+pyinstaller --onefile --name core main.py
 ```
 
 ## 验证命令

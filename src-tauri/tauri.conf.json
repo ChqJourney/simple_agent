@@ -1,6 +1,6 @@
 {
     "$schema": "https://schema.tauri.app/config/2",
-    "productName": "work_agent",
+    "productName": "work agent",
     "version": "0.1.0",
     "identifier": "photonee",
     "build": {
@@ -13,7 +13,7 @@
         "windows": [
             {
                 "label": "main",
-                "title": "Work Agent - Task based AI Assistant",
+                "title": "work agent",
                 "width": 1024,
                 "height": 768,
                 "minWidth": 800,

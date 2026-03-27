@@ -62,7 +62,7 @@ class SessionTitleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("Investigate runtime contracts", title)
         self.assertEqual("Investigate runtime contracts", session.title)
 
-        reloaded = Session("session-1", self.temp_dir.name)
+        reloaded = Session.from_disk("session-1", self.temp_dir.name)
         self.assertEqual("Investigate runtime contracts", reloaded.title)
         self.assertTrue(
             any(

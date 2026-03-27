@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
 import {
   MAX_PANEL_WIDTH,
   MIN_PANEL_WIDTH,
@@ -24,6 +24,71 @@ interface AuthorizedWorkspacePath {
 
 type ResizeSide = 'left' | 'right';
 
+function hasTransientChatState(session: {
+  isStreaming: boolean;
+  currentStreamingContent: string;
+  currentReasoningContent: string;
+  assistantStatus: string;
+  pendingToolConfirm?: unknown;
+  pendingQuestion?: unknown;
+}): boolean {
+  return (
+    session.isStreaming
+    || Boolean(session.currentStreamingContent)
+    || Boolean(session.currentReasoningContent)
+    || session.assistantStatus === 'waiting'
+    || session.assistantStatus === 'thinking'
+    || session.assistantStatus === 'streaming'
+    || session.assistantStatus === 'tool_calling'
+    || Boolean(session.pendingToolConfirm)
+    || Boolean(session.pendingQuestion)
+  );
+}
+
+function normalizeComparableWorkspacePath(path: string): string {
+  const normalizedSeparators = path.replace(/\\/g, '/');
+  const hasDriveLetter = /^[A-Za-z]:/.test(normalizedSeparators);
+  const parts = normalizedSeparators.split('/');
+  const stack: string[] = [];
+
+  for (const part of parts) {
+    if (!part || part === '.') {
+      continue;
+    }
+
+    if (part === '..') {
+      const last = stack[stack.length - 1];
+      if (last && last !== '..') {
+        stack.pop();
+        continue;
+      }
+    }
+
+    stack.push(part);
+  }
+
+  const normalizedPath = stack.join('/');
+  if (hasDriveLetter) {
+    return normalizedPath.toLowerCase();
+  }
+
+  return normalizedSeparators.startsWith('/') ? `/${normalizedPath}` : normalizedPath;
+}
+
+function hasTauriRuntime(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const tauriWindow = window as Window & {
+    __TAURI_INTERNALS__?: {
+      invoke?: unknown;
+    };
+  };
+
+  return typeof tauriWindow.__TAURI_INTERNALS__?.invoke === 'function';
+}
+
 function clampPanelWidth(width: number): number {
   return Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, Math.round(width)));
 }
@@ -43,8 +108,9 @@ export const WorkspacePage: React.FC = () => {
     resetRightPanelWidth,
     setPageLoading,
   } = useUIStore();
-  const { isConnected, sendWorkspace } = useWebSocket();
-  const { loadSessionsFromDisk, setCurrentSession, currentSessionId } = useSessionStore();
+  const { isConnected, sendWorkspace, interrupt } = useWebSocket();
+  const { loadSessionsFromDisk, setCurrentSession, currentSessionId, sessions } = useSessionStore();
+  const chatSessions = useChatStore((state) => state.sessions);
   const [backendReady, setBackendReady] = useState(!IS_DEV);
   const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(null);
   const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
@@ -53,9 +119,93 @@ export const WorkspacePage: React.FC = () => {
   const prevWorkspaceIdRef = useRef<string | null>(null);
   const workspaceLoadRequestIdRef = useRef(0);
   const activeResizeSideRef = useRef<ResizeSide | null>(null);
+  const leaveNavigationPendingRef = useRef(false);
 
   const effectiveLeftPanelWidth = leftPanelPreviewWidth ?? leftPanelWidth;
   const effectiveRightPanelWidth = rightPanelPreviewWidth ?? rightPanelWidth;
+  const normalizedWorkspacePath = currentWorkspace?.path
+    ? normalizeComparableWorkspacePath(currentWorkspace.path)
+    : null;
+  const activeWorkspaceSessionIds = Array.from(
+    new Set(
+      Object.entries(chatSessions)
+        .filter(([sessionId, chatSession]) => {
+          if (!hasTransientChatState(chatSession)) {
+            return false;
+          }
+
+          if (currentSessionId && sessionId === currentSessionId) {
+            return true;
+          }
+
+          if (!normalizedWorkspacePath) {
+            return false;
+          }
+
+          const sessionMeta = sessions.find((session) => session.session_id === sessionId);
+          if (!sessionMeta?.workspace_path) {
+            return false;
+          }
+
+          return normalizeComparableWorkspacePath(sessionMeta.workspace_path) === normalizedWorkspacePath;
+        })
+        .map(([sessionId]) => sessionId)
+    )
+  );
+  const hasActiveWorkspaceRuns = activeWorkspaceSessionIds.length > 0;
+  useBeforeUnload((event) => {
+    if (!hasActiveWorkspaceRuns) {
+      return;
+    }
+
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
+  const confirmLeaveWorkspace = async () => {
+    if (!hasActiveWorkspaceRuns) {
+      return true;
+    }
+
+    const prompt = 'A task is still running. Leave this workspace and stop it?';
+    const confirmed = hasTauriRuntime()
+      ? await (async () => {
+          const { confirm } = await import('@tauri-apps/plugin-dialog');
+          return confirm(prompt, {
+            title: 'Stop running task?',
+            kind: 'warning',
+            okLabel: 'Leave',
+            cancelLabel: 'Stay',
+          });
+        })()
+      : window.confirm(prompt);
+    if (!confirmed) {
+      return false;
+    }
+
+    activeWorkspaceSessionIds.forEach((sessionId) => {
+      interrupt(sessionId);
+    });
+    return true;
+  };
+
+  const handleNavigateHome = () => {
+    if (leaveNavigationPendingRef.current) {
+      return;
+    }
+
+    leaveNavigationPendingRef.current = true;
+    void (async () => {
+      try {
+        if (!(await confirmLeaveWorkspace())) {
+          return;
+        }
+        navigate('/');
+      } finally {
+        leaveNavigationPendingRef.current = false;
+      }
+    })();
+  };
 
   useEffect(() => {
     if (workspaceId && workspaceId !== prevWorkspaceIdRef.current) {
@@ -259,7 +409,7 @@ export const WorkspacePage: React.FC = () => {
   }
   return (
     <div className="flex h-screen flex-col bg-gray-100 dark:bg-gray-950">
-      <TopBar onOpenTimeline={() => setIsTimelineModalOpen(true)} />
+      <TopBar onOpenTimeline={() => setIsTimelineModalOpen(true)} onBackHome={handleNavigateHome} />
 
       <div className="flex flex-1 overflow-hidden">
         {!leftPanelCollapsed && (

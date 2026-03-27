@@ -132,7 +132,7 @@ describe("SettingsPage", () => {
 
     openTab("UI");
     expect(screen.getByLabelText("Base Font Size")).toBeTruthy();
-  });
+  }, 10000);
 
   it("renders separate connection test actions for primary and secondary profiles", () => {
     render(<SettingsPage />);

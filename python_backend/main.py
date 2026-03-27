@@ -648,7 +648,7 @@ async def handle_user_message(
 
             if session.locked_model is None and active_lock_ref is not None:
                 session.locked_model = active_lock_ref
-                session.save_metadata()
+                await session.save_metadata_async()
                 await send_callback({
                     "type": "session_lock_updated",
                     "session_id": session_id,

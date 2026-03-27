@@ -8,10 +8,17 @@ import { loadSessionHistory, scanSessions } from "../utils/storage";
 const navigateMock = vi.hoisted(() => vi.fn());
 const invokeMock = vi.hoisted(() => vi.fn());
 const sendWorkspaceMock = vi.hoisted(() => vi.fn());
+const interruptMock = vi.hoisted(() => vi.fn());
+const useBeforeUnloadMock = vi.hoisted(() => vi.fn());
+const confirmDialogMock = vi.hoisted(() => vi.fn());
 let currentWorkspaceId = "workspace-1";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock,
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  confirm: confirmDialogMock,
 }));
 
 vi.mock("../utils/storage", async () => {
@@ -25,9 +32,16 @@ vi.mock("../utils/storage", async () => {
 });
 
 vi.mock("../components/Workspace", () => ({
-  TopBar: ({ onOpenTimeline }: { onOpenTimeline?: () => void }) => (
-    <button onClick={onOpenTimeline}>Open Timeline</button>
-  ),
+  TopBar: (props: { onOpenTimeline?: () => void; onBackHome?: () => void }) => {
+    return (
+      <>
+        <button aria-label="Back to home" onClick={() => props.onBackHome?.()}>
+          Back to home
+        </button>
+        <button onClick={() => props.onOpenTimeline?.()}>Open Timeline</button>
+      </>
+    );
+  },
   LeftPanel: () => <div>LeftPanel</div>,
   RightPanel: () => <div>RightPanel</div>,
 }));
@@ -46,6 +60,7 @@ vi.mock("../contexts/WebSocketContext", () => ({
   useWebSocket: () => ({
     isConnected: false,
     sendWorkspace: sendWorkspaceMock,
+    interrupt: interruptMock,
   }),
 }));
 
@@ -55,6 +70,7 @@ vi.mock("react-router-dom", async () => {
     ...actual,
     useNavigate: () => navigateMock,
     useParams: () => ({ workspaceId: currentWorkspaceId }),
+    useBeforeUnload: useBeforeUnloadMock,
   };
 });
 
@@ -65,9 +81,13 @@ describe("WorkspacePage", () => {
   beforeEach(() => {
     localStorage.clear();
     currentWorkspaceId = "workspace-1";
+    vi.restoreAllMocks();
     navigateMock.mockReset();
     invokeMock.mockReset();
     sendWorkspaceMock.mockReset();
+    interruptMock.mockReset();
+    useBeforeUnloadMock.mockReset();
+    confirmDialogMock.mockReset();
     scanSessionsMock.mockReset();
     loadSessionHistoryMock.mockReset();
     scanSessionsMock.mockResolvedValue([]);
@@ -115,6 +135,7 @@ describe("WorkspacePage", () => {
     useChatStore.setState({
       sessions: {},
     });
+    delete (window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__;
   });
 
   it("re-authorizes the saved workspace path before loading desktop files", async () => {
@@ -298,5 +319,234 @@ describe("WorkspacePage", () => {
     });
 
     expect(scanSessionsMock).not.toHaveBeenCalledWith("C:/Users/patri/source/repos/repo");
+  });
+
+  it("confirms before leaving a workspace with active runs and interrupts them when confirmed", async () => {
+    const updatedWorkspace =
+      useWorkspaceStore
+        .getState()
+        .syncWorkspacePath("workspace-1", "C:/Users/patri/source/repos/repo")
+      ?? null;
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      currentWorkspace: updatedWorkspace,
+    }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    scanSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: "session-a",
+        workspace_path: "C:/Users/patri/source/repos/repo",
+        created_at: "2026-03-12T10:00:00.000Z",
+        updated_at: "2026-03-12T10:00:00.000Z",
+      },
+    ]);
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/repo",
+          created_at: "2026-03-12T10:00:00.000Z",
+          updated_at: "2026-03-12T10:00:00.000Z",
+        },
+      ],
+      currentSessionId: "session-a",
+    }));
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().currentWorkspace?.path).toBe(
+        "C:/Users/patri/source/repos/repo"
+      );
+    });
+    act(() => {
+      useSessionStore.setState((state) => ({
+        ...state,
+        sessions: [
+          {
+            session_id: "session-a",
+            workspace_path: "C:/Users/patri/source/repos/../repos/repo",
+            created_at: "2026-03-12T10:00:00.000Z",
+            updated_at: "2026-03-12T10:00:00.000Z",
+          },
+        ],
+        currentSessionId: "session-a",
+      }));
+      useChatStore.setState({
+        sessions: {
+          "session-a": {
+            messages: [],
+            latestUsage: undefined,
+            currentStreamingContent: "",
+            currentReasoningContent: "",
+            isStreaming: true,
+            assistantStatus: "streaming",
+            currentToolName: undefined,
+            pendingToolConfirm: undefined,
+            pendingQuestion: undefined,
+          },
+        },
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+
+    await waitFor(() => {
+      expect(interruptMock).toHaveBeenCalledWith("session-a");
+      expect(navigateMock).toHaveBeenCalledWith("/");
+    });
+  });
+
+  it("stays on the workspace when leaving is cancelled", async () => {
+    const updatedWorkspace =
+      useWorkspaceStore
+        .getState()
+        .syncWorkspacePath("workspace-1", "C:/Users/patri/source/repos/repo")
+      ?? null;
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      currentWorkspace: updatedWorkspace,
+    }));
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    scanSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: "session-a",
+        workspace_path: "C:/Users/patri/source/repos/repo",
+        created_at: "2026-03-12T10:00:00.000Z",
+        updated_at: "2026-03-12T10:00:00.000Z",
+      },
+    ]);
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/repo",
+          created_at: "2026-03-12T10:00:00.000Z",
+          updated_at: "2026-03-12T10:00:00.000Z",
+        },
+      ],
+      currentSessionId: "session-a",
+    }));
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().currentWorkspace?.path).toBe(
+        "C:/Users/patri/source/repos/repo"
+      );
+    });
+    act(() => {
+      useSessionStore.setState((state) => ({
+        ...state,
+        sessions: [
+          {
+            session_id: "session-a",
+            workspace_path: "C:/Users/patri/source/repos/../repos/repo",
+            created_at: "2026-03-12T10:00:00.000Z",
+            updated_at: "2026-03-12T10:00:00.000Z",
+          },
+        ],
+        currentSessionId: "session-a",
+      }));
+      useChatStore.setState({
+        sessions: {
+          "session-a": {
+            messages: [],
+            latestUsage: undefined,
+            currentStreamingContent: "",
+            currentReasoningContent: "",
+            isStreaming: true,
+            assistantStatus: "streaming",
+            currentToolName: undefined,
+            pendingToolConfirm: undefined,
+            pendingQuestion: undefined,
+          },
+        },
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalled();
+    });
+    expect(interruptMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalledWith("/");
+  });
+
+  it("waits for the tauri confirm dialog before leaving the workspace", async () => {
+    const updatedWorkspace =
+      useWorkspaceStore
+        .getState()
+        .syncWorkspacePath("workspace-1", "C:/Users/patri/source/repos/repo")
+      ?? null;
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      currentWorkspace: updatedWorkspace,
+    }));
+    (window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__ = {
+      invoke: vi.fn(),
+    };
+
+    let resolveConfirm: ((value: boolean) => void) | undefined;
+    confirmDialogMock.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirm = resolve;
+        })
+    );
+
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().currentWorkspace?.path).toBe(
+        "C:/Users/patri/source/repos/repo"
+      );
+    });
+
+    act(() => {
+      useSessionStore.setState((state) => ({
+        ...state,
+        sessions: [
+          {
+            session_id: "session-a",
+            workspace_path: "C:/Users/patri/source/repos/../repos/repo",
+            created_at: "2026-03-12T10:00:00.000Z",
+            updated_at: "2026-03-12T10:00:00.000Z",
+          },
+        ],
+        currentSessionId: "session-a",
+      }));
+      useChatStore.setState({
+        sessions: {
+          "session-a": {
+            messages: [],
+            latestUsage: undefined,
+            currentStreamingContent: "",
+            currentReasoningContent: "",
+            isStreaming: true,
+            assistantStatus: "streaming",
+            currentToolName: undefined,
+            pendingToolConfirm: undefined,
+            pendingQuestion: undefined,
+          },
+        },
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+
+    await waitFor(() => {
+      expect(confirmDialogMock).toHaveBeenCalled();
+    });
+    expect(interruptMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
+
+    resolveConfirm?.(false);
+
+    await waitFor(() => {
+      expect(interruptMock).not.toHaveBeenCalled();
+      expect(navigateMock).not.toHaveBeenCalled();
+    });
   });
 });

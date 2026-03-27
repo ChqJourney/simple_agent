@@ -57,7 +57,7 @@ async def maybe_generate_session_title(
     if not title:
         return None
 
-    session.set_title(title)
+    session.set_title_in_memory(title)
     await send_callback(
         {
             "type": "session_title_updated",
@@ -65,6 +65,7 @@ async def maybe_generate_session_title(
             "title": title,
         }
     )
+    await session.save_metadata_async()
     return title
 
 

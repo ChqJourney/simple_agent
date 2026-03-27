@@ -82,7 +82,7 @@ class Agent:
         attachments: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         self.reset_interrupt()
-        session.add_message(Message(role="user", content=user_message, attachments=attachments))
+        await session.add_message_async(Message(role="user", content=user_message, attachments=attachments))
         run_id = str(uuid.uuid4())
 
         await self.user_manager.send_to_frontend({
@@ -117,7 +117,7 @@ class Agent:
                         latest_usage = self.llm.get_latest_usage()
                     if latest_usage:
                         assistant_message.usage = latest_usage
-                    session.add_message(assistant_message)
+                    await session.add_message_async(assistant_message)
                     completed_payload: Dict[str, Any] = {"finish_reason": "assistant_response"}
                     if latest_usage:
                         completed_payload["usage"] = latest_usage
@@ -134,7 +134,7 @@ class Agent:
                     })
                     return
 
-                session.add_message(assistant_message)
+                await session.add_message_async(assistant_message)
                 tool_results = await self._execute_tools(assistant_message.tool_calls, session, run_id)
 
                 for result in tool_results:
@@ -147,7 +147,7 @@ class Agent:
                             if stderr:
                                 parts.append(f"stderr: {stderr}")
                         content = "\n".join(parts)
-                    session.add_message(Message(
+                    await session.add_message_async(Message(
                         role="tool",
                         tool_call_id=result.tool_call_id,
                         name=result.tool_name,
@@ -169,7 +169,7 @@ class Agent:
         except RunInterrupted as interrupted:
             partial_message = getattr(interrupted, "partial_message", None)
             if partial_message is not None:
-                session.add_message(partial_message)
+                await session.add_message_async(partial_message)
             await self._emit_run_event(session, run_id, "run_interrupted")
             await self.user_manager.send_to_frontend({
                 "type": "interrupted",
@@ -758,7 +758,7 @@ class Agent:
                     "reason": reason
                 })
 
-                session.add_message(Message(
+                await session.add_message_async(Message(
                     role="tool",
                     tool_call_id=tool_call_id,
                     name="tool_decision",

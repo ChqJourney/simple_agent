@@ -59,9 +59,39 @@ class Session:
         self.locked_model = locked_model
         self.file_path = self._get_file_path()
         self.metadata_file_path = self._get_metadata_file_path()
-        self._ensure_directory()
-        self._load_metadata()
-        self.load_history()
+
+    @classmethod
+    def from_disk(
+        cls,
+        session_id: str,
+        workspace_path: str,
+        title: Optional[str] = None,
+        locked_model: Optional[LockedModelRef] = None,
+    ) -> "Session":
+        session = cls(
+            session_id,
+            workspace_path,
+            title=title,
+            locked_model=locked_model,
+        )
+        session._load_from_disk()
+        return session
+
+    @classmethod
+    async def load_or_create(
+        cls,
+        session_id: str,
+        workspace_path: str,
+        title: Optional[str] = None,
+        locked_model: Optional[LockedModelRef] = None,
+    ) -> "Session":
+        return await asyncio.to_thread(
+            cls.from_disk,
+            session_id,
+            workspace_path,
+            title,
+            locked_model,
+        )
 
     def _get_file_path(self) -> Path:
         return Path(self.workspace_path) / ".agent" / "sessions" / f"{self.session_id}.jsonl"
@@ -72,9 +102,25 @@ class Session:
     def _get_metadata_file_path(self) -> Path:
         return Path(self.workspace_path) / ".agent" / "sessions" / f"{self.session_id}.meta.json"
 
-    def add_message(self, message: Message) -> None:
+    def _load_from_disk(self) -> None:
+        self._ensure_directory()
+        self._load_metadata()
+        self.load_history()
+
+    def _record_message(self, message: Message) -> None:
         self.messages.append(message)
         self.updated_at = datetime.now(timezone.utc)
+
+    def add_message(self, message: Message) -> None:
+        self._record_message(message)
+        self._persist_message_sync(message)
+
+    async def add_message_async(self, message: Message) -> None:
+        self._record_message(message)
+        await asyncio.to_thread(self._persist_message_sync, message)
+
+    def _persist_message_sync(self, message: Message) -> None:
+        self._ensure_directory()
         self._append_to_file(message)
         self.save_metadata()
 
@@ -103,17 +149,29 @@ class Session:
 
     def save_metadata(self) -> None:
         try:
+            self._ensure_directory()
             with self.metadata_file_path.open("w", encoding="utf-8") as f:
                 json.dump(self.to_metadata().model_dump(mode="json"), f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"Failed to save session metadata: {e}")
 
-    def set_title(self, title: str) -> None:
+    async def save_metadata_async(self) -> None:
+        await asyncio.to_thread(self.save_metadata)
+
+    def set_title_in_memory(self, title: str) -> None:
         self.title = title
         self.updated_at = datetime.now(timezone.utc)
+
+    def set_title(self, title: str) -> None:
+        self.set_title_in_memory(title)
         self.save_metadata()
 
+    async def set_title_async(self, title: str) -> None:
+        self.set_title_in_memory(title)
+        await self.save_metadata_async()
+
     def load_history(self) -> None:
+        self.messages = []
         if not self.file_path.exists():
             return
 
@@ -296,7 +354,7 @@ class UserManager:
                 if isinstance(value, list)
             }
 
-    def _persist_tool_policies(self) -> None:
+    def _persist_tool_policies_sync(self) -> None:
         payload = {
             "session_tool_policies": {
                 session_id: sorted(tool_names)
@@ -316,6 +374,9 @@ class UserManager:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.warning("Failed to persist tool policies to %s: %s", self.policy_store_path, e)
+
+    async def _persist_tool_policies(self) -> None:
+        await asyncio.to_thread(self._persist_tool_policies_sync)
 
     async def register_connection(self, connection_id: ConnectionId, callback: SendCallback) -> None:
         async with self._lock:
@@ -375,7 +436,11 @@ class UserManager:
             if session_id in self.sessions:
                 return self.sessions[session_id]
 
-            session = Session(session_id, workspace_path)
+        session = await Session.load_or_create(session_id, workspace_path)
+
+        async with self._lock:
+            if session_id in self.sessions:
+                return self.sessions[session_id]
             self.sessions[session_id] = session
             return session
 
@@ -397,7 +462,7 @@ class UserManager:
                 removed = False
 
         if should_persist:
-            self._persist_tool_policies()
+            await self._persist_tool_policies()
         return removed
 
     def set_session_execution_mode(
@@ -636,7 +701,7 @@ class UserManager:
                 handled = False
 
         if should_persist:
-            self._persist_tool_policies()
+            await self._persist_tool_policies()
         return handled
 
     async def cancel_tool_confirmation(self, tool_call_id: str) -> bool:

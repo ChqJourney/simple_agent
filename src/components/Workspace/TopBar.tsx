@@ -5,9 +5,10 @@ import { WSStatusIndicator, ModelDisplay, TokenUsageWidget } from '../common';
 
 interface TopBarProps {
   onOpenTimeline?: () => void;
+  onBackHome?: () => void;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline }) => {
+export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) => {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -30,7 +31,13 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline }) => {
           </svg>
         </button>
         <button
-          onClick={() => navigate('/')}
+          onClick={() => {
+            if (onBackHome) {
+              onBackHome();
+              return;
+            }
+            navigate('/');
+          }}
           className="rounded-xl p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
           title="Back to home"
         >

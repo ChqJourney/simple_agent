@@ -52,6 +52,10 @@ describe("tauri.conf bundle configuration", () => {
       };
     };
 
+    expect(config.app?.security?.csp).toContain("http://127.0.0.1:8765");
+    expect(config.app?.security?.csp).toContain("ws://127.0.0.1:8765");
+    expect(config.app?.security?.csp).not.toContain("http://localhost:8765");
+    expect(config.app?.security?.csp).not.toContain("ws://localhost:8765");
     expect(config.app?.security?.csp).not.toContain("ws://localhost:1421");
     expect(config.app?.security?.devCsp).toContain("ws://localhost:1421");
     expect(config.app?.security?.devCsp).toContain("ws://127.0.0.1:1421");

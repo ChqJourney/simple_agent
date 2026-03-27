@@ -34,7 +34,7 @@ class MultimodalMessageTests(unittest.TestCase):
                 )
             )
 
-            reloaded = Session("session-1", temp_dir)
+            reloaded = Session.from_disk("session-1", temp_dir)
 
             self.assertEqual(1, len(reloaded.messages))
             self.assertEqual("image", reloaded.messages[0].attachments[0]["kind"])
@@ -113,6 +113,23 @@ class MultimodalMessageTests(unittest.TestCase):
             self.assertEqual("assistant", llm_messages[0]["role"])
             self.assertEqual("Need to check file layout first.", llm_messages[0]["reasoning_content"])
             self.assertEqual("read_file", llm_messages[0]["tool_calls"][0]["function"]["name"])
+
+
+class AsyncSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_async_session_persistence_round_trips_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session = await Session.load_or_create("session-async", temp_dir)
+            await session.add_message_async(
+                Message(
+                    role="user",
+                    content="Persist this asynchronously",
+                )
+            )
+
+            reloaded = await Session.load_or_create("session-async", temp_dir)
+
+            self.assertEqual(1, len(reloaded.messages))
+            self.assertEqual("Persist this asynchronously", reloaded.messages[0].content)
 
 
 if __name__ == "__main__":

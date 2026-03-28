@@ -20,7 +20,8 @@ class ReadDocumentSegmentTool(BaseTool):
     name = "read_document_segment"
     description = (
         "Read a narrow segment from a workspace document using a structured locator. "
-        "Supports text documents, PDF files, Word documents, Excel workbooks, and PowerPoint decks."
+        "Supports text documents, PDF files, Word documents, Excel workbooks, and PowerPoint decks. "
+        "Use locator.type plus the matching locator fields for the target format."
     )
     display_name = "Read Document Segment"
     category = "workspace"
@@ -41,7 +42,12 @@ class ReadDocumentSegmentTool(BaseTool):
             },
             "locator": {
                 "type": "object",
-                "description": "Structured location descriptor for the segment you want to read.",
+                "description": (
+                    "Structured location descriptor for the segment you want to read. "
+                    "Examples: {type:'pdf_line_range', page_number:12, line_start:30, line_end:40}, "
+                    "{type:'word_table_range', table_index:2, row_start:5, row_end:9}, "
+                    "{type:'excel_range', sheet_name:'Sheet1', row_start:2, row_end:20}."
+                ),
                 "properties": {
                     "type": {
                         "type": "string",
@@ -55,41 +61,45 @@ class ReadDocumentSegmentTool(BaseTool):
                             "excel_range",
                             "pptx_slide_range",
                         ],
+                        "description": "Segment kind. Prefer setting this explicitly so the tool can choose the correct locator fields.",
                     },
-                    "start": {"type": "integer"},
-                    "end": {"type": "integer"},
-                    "line_start": {"type": "integer"},
-                    "line_end": {"type": "integer"},
-                    "char_start": {"type": "integer"},
-                    "char_end": {"type": "integer"},
-                    "page_start": {"type": "integer"},
-                    "page_end": {"type": "integer"},
-                    "page_number": {"type": "integer"},
-                    "paragraph_start": {"type": "integer"},
-                    "paragraph_end": {"type": "integer"},
-                    "table_index": {"type": "integer"},
-                    "row_start": {"type": "integer"},
-                    "row_end": {"type": "integer"},
-                    "column_start": {"type": "integer"},
-                    "column_end": {"type": "integer"},
-                    "sheet_name": {"type": "string"},
-                    "slide_start": {"type": "integer"},
-                    "slide_end": {"type": "integer"},
-                    "slide_number": {"type": "integer"},
+                    "start": {"type": "integer", "description": "Generic start index alias for simple ranges."},
+                    "end": {"type": "integer", "description": "Generic end index alias for simple ranges."},
+                    "line_start": {"type": "integer", "description": "Start line for text_line_range or pdf_line_range."},
+                    "line_end": {"type": "integer", "description": "End line for text_line_range or pdf_line_range."},
+                    "char_start": {"type": "integer", "description": "1-based start character for text_char_range."},
+                    "char_end": {"type": "integer", "description": "1-based end character for text_char_range."},
+                    "page_start": {"type": "integer", "description": "Start page for pdf_page_range."},
+                    "page_end": {"type": "integer", "description": "End page for pdf_page_range."},
+                    "page_number": {"type": "integer", "description": "Single PDF page for pdf_line_range."},
+                    "paragraph_start": {"type": "integer", "description": "Start paragraph for word_paragraph_range."},
+                    "paragraph_end": {"type": "integer", "description": "End paragraph for word_paragraph_range."},
+                    "table_index": {"type": "integer", "description": "1-based Word table index for word_table_range."},
+                    "row_start": {"type": "integer", "description": "Start row for word_table_range or excel_range."},
+                    "row_end": {"type": "integer", "description": "End row for word_table_range or excel_range."},
+                    "column_start": {"type": "integer", "description": "Start column for word_table_range or excel_range."},
+                    "column_end": {"type": "integer", "description": "End column for word_table_range or excel_range."},
+                    "sheet_name": {"type": "string", "description": "Excel sheet name for excel_range."},
+                    "slide_start": {"type": "integer", "description": "Start slide for pptx_slide_range."},
+                    "slide_end": {"type": "integer", "description": "End slide for pptx_slide_range."},
+                    "slide_number": {"type": "integer", "description": "Single slide alias for pptx_slide_range."},
                 },
                 "additionalProperties": False,
             },
             "include_context": {
                 "type": "integer",
                 "default": 0,
+                "description": "How much nearby context to include. Mainly used for PDF lines, Word paragraphs/tables, and Excel rows.",
             },
             "max_chars": {
                 "type": "integer",
                 "default": MAX_SEGMENT_CHARS,
+                "description": "Maximum characters to return before truncation.",
             },
             "encoding": {
                 "type": "string",
                 "default": "utf-8",
+                "description": "Text file encoding. Only used for plain text files.",
             },
         },
         "required": ["path", "locator"],

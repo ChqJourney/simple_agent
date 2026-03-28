@@ -48,6 +48,7 @@ class GetDocumentStructureTool(BaseTool):
             "max_nodes": {
                 "type": "integer",
                 "default": 200,
+                "description": "Maximum number of structure nodes to return. Use a smaller value for large files.",
             },
         },
         "required": ["path"],

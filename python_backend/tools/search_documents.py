@@ -50,7 +50,8 @@ class SearchDocumentsTool(BaseTool):
     name = "search_documents"
     description = (
         "Search across workspace documents and return structured matches with location metadata. "
-        "Supports text documents, PDF files, Word documents, Excel workbooks, and PowerPoint decks."
+        "Supports text documents, PDF files, Word documents, Excel workbooks, and PowerPoint decks. "
+        "Use mode='plain' for literal keyword search and mode='regex' only for true regular expressions."
     )
     display_name = "Search Documents"
     category = "workspace"
@@ -67,33 +68,37 @@ class SearchDocumentsTool(BaseTool):
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Search term or regular expression",
+                "description": "Search text. In mode='plain' this is matched literally; in mode='regex' this is a Python regular expression.",
             },
             "path": {
                 "type": "string",
-                "description": "Absolute path or path relative to current workspace",
+                "description": "Absolute path or path relative to current workspace. Use '.' to search the whole workspace.",
                 "default": ".",
             },
             "mode": {
                 "type": "string",
                 "enum": ["plain", "regex"],
                 "default": "plain",
+                "description": "Search mode: 'plain' treats query as literal text, 'regex' treats query as a regular expression.",
             },
             "file_glob": {
                 "type": "string",
-                "description": "Optional glob pattern such as '*.pdf' or '*.md'",
+                "description": "Optional file filter such as '*.pdf', '*.docx', '*.xlsx', or '*.md'.",
             },
             "case_sensitive": {
                 "type": "boolean",
                 "default": False,
+                "description": "Whether matching should respect uppercase/lowercase differences.",
             },
             "max_results": {
                 "type": "integer",
                 "default": 50,
+                "description": "Maximum number of matches to return across all files.",
             },
             "context_lines": {
                 "type": "integer",
                 "default": 2,
+                "description": "Amount of nearby context to include. For text and PDF this means lines; for Word and Excel this means paragraphs or rows.",
             },
         },
         "required": ["query"],

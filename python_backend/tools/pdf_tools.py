@@ -17,13 +17,41 @@ from .path_utils import resolve_workspace_path
 
 def _filter_properties() -> dict[str, dict[str, Any]]:
     return {
-        "exclude_header_footer": {"type": "boolean", "default": True},
-        "header_ratio": {"type": "number", "default": 0.05},
-        "footer_ratio": {"type": "number", "default": 0.05},
-        "exclude_watermark": {"type": "boolean", "default": True},
-        "angle_threshold": {"type": "number", "default": 5.0},
-        "exclude_tables": {"type": "boolean", "default": True},
-        "y_tolerance": {"type": "number", "default": 3.0},
+        "exclude_header_footer": {
+            "type": "boolean",
+            "default": True,
+            "description": "Whether repeated headers and footers should be filtered out.",
+        },
+        "header_ratio": {
+            "type": "number",
+            "default": 0.05,
+            "description": "Top page area treated as header when header/footer filtering is enabled.",
+        },
+        "footer_ratio": {
+            "type": "number",
+            "default": 0.05,
+            "description": "Bottom page area treated as footer when header/footer filtering is enabled.",
+        },
+        "exclude_watermark": {
+            "type": "boolean",
+            "default": True,
+            "description": "Whether rotated watermark-like text should be filtered out.",
+        },
+        "angle_threshold": {
+            "type": "number",
+            "default": 5.0,
+            "description": "Rotation threshold used when filtering watermark-like text.",
+        },
+        "exclude_tables": {
+            "type": "boolean",
+            "default": True,
+            "description": "Whether detected table regions should be excluded from page text extraction.",
+        },
+        "y_tolerance": {
+            "type": "number",
+            "default": 3.0,
+            "description": "Vertical tolerance used to merge nearby PDF text spans into visual lines.",
+        },
     }
 
 
@@ -156,6 +184,7 @@ class PdfGetOutlineTool(PdfToolMixin, BaseTool):
             "max_depth": {
                 "type": "integer",
                 "default": 4,
+                "description": "Maximum outline depth to return. Use a larger value for deeper chapter trees.",
             },
         },
         "required": ["path"],
@@ -228,6 +257,7 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
                 "type": "string",
                 "enum": ["page_text", "visual_lines", "blocks"],
                 "default": "page_text",
+                "description": "Output shape: 'page_text' returns one text blob per page, 'visual_lines' returns visual lines, 'blocks' returns text blocks.",
             },
             **_filter_properties(),
         },
@@ -291,7 +321,11 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
 
 class PdfReadLinesTool(PdfToolMixin, BaseTool):
     name = "pdf_read_lines"
-    description = "Read specific visual line ranges from a PDF page, optionally including nearby context lines."
+    description = (
+        "Read specific visual line ranges from one PDF page. "
+        "Use exact line selectors like '8', '8-12', or '8,12-15'. "
+        "This tool does not support line_numbers='all'; use pdf_read_pages for whole-page reads."
+    )
     display_name = "PDF Read Lines"
     category = "workspace"
     read_only = True
@@ -315,11 +349,12 @@ class PdfReadLinesTool(PdfToolMixin, BaseTool):
             },
             "line_numbers": {
                 "type": "string",
-                "description": "Line range such as '1-3,8-10'",
+                "description": "Line selector such as '8', '8-12', or '8,12-15'. Do not use 'all'.",
             },
             "include_context": {
                 "type": "integer",
                 "default": 0,
+                "description": "Number of nearby visual lines to include before and after the requested lines.",
             },
             **_filter_properties(),
         },
@@ -384,7 +419,10 @@ class PdfReadLinesTool(PdfToolMixin, BaseTool):
 
 class PdfSearchTool(PdfToolMixin, BaseTool):
     name = "pdf_search"
-    description = "Search PDF content by page or by visual line with structured location metadata."
+    description = (
+        "Search PDF content with structured location metadata. "
+        "Use search_mode='page' for broad page-level discovery and search_mode='line' for precise visual-line matches."
+    )
     display_name = "PDF Search"
     category = "workspace"
     read_only = True
@@ -404,16 +442,18 @@ class PdfSearchTool(PdfToolMixin, BaseTool):
             },
             "query": {
                 "type": "string",
-                "description": "Search keyword",
+                "description": "Literal search keyword or phrase.",
             },
             "top_k": {
                 "type": "integer",
                 "default": 5,
+                "description": "Maximum number of matches to return.",
             },
             "search_mode": {
                 "type": "string",
                 "enum": ["page", "line"],
                 "default": "page",
+                "description": "Result granularity: 'page' returns broader page matches, 'line' returns precise visual-line hits.",
             },
             **_filter_properties(),
         },

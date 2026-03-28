@@ -53,6 +53,14 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(search_descriptor.read_only)
         self.assertEqual("low", search_descriptor.risk_level)
         self.assertIn("search", search_descriptor.tags)
+        self.assertIn("mode='plain'", search_descriptor.description)
+
+        read_descriptor = next(d for d in descriptors if d.name == "read_document_segment")
+        locator_schema = read_descriptor.parameters["properties"]["locator"]
+        self.assertIn("pdf_line_range", locator_schema["description"])
+
+        pdf_search_descriptor = next(d for d in descriptors if d.name == "pdf_search")
+        self.assertIn("search_mode='page'", pdf_search_descriptor.description)
 
     async def test_todo_and_question_tools_return_frontend_friendly_event_shapes(self) -> None:
         todo_result = await TodoTaskTool().execute(

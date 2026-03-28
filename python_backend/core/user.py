@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Set
 
 from pydantic import BaseModel, ConfigDict, Field
-from runtime.contracts import LockedModelRef, SessionMetadata
+from runtime.contracts import (
+    LockedModelRef,
+    SessionCompactionRecord,
+    SessionMemorySnapshot,
+    SessionMetadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +64,8 @@ class Session:
         self.locked_model = locked_model
         self.file_path = self._get_file_path()
         self.metadata_file_path = self._get_metadata_file_path()
+        self.memory_file_path = self.get_memory_file_path()
+        self.compactions_file_path = self.get_compactions_file_path()
 
     @classmethod
     def from_disk(
@@ -101,6 +108,12 @@ class Session:
 
     def _get_metadata_file_path(self) -> Path:
         return Path(self.workspace_path) / ".agent" / "sessions" / f"{self.session_id}.meta.json"
+
+    def get_memory_file_path(self) -> Path:
+        return Path(self.workspace_path) / ".agent" / "sessions" / f"{self.session_id}.memory.json"
+
+    def get_compactions_file_path(self) -> Path:
+        return Path(self.workspace_path) / ".agent" / "sessions" / f"{self.session_id}.compactions.jsonl"
 
     def _load_from_disk(self) -> None:
         self._ensure_directory()
@@ -158,6 +171,40 @@ class Session:
     async def save_metadata_async(self) -> None:
         await asyncio.to_thread(self.save_metadata)
 
+    def load_memory(self) -> Optional[SessionMemorySnapshot]:
+        if not self.memory_file_path.exists():
+            return None
+
+        try:
+            with self.memory_file_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            return SessionMemorySnapshot.model_validate(data)
+        except Exception as e:
+            logger.warning("Failed to load session memory from %s: %s", self.memory_file_path, e)
+            return None
+
+    def save_memory(self, memory: SessionMemorySnapshot) -> None:
+        try:
+            self._ensure_directory()
+            with self.memory_file_path.open("w", encoding="utf-8") as f:
+                json.dump(memory.model_dump(mode="json"), f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error("Failed to save session memory to %s: %s", self.memory_file_path, e)
+
+    async def save_memory_async(self, memory: SessionMemorySnapshot) -> None:
+        await asyncio.to_thread(self.save_memory, memory)
+
+    def append_compaction_record(self, record: SessionCompactionRecord) -> None:
+        try:
+            self._ensure_directory()
+            with self.compactions_file_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record.model_dump(mode="json"), ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.error("Failed to append compaction record to %s: %s", self.compactions_file_path, e)
+
+    async def append_compaction_record_async(self, record: SessionCompactionRecord) -> None:
+        await asyncio.to_thread(self.append_compaction_record, record)
+
     def set_title_in_memory(self, title: str) -> None:
         self.title = title
         self.updated_at = datetime.now(timezone.utc)
@@ -199,9 +246,17 @@ class Session:
         except Exception as e:
             logger.error(f"Failed to load session history: {e}")
 
-    def get_messages_for_llm(self) -> List[Dict[str, Any]]:
+    def get_messages_for_llm(
+        self,
+        include_reasoning_content: bool = False,
+        start_index: int = 0,
+        end_index: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         result = []
-        for msg in self.messages:
+        normalized_start_index = max(0, int(start_index))
+        normalized_end_index = len(self.messages) if end_index is None else max(normalized_start_index, int(end_index))
+
+        for msg in self.messages[normalized_start_index:normalized_end_index]:
             if msg.role == "tool" and msg.name == "tool_decision":
                 continue
 
@@ -216,10 +271,24 @@ class Session:
                 llm_msg["tool_call_id"] = msg.tool_call_id
             if msg.name is not None:
                 llm_msg["name"] = msg.name
-            if msg.reasoning_content is not None:
+            # Keep reasoning persisted for audit/UI. By default we still replay reasoning for
+            # assistant tool-call messages because some providers require it for tool round-trips.
+            should_include_reasoning = include_reasoning_content or (
+                msg.role == "assistant"
+                and msg.tool_calls is not None
+                and msg.reasoning_content is not None
+            )
+            if should_include_reasoning:
                 llm_msg["reasoning_content"] = msg.reasoning_content
             result.append(llm_msg)
         return result
+
+    def get_latest_usage(self) -> Optional[Dict[str, Any]]:
+        for message in reversed(self.messages):
+            if message.role != "assistant" or not isinstance(message.usage, dict):
+                continue
+            return dict(message.usage)
+        return None
 
     @staticmethod
     def _build_multimodal_content(
@@ -281,6 +350,16 @@ class Session:
                 self.metadata_file_path.unlink()
             except Exception as e:
                 logger.error(f"Failed to remove session metadata file: {e}")
+        if self.memory_file_path.exists():
+            try:
+                self.memory_file_path.unlink()
+            except Exception as e:
+                logger.error("Failed to remove session memory file: %s", e)
+        if self.compactions_file_path.exists():
+            try:
+                self.compactions_file_path.unlink()
+            except Exception as e:
+                logger.error("Failed to remove session compactions file: %s", e)
 
     def to_metadata(self) -> SessionMetadata:
         return SessionMetadata(

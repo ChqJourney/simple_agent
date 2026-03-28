@@ -15,6 +15,10 @@ const EVENT_LABELS: Record<string, string> = {
   tool_execution_completed: 'Tool completed',
   skill_catalog_prepared: 'Skills indexed',
   skill_loaded: 'Skill loaded',
+  session_compaction_started: 'Compaction started',
+  session_compaction_completed: 'Compaction completed',
+  session_compaction_failed: 'Compaction failed',
+  session_compaction_skipped: 'Compaction skipped',
   run_completed: 'Run completed',
   run_failed: 'Run failed',
   run_interrupted: 'Run interrupted',
@@ -32,9 +36,28 @@ function formatEventDetails(event: RunEventRecord): string | null {
   const attempt = typeof event.payload.attempt === 'number' ? event.payload.attempt : null;
   const hitCount = typeof event.payload.hit_count === 'number' ? event.payload.hit_count : null;
   const skillName = typeof event.payload.skill_name === 'string' ? event.payload.skill_name : null;
+  const strategy = typeof event.payload.strategy === 'string' ? event.payload.strategy : null;
+  const reason = typeof event.payload.reason === 'string' ? event.payload.reason : null;
+  const postTokensEstimate = typeof event.payload.post_tokens_estimate === 'number'
+    ? event.payload.post_tokens_estimate
+    : null;
   const skillNames = Array.isArray(event.payload.skill_names)
     ? event.payload.skill_names.filter((value): value is string => typeof value === 'string')
     : [];
+
+  if (event.event_type.startsWith('session_compaction_')) {
+    const details: string[] = [];
+    if (strategy) {
+      details.push(strategy);
+    }
+    if (postTokensEstimate !== null && event.event_type === 'session_compaction_completed') {
+      details.push(`${postTokensEstimate} tokens`);
+    }
+    if (reason && event.event_type === 'session_compaction_skipped') {
+      details.push(reason);
+    }
+    return details.length > 0 ? details.join(' - ') : null;
+  }
 
   if (toolName) {
     return toolName;
@@ -55,10 +78,10 @@ function formatEventDetails(event: RunEventRecord): string | null {
 }
 
 function eventTone(eventType: string): string {
-  if (eventType === 'run_failed' || eventType === 'run_interrupted') {
+  if (eventType === 'run_failed' || eventType === 'run_interrupted' || eventType === 'session_compaction_failed') {
     return 'text-red-600 dark:text-red-400';
   }
-  if (eventType === 'run_completed') {
+  if (eventType === 'run_completed' || eventType === 'session_compaction_completed') {
     return 'text-green-600 dark:text-green-400';
   }
   return 'text-gray-600 dark:text-gray-300';

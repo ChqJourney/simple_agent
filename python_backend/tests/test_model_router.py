@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import main as backend_main
 from core.user import Session, UserManager
 from runtime.contracts import LockedModelRef
-from runtime.router import resolve_background_profile, resolve_conversation_profile
+from runtime.router import resolve_background_profile, resolve_compaction_profile, resolve_conversation_profile
 
 
 class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
@@ -117,6 +117,7 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                 user_manager,
                 skill_provider=None,
                 custom_system_prompt="",
+                compaction_llm_factory=None,
                 max_tool_rounds=10,
                 max_retries=3,
             ) -> None:
@@ -125,6 +126,7 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                 agent_self.user_manager = user_manager
                 agent_self.skill_provider = skill_provider
                 agent_self.custom_system_prompt = custom_system_prompt
+                agent_self.compaction_llm_factory = compaction_llm_factory
                 agent_self.max_tool_rounds = max_tool_rounds
                 agent_self.max_retries = max_retries
                 self.created_agents.append(agent_self)
@@ -180,6 +182,25 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
         }
 
         selected = resolve_background_profile(config_without_secondary)
+
+        self.assertEqual("primary", selected["profile_name"])
+        self.assertEqual("gpt-4o", selected["model"])
+
+    def test_resolve_compaction_profile_prefers_secondary(self) -> None:
+        selected = resolve_compaction_profile(backend_main.runtime_state.current_config)
+
+        self.assertEqual("secondary", selected["profile_name"])
+        self.assertEqual("gpt-4o-mini", selected["model"])
+
+    def test_resolve_compaction_profile_falls_back_to_primary(self) -> None:
+        config_without_secondary = {
+            **backend_main.runtime_state.current_config,
+            "profiles": {
+                "primary": backend_main.runtime_state.current_config["profiles"]["primary"],
+            },
+        }
+
+        selected = resolve_compaction_profile(config_without_secondary)
 
         self.assertEqual("primary", selected["profile_name"])
         self.assertEqual("gpt-4o", selected["model"])

@@ -29,6 +29,7 @@ from runtime.config import DEFAULT_RUNTIME_POLICY, get_primary_profile_config, n
 from runtime.provider_registry import ContextProviderBundle, ContextProviderRegistry
 from runtime.router import (
     lock_ref_from_profile,
+    resolve_compaction_profile,
     resolve_background_profile,
     resolve_conversation_profile,
     session_lock_matches_profile,
@@ -135,6 +136,7 @@ class BackendRuntimeState:
     connection_workspaces: Dict[str, str] = field(default_factory=dict)
     pending_tasks: Set[asyncio.Task] = field(default_factory=set)
     active_session_tasks: Dict[str, object] = field(default_factory=dict)
+    active_session_compaction_tasks: Dict[str, asyncio.Task] = field(default_factory=dict)
     task_connections: Dict[asyncio.Task, str] = field(default_factory=dict)
     task_sessions: Dict[asyncio.Task, str] = field(default_factory=dict)
     auth_token: str = ""
@@ -232,6 +234,9 @@ def _forget_task(task: asyncio.Task) -> None:
 
     if connection_id:
         logger.debug("Task released for connection %s", connection_id)
+
+    if session_id and runtime_state.active_session_compaction_tasks.get(session_id) is task:
+        runtime_state.active_session_compaction_tasks.pop(session_id, None)
 
     if session_id and runtime_state.active_session_tasks.get(session_id) is task:
         runtime_state.active_session_tasks.pop(session_id, None)
@@ -392,6 +397,36 @@ async def _run_title_task_with_cleanup(
         await _close_llm_instance(llm)
 
 
+async def _run_background_compaction_task(agent: Agent, session: Session, trigger_run_id: str) -> None:
+    try:
+        await agent.run_background_compaction(session, trigger_run_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Background compaction task failed for %s: %s", session.session_id, exc)
+
+
+async def _schedule_background_compaction_task(
+    agent: Agent,
+    session: Session,
+    trigger_run_id: str,
+) -> None:
+    connection_id = user_manager.session_connections.get(session.session_id)
+
+    async with state_lock:
+        existing_task = runtime_state.active_session_compaction_tasks.get(session.session_id)
+        if existing_task is not None and not existing_task.done():
+            return
+
+        task = asyncio.create_task(_run_background_compaction_task(agent, session, trigger_run_id))
+        runtime_state.pending_tasks.add(task)
+        runtime_state.active_session_compaction_tasks[session.session_id] = task
+        runtime_state.task_sessions[task] = session.session_id
+        if connection_id:
+            runtime_state.task_connections[task] = connection_id
+        task.add_done_callback(_forget_task)
+
+
 async def get_or_create_agent(
     session_id: str,
     profile_config: Dict[str, Any],
@@ -409,12 +444,27 @@ async def get_or_create_agent(
                 user_manager=user_manager,
                 skill_provider=runtime_state.current_context_bundle.skill_provider,
                 custom_system_prompt=str(runtime_state.current_config.get("system_prompt") or ""),
+                compaction_llm_factory=(
+                    lambda current_config=dict(runtime_state.current_config), runtime_policy=dict(effective_runtime_policy): (
+                        create_llm_for_profile(
+                            resolve_compaction_profile(current_config),
+                            runtime_policy,
+                        )
+                    )
+                ),
                 max_tool_rounds=_runtime_policy_value(
                     effective_runtime_policy,
                     "max_tool_rounds",
                     DEFAULT_RUNTIME_POLICY["max_tool_rounds"],
                 ),
                 max_retries=_runtime_policy_value(effective_runtime_policy, "max_retries", 3),
+            )
+            agent.background_compaction_scheduler = (
+                lambda session, run_id, current_agent=agent: _schedule_background_compaction_task(
+                    current_agent,
+                    session,
+                    run_id,
+                )
             )
             runtime_state.active_agents[session_id] = agent
 
@@ -845,9 +895,16 @@ async def handle_interrupt(data: Dict[str, Any]) -> None:
 
     async with state_lock:
         agent = runtime_state.active_agents.get(session_id)
+        compaction_task = runtime_state.active_session_compaction_tasks.get(session_id)
 
     if agent:
         agent.interrupt()
+
+    if compaction_task is not None and not compaction_task.done():
+        compaction_task.cancel()
+        await asyncio.gather(compaction_task, return_exceptions=True)
+
+    if agent or compaction_task is not None:
         await user_manager.cancel_pending_for_session(session_id, reason="interrupted")
         logger.info(f"Agent interrupted for session: {session_id}")
 

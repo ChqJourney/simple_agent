@@ -17,6 +17,10 @@ def resolve_background_profile(config: Dict[str, Any]) -> Dict[str, Any]:
     return resolve_conversation_profile(config)
 
 
+def resolve_compaction_profile(config: Dict[str, Any]) -> Dict[str, Any]:
+    return resolve_background_profile(config)
+
+
 def lock_ref_from_profile(profile: Dict[str, Any]) -> LockedModelRef:
     return LockedModelRef(
         profile_name=str(profile.get("profile_name") or "primary"),

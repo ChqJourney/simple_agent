@@ -9,6 +9,9 @@ import {
 interface SessionState {
   messages: Message[];
   latestUsage?: TokenUsage;
+  latestUsageUpdatedAt?: string;
+  latestContextEstimate?: TokenUsage;
+  latestContextEstimateUpdatedAt?: string;
   currentStreamingContent: string;
   currentReasoningContent: string;
   isStreaming: boolean;
@@ -46,6 +49,7 @@ interface ChatState {
     error?: string,
     toolName?: string
   ) => void;
+  setContextEstimate: (sessionId: string, usage: TokenUsage, updatedAt?: string) => void;
   setCompleted: (sessionId: string, usage?: TokenUsage) => void;
   setInterrupted: (sessionId: string) => void;
   setError: (sessionId: string, error: string, details?: string) => void;
@@ -59,6 +63,9 @@ interface ChatState {
 const createEmptySession = (): SessionState => ({
   messages: [],
   latestUsage: undefined,
+  latestUsageUpdatedAt: undefined,
+  latestContextEstimate: undefined,
+  latestContextEstimateUpdatedAt: undefined,
   currentStreamingContent: '',
   currentReasoningContent: '',
   isStreaming: false,
@@ -352,6 +359,21 @@ export const useChatStore = create<ChatState>((set) => ({
     };
   }),
 
+  setContextEstimate: (sessionId, usage, updatedAt) => set((state) => {
+    const session = state.sessions[sessionId] || createEmptySession();
+
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          latestContextEstimate: usage,
+          latestContextEstimateUpdatedAt: updatedAt || new Date().toISOString(),
+        },
+      },
+    };
+  }),
+
   setCompleted: (sessionId, usage) => set((state) => {
     const session = state.sessions[sessionId];
     if (!session) return state;
@@ -417,6 +439,7 @@ export const useChatStore = create<ChatState>((set) => ({
           ...session,
           messages: newMessages,
           latestUsage: usage ?? session.latestUsage,
+          latestUsageUpdatedAt: usage ? new Date().toISOString() : session.latestUsageUpdatedAt,
           currentStreamingContent: '',
           currentReasoningContent: '',
           isStreaming: false,
@@ -620,6 +643,7 @@ export const useChatStore = create<ChatState>((set) => ({
           ...(state.sessions[sessionId] || createEmptySession()),
           messages,
           latestUsage,
+          latestUsageUpdatedAt: latestUsage ? new Date().toISOString() : undefined,
           currentStreamingContent: '',
           currentReasoningContent: '',
           isStreaming: false,

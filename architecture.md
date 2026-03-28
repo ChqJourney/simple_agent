@@ -16,6 +16,7 @@
 - 基础文档工具优先、高级执行工具兜底的工具体系
 - Local skills metadata catalog 注入与按需加载
 - 工作区会话持久化、run timeline、token usage 展示
+- session memory / compaction 与长会话上下文治理
 - 图片输入与工作区文件联动
 
 ## 2. 系统总览
@@ -50,7 +51,7 @@ flowchart LR
 | 前端展示层 | `src/` | 页面路由、聊天 UI、右侧文件树/任务面板、配置界面、状态恢复 | `src/App.tsx` |
 | 桌面宿主层 | `src-tauri/` | 工作区路径规范化、动态 FS 授权、发布态 Python sidecar 启停、app data 注入 | `src-tauri/src/lib.rs` |
 | Agent 运行时 | `python_backend/` | WebSocket 协议、配置标准化、Agent loop、工具执行、事件日志 | `python_backend/main.py` |
-| 工作区持久化层 | `<workspace>/.agent/` | 会话 transcript、metadata、run logs | 运行时按需生成 |
+| 工作区持久化层 | `<workspace>/.agent/` | 会话 transcript、metadata、memory snapshot、compaction 审计、run logs | 运行时按需生成 |
 
 ## 3. 仓库结构与模块地图
 
@@ -95,9 +96,9 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | 服务入口 | `python_backend/main.py` | FastAPI app、WebSocket 路由、HTTP health/test-config、全局 runtime_state | WebSocket/HTTP 请求 | 状态更新、Agent task、JSON 响应 |
 | Agent Loop | `python_backend/core/agent.py` | 组装 LLM 消息、流式生成、工具执行、重试、中断、run_event 落盘 | Session、LLM、ToolRegistry、Skill providers | token/tool_call/tool_result/completed/run_event |
-| 用户与会话 | `python_backend/core/user.py` | session 管理、消息持久化、连接绑定、工具审批与问题响应等待 | session_id、workspace_path、frontend 回调 | `.agent/sessions/*`、前端消息派发 |
+| 用户与会话 | `python_backend/core/user.py` | session 管理、消息持久化、memory / compaction artifact、连接绑定、工具审批与问题响应等待 | session_id、workspace_path、frontend 回调 | `.agent/sessions/*`、前端消息派发 |
 | Runtime 配置 | `python_backend/runtime/config.py` | 标准化 provider/profile/runtime/context_providers 配置 | 前端发来的 config | 统一结构的 runtime config |
-| Profile 路由 | `python_backend/runtime/router.py` | 决定 conversation/background profile、session lock 检查 | config、session metadata | profile 选择结果 |
+| Profile 路由 | `python_backend/runtime/router.py` | 决定 conversation/background/compaction profile、session lock 检查 | config、session metadata | profile 选择结果 |
 | Context Provider 注册 | `python_backend/runtime/provider_registry.py` | 构建 skill provider bundle | normalized config | `ContextProviderBundle` |
 | 运行事件 | `python_backend/runtime/events.py` `python_backend/runtime/logs.py` | 定义并写入 run_event | Agent loop 阶段事件 | `.agent/logs/*.jsonl` |
 | LLM Provider | `python_backend/llms/*.py` | 对接 OpenAI 兼容 API、provider 特定 reasoning/usage 适配、Kimi 温度约束 | messages、tools、runtime policy | 流式 chunk / completion |
@@ -126,6 +127,8 @@ flowchart LR
 | 任务面板 | `src/stores/taskStore.ts` `python_backend/tools/todo_task.py` | `todo_task` 结果转成前端任务树 |
 | 会话标题生成 | `python_backend/runtime/session_titles.py` `src/stores/sessionStore.ts` | 首条文本消息触发后台标题任务，结果以 `session_title_updated` 回传 |
 | Token Usage Widget | `src/components/common/TokenUsageWidget.tsx` `python_backend/llms/base.py` | 后端从 provider usage 归一化后，前端显示最近一次 session usage |
+| Session Compaction | `python_backend/core/agent.py` `python_backend/core/user.py` `python_backend/runtime/contracts.py` | 基于上一轮真实 `prompt_tokens / context_length` 触发 background / forced compaction，保留 memory + recent raw replay |
+| Workspace / Session 离开保护 | `src/pages/WorkspacePage.tsx` `src/hooks/useSession.ts` `python_backend/main.py` | 离开 workspace 时对 streaming/compacting 弹确认；切换 session 时仅对 streaming 弹确认并先 interrupt |
 
 ## 5. 一次消息的完整运行链路
 
@@ -203,6 +206,8 @@ sequenceDiagram
 2. 发出 `started`
 3. 构建 LLM messages：
    - 基础消息来自 session history
+   - 若存在 `.memory.json`，则按 `memory + recent raw turns` 形式回放，而不是永远全量 raw history
+   - replay plan 会读取最近一次 assistant usage 的 `prompt_tokens / context_length`，据此决定是否触发 compaction
    - 若启用 local skills，则扫描 app data 与 workspace 两处 skill root
    - 把每个 skill 的 YAML frontmatter catalog 拼入 system prompt
    - 需要完整 skill 指令时，由模型调用 `skill_loader`
@@ -210,6 +215,20 @@ sequenceDiagram
    - 文档任务优先走 `get_document_structure`、`search_documents`、`read_document_segment`
    - 若是 PDF 精细读取任务，可进一步调用 `pdf_get_outline`、`pdf_read_lines` 等格式专属工具
 4. 调用 provider 的 `stream()`
+
+#### D-1. Session Compaction
+
+`Agent._build_llm_messages()` 在主请求发出前会先执行上下文治理：
+
+1. 读取该 session 最近一次已完成 assistant message 的 usage
+2. 用 `prompt_tokens / context_length` 计算 usage ratio
+3. 若 ratio `>=60%`，且存在足够旧的可压前缀，则调度后台预压缩
+4. 若 ratio `>75%`，则先做同步 forced compaction，再发送主请求
+5. compaction 结果写入：
+   - `.agent/sessions/<session-id>.memory.json`
+   - `.agent/sessions/<session-id>.compactions.jsonl`
+6. compaction model 优先走 `secondary` profile；未配置时回退 `primary`
+7. run timeline 会记录 `session_compaction_started/completed/failed/skipped`
 
 #### E. 流式回传与工具执行
 
@@ -231,6 +250,7 @@ sequenceDiagram
 2. 达到最大工具轮次时回 `max_rounds_reached`
 3. 运行出错时回 `error`
 4. 用户点 interrupt 时前端发 `interrupt`，后端设置 `Agent._interrupt_event` 并最终回 `interrupted`
+5. `interrupt(session_id)` 也会显式取消该 session 的后台 compaction task
 
 ## 6. 前端内部数据流
 

@@ -3,9 +3,18 @@ import { TokenUsage } from '../../types';
 
 interface TokenUsageWidgetProps {
   usage?: TokenUsage;
+  mode?: 'request' | 'context_estimate';
 }
 
-function formatUsageTitle(usage: TokenUsage): string {
+function formatUsageTitle(usage: TokenUsage, mode: 'request' | 'context_estimate'): string {
+  if (mode === 'context_estimate') {
+    return [
+      'Current context estimate',
+      `prompt: ${usage.prompt_tokens}${usage.context_length ? ` / context: ${usage.context_length}` : ''}`,
+      'derived from latest session compaction',
+    ].join('\n');
+  }
+
   const lines = [
     'Last request usage',
     `prompt: ${usage.prompt_tokens}${usage.context_length ? ` / context: ${usage.context_length}` : ''}`,
@@ -20,7 +29,7 @@ function formatUsageTitle(usage: TokenUsage): string {
   return lines.join('\n');
 }
 
-export const TokenUsageWidget: React.FC<TokenUsageWidgetProps> = ({ usage }) => {
+export const TokenUsageWidget: React.FC<TokenUsageWidgetProps> = ({ usage, mode = 'request' }) => {
   const contextLength = usage?.context_length;
   const promptTokens = usage?.prompt_tokens ?? 0;
   const percentage = contextLength && contextLength > 0
@@ -34,7 +43,7 @@ export const TokenUsageWidget: React.FC<TokenUsageWidgetProps> = ({ usage }) => 
   return (
     <div
       className="flex h-8 w-8 items-center justify-center rounded-full"
-      title={usage ? formatUsageTitle(usage) : undefined}
+      title={usage ? formatUsageTitle(usage, mode) : undefined}
     >
       <div className="relative h-8 w-8">
         <svg className="h-8 w-8 -rotate-90" viewBox="0 0 40 40" aria-hidden="true">

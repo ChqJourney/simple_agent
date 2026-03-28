@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspacePage } from "./WorkspacePage";
-import { useSessionStore, useUIStore, useWorkspaceStore } from "../stores";
+import { useRunStore, useSessionStore, useUIStore, useWorkspaceStore } from "../stores";
 import { useChatStore } from "../stores/chatStore";
 import { loadSessionHistory, scanSessions } from "../utils/storage";
 
@@ -133,6 +133,9 @@ describe("WorkspacePage", () => {
       currentSessionId: null,
     }));
     useChatStore.setState({
+      sessions: {},
+    });
+    useRunStore.setState({
       sessions: {},
     });
     delete (window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__;
@@ -392,6 +395,9 @@ describe("WorkspacePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
 
     await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith(
+        "A reply is still streaming. Leave this workspace and stop it?"
+      );
       expect(interruptMock).toHaveBeenCalledWith("session-a");
       expect(navigateMock).toHaveBeenCalledWith("/");
     });
@@ -468,7 +474,9 @@ describe("WorkspacePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
 
     await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalled();
+      expect(window.confirm).toHaveBeenCalledWith(
+        "A reply is still streaming. Leave this workspace and stop it?"
+      );
     });
     expect(interruptMock).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalledWith("/");
@@ -539,6 +547,12 @@ describe("WorkspacePage", () => {
     await waitFor(() => {
       expect(confirmDialogMock).toHaveBeenCalled();
     });
+    expect(confirmDialogMock).toHaveBeenCalledWith(
+      "A reply is still streaming. Leave this workspace and stop it?",
+      expect.objectContaining({
+        title: "Stop running task?",
+      })
+    );
     expect(interruptMock).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalled();
 
@@ -547,6 +561,180 @@ describe("WorkspacePage", () => {
     await waitFor(() => {
       expect(interruptMock).not.toHaveBeenCalled();
       expect(navigateMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("prompts before leaving when background compaction is active", async () => {
+    const updatedWorkspace =
+      useWorkspaceStore
+        .getState()
+        .syncWorkspacePath("workspace-1", "C:/Users/patri/source/repos/repo")
+      ?? null;
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      currentWorkspace: updatedWorkspace,
+    }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/repo",
+          created_at: "2026-03-12T10:00:00.000Z",
+          updated_at: "2026-03-12T10:00:00.000Z",
+        },
+      ],
+      currentSessionId: "session-a",
+    }));
+    useRunStore.getState().addEvent("session-a", {
+      event_type: "session_compaction_started",
+      session_id: "session-a",
+      run_id: "run-1",
+      payload: {
+        strategy: "background",
+      },
+      timestamp: "2026-03-28T07:01:30.000Z",
+    });
+
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().currentWorkspace?.path).toBe(
+        "C:/Users/patri/source/repos/repo"
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith(
+        "Session compaction is still in progress. Leave this workspace and stop it?"
+      );
+      expect(interruptMock).toHaveBeenCalledWith("session-a");
+      expect(navigateMock).toHaveBeenCalledWith("/");
+    });
+  });
+
+  it("stays on the workspace when leaving is cancelled during background compaction", async () => {
+    const updatedWorkspace =
+      useWorkspaceStore
+        .getState()
+        .syncWorkspacePath("workspace-1", "C:/Users/patri/source/repos/repo")
+      ?? null;
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      currentWorkspace: updatedWorkspace,
+    }));
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/repo",
+          created_at: "2026-03-12T10:00:00.000Z",
+          updated_at: "2026-03-12T10:00:00.000Z",
+        },
+      ],
+      currentSessionId: "session-a",
+    }));
+    useRunStore.getState().addEvent("session-a", {
+      event_type: "session_compaction_started",
+      session_id: "session-a",
+      run_id: "run-1",
+      payload: {
+        strategy: "background",
+      },
+      timestamp: "2026-03-28T07:01:30.000Z",
+    });
+
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().currentWorkspace?.path).toBe(
+        "C:/Users/patri/source/repos/repo"
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith(
+        "Session compaction is still in progress. Leave this workspace and stop it?"
+      );
+    });
+    expect(interruptMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalledWith("/");
+  });
+
+  it("uses a combined prompt when both streaming and compaction are active", async () => {
+    const updatedWorkspace =
+      useWorkspaceStore
+        .getState()
+        .syncWorkspacePath("workspace-1", "C:/Users/patri/source/repos/repo")
+      ?? null;
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      currentWorkspace: updatedWorkspace,
+    }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/repo",
+          created_at: "2026-03-12T10:00:00.000Z",
+          updated_at: "2026-03-12T10:00:00.000Z",
+        },
+      ],
+      currentSessionId: "session-a",
+    }));
+
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().currentWorkspace?.path).toBe(
+        "C:/Users/patri/source/repos/repo"
+      );
+    });
+
+    act(() => {
+      useChatStore.setState({
+        sessions: {
+          "session-a": {
+            messages: [],
+            latestUsage: undefined,
+            currentStreamingContent: "",
+            currentReasoningContent: "",
+            isStreaming: true,
+            assistantStatus: "streaming",
+            currentToolName: undefined,
+            pendingToolConfirm: undefined,
+            pendingQuestion: undefined,
+          },
+        },
+      });
+      useRunStore.getState().addEvent("session-a", {
+        event_type: "session_compaction_started",
+        session_id: "session-a",
+        run_id: "run-1",
+        payload: {
+          strategy: "background",
+        },
+        timestamp: "2026-03-28T07:01:30.000Z",
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith(
+        "A reply is still streaming and session compaction is in progress. Leave this workspace and stop both?"
+      );
+      expect(interruptMock).toHaveBeenCalledWith("session-a");
+      expect(navigateMock).toHaveBeenCalledWith("/");
     });
   });
 });

@@ -114,6 +114,91 @@ class CapturingWindowedLLM(BaseLLM):
         return {}
 
 
+class ForcedCompactionStreamingLLM(BaseLLM):
+    def __init__(self):
+        super().__init__({
+            'model': 'forced-windowed-test-model',
+            'runtime': {
+                'context_length': 420,
+                'max_output_tokens': 40,
+            },
+        })
+        self.seen_messages = []
+
+    async def stream(self, messages, tools=None):
+        self.seen_messages = list(messages)
+        yield {
+            'choices': [{'delta': {'content': 'compacted answer'}}]
+        }
+
+    async def complete(self, messages, tools=None):
+        return {}
+
+
+class MediumContextStreamingLLM(BaseLLM):
+    def __init__(self):
+        super().__init__({
+            'model': 'medium-windowed-test-model',
+            'runtime': {
+                'context_length': 32000,
+                'max_output_tokens': 2048,
+            },
+        })
+        self.seen_messages = []
+
+    async def stream(self, messages, tools=None):
+        self.seen_messages = list(messages)
+        yield {
+            'choices': [{'delta': {'content': 'medium answer'}}]
+        }
+
+    async def complete(self, messages, tools=None):
+        return {}
+
+
+class FakeCompactionLLM(BaseLLM):
+    def __init__(self):
+        super().__init__({
+            'provider': 'openai',
+            'profile_name': 'secondary',
+            'model': 'fake-compactor',
+        })
+        self.complete_calls = 0
+        self.closed = False
+
+    async def stream(self, messages, tools=None):
+        if False:
+            yield {}
+
+    async def complete(self, messages, tools=None):
+        self.complete_calls += 1
+        return {
+            'choices': [
+                {
+                    'message': {
+                        'content': json.dumps(
+                            {
+                                'current_task': 'Keep the session moving',
+                                'completed_milestones': ['Captured older context'],
+                                'decisions_and_constraints': ['Preserve recent raw turns'],
+                                'important_user_preferences': [],
+                                'important_files_and_paths': [],
+                                'key_tool_results': [],
+                                'open_loops': ['Continue with the latest request'],
+                                'risks_or_unknowns': [],
+                                'raw_summary_text': 'Older context was compacted.',
+                            },
+                            ensure_ascii=False,
+                        )
+                    }
+                }
+            ]
+        }
+
+    async def aclose(self):
+        self.closed = True
+
+
 class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
     async def test_agent_emits_reasoning_events_and_persists_reasoning_content(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
@@ -254,6 +339,246 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any('old-user-' in content for content in serialized_messages))
         self.assertTrue(serialized_messages[0])
         self.assertEqual('system', llm.seen_messages[0]['role'])
+
+        temp_dir.cleanup()
+
+    async def test_agent_forced_compaction_persists_memory_and_replays_memory_plus_recent_turns(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+        llm = ForcedCompactionStreamingLLM()
+        compaction_llms = []
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-compact')
+        await user_manager.bind_session_to_connection('session-compact', 'conn-1')
+
+        for index in range(13):
+            session.add_message(
+                Message(
+                    role='user' if index % 2 == 0 else 'assistant',
+                    content=f'old-message-{index}-' + ('x' * 90),
+                )
+            )
+        session.add_message(
+            Message(
+                role='assistant',
+                content='latest usage anchor',
+                usage={
+                    'prompt_tokens': 360,
+                    'completion_tokens': 40,
+                    'total_tokens': 400,
+                    'context_length': 420,
+                },
+            )
+        )
+
+        def make_compaction_llm():
+            llm_instance = FakeCompactionLLM()
+            compaction_llms.append(llm_instance)
+            return llm_instance
+
+        agent = Agent(
+            llm,
+            ToolRegistry(),
+            user_manager,
+            compaction_llm_factory=make_compaction_llm,
+        )
+        await agent.run('latest prompt for compaction', session)
+
+        memory = session.load_memory()
+        self.assertIsNotNone(memory)
+        self.assertEqual(6, memory.covered_until_message_index)
+        self.assertEqual('Keep the session moving', memory.current_task)
+        self.assertEqual(1, len(compaction_llms))
+        self.assertEqual(1, compaction_llms[0].complete_calls)
+        self.assertTrue(compaction_llms[0].closed)
+
+        contents = [str(message.get('content')) for message in llm.seen_messages]
+        self.assertEqual('system', llm.seen_messages[0]['role'])
+        self.assertTrue(any('Session memory (compacted history):' in content for content in contents))
+        self.assertFalse(any('old-message-0-' in content for content in contents))
+        self.assertTrue(any('latest prompt for compaction' in content for content in contents))
+        self.assertTrue(
+            any(
+                message.get('type') == 'run_event'
+                and message.get('event', {}).get('event_type') == 'session_compaction_completed'
+                for message in sent_messages
+            )
+        )
+        compaction_completed = next(
+            message.get('event')
+            for message in sent_messages
+            if message.get('type') == 'run_event'
+            and message.get('event', {}).get('event_type') == 'session_compaction_completed'
+        )
+        self.assertEqual(420, compaction_completed['payload']['context_length'])
+
+        temp_dir.cleanup()
+
+    async def test_agent_schedules_background_compaction_without_blocking_current_response(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+        llm = CapturingWindowedLLM()
+        scheduled_runs = []
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        async def background_scheduler(session, run_id):
+            scheduled_runs.append((session.session_id, run_id))
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-bg')
+        await user_manager.bind_session_to_connection('session-bg', 'conn-1')
+
+        for index in range(15):
+            session.add_message(
+                Message(
+                    role='user' if index % 2 == 0 else 'assistant',
+                    content=f'background-message-{index}-' + ('y' * 24),
+                )
+            )
+        session.add_message(
+            Message(
+                role='assistant',
+                content='latest usage anchor',
+                usage={
+                    'prompt_tokens': 80,
+                    'completion_tokens': 10,
+                    'total_tokens': 90,
+                    'context_length': 120,
+                },
+            )
+        )
+
+        agent = Agent(
+            llm,
+            ToolRegistry(),
+            user_manager,
+            background_compaction_scheduler=background_scheduler,
+        )
+
+        await agent.run('continue current task', session)
+
+        self.assertEqual(1, len(scheduled_runs))
+        self.assertEqual('session-bg', scheduled_runs[0][0])
+        self.assertTrue(any(message.get('type') == 'completed' for message in sent_messages))
+
+        temp_dir.cleanup()
+
+    async def test_agent_schedules_background_compaction_from_latest_real_usage_for_chinese_session(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+        llm = MediumContextStreamingLLM()
+        scheduled_runs = []
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        async def background_scheduler(session, run_id):
+            scheduled_runs.append((session.session_id, run_id))
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-chinese-bg')
+        await user_manager.bind_session_to_connection('session-chinese-bg', 'conn-1')
+
+        prompts = [
+            '读取 clock_history.md，总结一下',
+            '预测一下未来的时钟会什么样',
+            '时间到底是什么东西',
+            '写首现代诗吧，时间的神秘',
+            '再来一首七绝吧',
+            '把刚才的内容写入当前目录',
+        ]
+        for index, prompt in enumerate(prompts):
+            session.add_message(
+                Message(
+                    role='user' if index % 2 == 0 else 'assistant',
+                    content=prompt + ('，' + ('时' * 80)),
+                )
+            )
+        session.add_message(
+            Message(
+                role='assistant',
+                content='上一轮回答',
+                usage={
+                    'prompt_tokens': 23600,
+                    'completion_tokens': 120,
+                    'total_tokens': 23720,
+                    'context_length': 32000,
+                },
+            )
+        )
+
+        agent = Agent(
+            llm,
+            ToolRegistry(),
+            user_manager,
+            background_compaction_scheduler=background_scheduler,
+        )
+
+        await agent.run('继续', session)
+
+        self.assertEqual(1, len(scheduled_runs))
+        self.assertEqual('session-chinese-bg', scheduled_runs[0][0])
+        self.assertTrue(any(message.get('type') == 'completed' for message in sent_messages))
+
+        temp_dir.cleanup()
+
+    async def test_agent_emits_background_compaction_skipped_when_soft_threshold_has_no_old_prefix(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+        llm = MediumContextStreamingLLM()
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-bg-skip')
+        await user_manager.bind_session_to_connection('session-bg-skip', 'conn-1')
+
+        session.add_message(Message(role='user', content='第一轮问题'))
+        session.add_message(
+            Message(
+                role='assistant',
+                content='上一轮回答',
+                usage={
+                    'prompt_tokens': 22000,
+                    'completion_tokens': 200,
+                    'total_tokens': 22200,
+                    'context_length': 32000,
+                },
+            )
+        )
+
+        agent = Agent(
+            llm,
+            ToolRegistry(),
+            user_manager,
+            background_compaction_scheduler=lambda current_session, run_id: asyncio.sleep(0),
+        )
+
+        await agent.run('continue fresh task', session)
+
+        skipped_event = next(
+            (
+                message.get('event')
+                for message in sent_messages
+                if message.get('type') == 'run_event'
+                and message.get('event', {}).get('event_type') == 'session_compaction_skipped'
+            ),
+            None,
+        )
+        self.assertIsNotNone(skipped_event)
+        self.assertEqual('background', skipped_event['payload']['strategy'])
+        self.assertEqual('no_compactable_prefix', skipped_event['payload']['reason'])
 
         temp_dir.cleanup()
 

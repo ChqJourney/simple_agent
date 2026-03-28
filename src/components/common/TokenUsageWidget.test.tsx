@@ -20,6 +20,24 @@ describe("TokenUsageWidget", () => {
     expect(screen.getByTitle(/prompt: 32000 \/ context: 128000/)).toBeTruthy();
   });
 
+  it("renders compaction-based context estimates with an estimate-specific title", () => {
+    render(
+      <TokenUsageWidget
+        usage={{
+          prompt_tokens: 24000,
+          completion_tokens: 0,
+          total_tokens: 24000,
+          context_length: 128000,
+        }}
+        mode="context_estimate"
+      />
+    );
+
+    expect(screen.getByText("19%")).toBeTruthy();
+    expect(screen.getByTitle(/Current context estimate/)).toBeTruthy();
+    expect(screen.getByTitle(/derived from latest session compaction/)).toBeTruthy();
+  });
+
   it("renders an empty state when usage is unavailable", () => {
     render(<TokenUsageWidget />);
 

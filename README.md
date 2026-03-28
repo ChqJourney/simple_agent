@@ -10,6 +10,7 @@
 - 本地 skill metadata catalog 注入与 `skill_loader` 按需加载
 - 图片输入与工作区拖拽交互
 - 会话标题生成与会话元数据持久化
+- session memory / compaction 与长会话上下文治理
 
 ## 架构概览
 
@@ -29,6 +30,8 @@ Python Backend (FastAPI / WebSocket)
 Workspace
   -> .agent/sessions/*.jsonl
   -> .agent/sessions/*.meta.json
+  -> .agent/sessions/*.memory.json
+  -> .agent/sessions/*.compactions.jsonl
   -> .agent/logs/*.jsonl
 ```
 
@@ -65,6 +68,19 @@ Workspace
 - 可观测 run timeline
 - 结构化 run event 落盘到 `.agent/logs/`
 - session title generation
+- session compaction：
+  - 独立 memory artifact 与 compaction 审计日志
+  - `>=60%` 上一轮真实 prompt usage 时后台预压缩
+  - `>75%` 上一轮真实 prompt usage 时发送前强制压缩
+  - `secondary` profile 优先，未配置时回退 `primary`
+  - 原始 transcript 永远保留
+- workspace 离开保护：
+  - 主回复 `streaming` 或 session `compacting` 时离开 workspace 会弹确认
+  - 确认后中断对应运行；取消则留在当前 workspace
+- session 切换保护：
+  - 当前 session 正在主回复时，切换到另一 session 会弹确认
+  - 确认后中断当前回复再切换
+  - `compacting` 不阻止 session 切换
 
 ### 模型与配置
 
@@ -80,6 +96,7 @@ Workspace
   - `max_output_tokens` 已接入 OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama provider 的请求参数
   - 普通用户消息始终使用 `primary` profile 作为 conversation model
   - `secondary` profile 用于后台 helper task，例如 session title generation；未配置时回退到 `primary`
+  - `secondary` profile 也用于 session background compaction；未配置时回退到 `primary`
   - `locked model` 仍会持久化到 session metadata，但不再在 workspace chat UI 顶部单独展示
   - `provider_memory` 仅用于前端设置页恢复 provider 对应的已保存配置，后端运行时不会依赖该字段
 
@@ -112,6 +129,7 @@ Workspace
 - workspace 顶部右上角会显示一个圆形 token usage widget
 - widget 使用“当前 session 最近一次完成请求”的 `prompt_tokens / context_length` 计算百分比
 - hover 会显示实际 token 数值，便于判断是否接近 context length limit
+- 当后台或强制 compaction 完成时，widget 会立即切换为当前上下文估算值，而不必等下一轮对话结束
 
 ### 工具平台
 
@@ -189,6 +207,19 @@ Workspace
     - `<workspace>/.agent/skills`
   - system prompt 注入的是每个 skill 的 YAML frontmatter catalog
   - 完整 skill 正文通过 `skill_loader` 工具按需加载
+
+### Session Persistence
+
+- `.agent/sessions/<session-id>.jsonl`
+  - 原始 transcript，保留完整 user / assistant / tool 历史
+- `.agent/sessions/<session-id>.meta.json`
+  - session 元数据，包含标题与 locked model
+- `.agent/sessions/<session-id>.memory.json`
+  - 压缩后的结构化 session memory snapshot
+- `.agent/sessions/<session-id>.compactions.jsonl`
+  - 每次 background / forced compaction 的审计记录
+- `.agent/logs/<session-id>.jsonl`
+  - run timeline 与 compaction run event
 
 ### 输入与工作区交互
 
@@ -631,6 +662,10 @@ tauri_agent/
 ├─ src-tauri/
 └─ docs/plans/
 ```
+
+相关设计文档：
+
+- `docs/plans/session-compaction-design.md`：session 压缩 / memory 分层设计与实施计划
 
 ## 注意事项
 

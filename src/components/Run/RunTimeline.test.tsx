@@ -87,4 +87,22 @@ describe("RunTimeline", () => {
     expect(screen.getByText("Skill loaded")).toBeTruthy();
     expect(screen.getByText("deploy-checks")).toBeTruthy();
   });
+
+  it("renders readable compaction events with strategy details", () => {
+    useRunStore.getState().addEvent("session-a", {
+      event_type: "session_compaction_completed",
+      session_id: "session-a",
+      run_id: "run-1",
+      payload: {
+        strategy: "background",
+        post_tokens_estimate: 420,
+      },
+      timestamp: "2026-03-13T09:00:00.000Z",
+    });
+
+    render(<RunTimeline sessionId="session-a" />);
+
+    expect(screen.getAllByText("Compaction completed").length).toBeGreaterThan(0);
+    expect(screen.getByText("background - 420 tokens")).toBeTruthy();
+  });
 });

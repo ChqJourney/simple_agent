@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -7,6 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from core.user import Message, Session
 from llms.openai import OpenAILLM
 from llms.glm import GLMLLM
 from llms.kimi import KimiLLM
@@ -106,6 +108,48 @@ class ProviderReasoningRequestTests(unittest.IsolatedAsyncioTestCase):
         kwargs = llm.client.chat.completions.create.await_args.kwargs
         self.assertEqual({'thinking': {'type': 'disabled'}}, kwargs.get('extra_body'))
         self.assertEqual(0.6, kwargs.get('temperature'))
+
+    async def test_kimi_reasoning_request_preserves_reasoning_content_for_assistant_tool_call_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session = Session("session-kimi", temp_dir)
+            session.add_message(
+                Message(
+                    role="assistant",
+                    content="I'll inspect that.",
+                    reasoning_content="Need to check file layout first.",
+                    tool_calls=[
+                        {
+                            "id": "tool-1",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": "{\"path\":\"README.md\"}",
+                            },
+                        }
+                    ],
+                )
+            )
+
+            llm = KimiLLM({
+                'model': 'kimi-k2.5',
+                'api_key': 'test-key',
+                'base_url': 'https://api.moonshot.cn/v1',
+                'enable_reasoning': True,
+            })
+            llm.client.chat.completions.create = AsyncMock(return_value=empty_stream())
+
+            async for _ in llm.stream(session.get_messages_for_llm(), None):
+                pass
+
+            kwargs = llm.client.chat.completions.create.await_args.kwargs
+            self.assertEqual(
+                "Need to check file layout first.",
+                kwargs["messages"][0]["reasoning_content"],
+            )
+            self.assertEqual(
+                "read_file",
+                kwargs["messages"][0]["tool_calls"][0]["function"]["name"],
+            )
 
     async def test_glm_reasoning_model_sends_thinking_and_tool_stream(self) -> None:
         llm = GLMLLM({

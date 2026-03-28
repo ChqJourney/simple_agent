@@ -1,11 +1,97 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useChatStore, useSessionStore, useUIStore, useWorkspaceStore } from '../../stores';
+import { useChatStore, useRunStore, useSessionStore, useUIStore, useWorkspaceStore } from '../../stores';
 import { WSStatusIndicator, ModelDisplay, TokenUsageWidget } from '../common';
+import { RunEventRecord, TokenUsage } from '../../types';
 
 interface TopBarProps {
   onOpenTimeline?: () => void;
   onBackHome?: () => void;
+}
+
+function getLatestCompactionEvent(events: RunEventRecord[]): RunEventRecord | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.event_type.startsWith('session_compaction_')) {
+      return event;
+    }
+  }
+  return null;
+}
+
+function getCompactionBadge(event: RunEventRecord | null): {
+  label: string;
+  className: string;
+  title: string;
+} | null {
+  if (!event) {
+    return null;
+  }
+
+  const strategy = typeof event.payload.strategy === 'string' ? event.payload.strategy : 'compaction';
+  const timeLabel = new Date(event.timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  if (event.event_type === 'session_compaction_completed') {
+    return {
+      label: 'Compacted',
+      className: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+      title: `${strategy} compaction completed at ${timeLabel}`,
+    };
+  }
+
+  if (event.event_type === 'session_compaction_failed') {
+    return {
+      label: 'Compact failed',
+      className: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300',
+      title: `${strategy} compaction failed at ${timeLabel}`,
+    };
+  }
+
+  if (event.event_type === 'session_compaction_started') {
+    return {
+      label: 'Compacting',
+      className: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+      title: `${strategy} compaction started at ${timeLabel}`,
+    };
+  }
+
+  return {
+    label: 'Compact skipped',
+    className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+    title: `${strategy} compaction skipped at ${timeLabel}`,
+  };
+}
+
+function getTokenUsageDisplay(sessionState?: {
+  latestUsage?: TokenUsage;
+  latestUsageUpdatedAt?: string;
+  latestContextEstimate?: TokenUsage;
+  latestContextEstimateUpdatedAt?: string;
+}): { usage?: TokenUsage; mode: 'request' | 'context_estimate' } {
+  if (!sessionState) {
+    return { usage: undefined, mode: 'request' };
+  }
+
+  const { latestUsage, latestUsageUpdatedAt, latestContextEstimate, latestContextEstimateUpdatedAt } = sessionState;
+  if (!latestContextEstimate) {
+    return { usage: latestUsage, mode: 'request' };
+  }
+
+  if (!latestUsage) {
+    return { usage: latestContextEstimate, mode: 'context_estimate' };
+  }
+
+  const usageTime = latestUsageUpdatedAt ? Date.parse(latestUsageUpdatedAt) : Number.NEGATIVE_INFINITY;
+  const estimateTime = latestContextEstimateUpdatedAt ? Date.parse(latestContextEstimateUpdatedAt) : Number.POSITIVE_INFINITY;
+
+  if (estimateTime >= usageTime) {
+    return { usage: latestContextEstimate, mode: 'context_estimate' };
+  }
+
+  return { usage: latestUsage, mode: 'request' };
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) => {
@@ -13,9 +99,14 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) =>
   const { currentWorkspace } = useWorkspaceStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { leftPanelCollapsed, rightPanelCollapsed, toggleLeftPanel, toggleRightPanel } = useUIStore();
-  const latestUsage = useChatStore((state) =>
-    currentSessionId ? state.sessions[currentSessionId]?.latestUsage : undefined
+  const chatSession = useChatStore((state) =>
+    currentSessionId ? state.sessions[currentSessionId] : undefined
   );
+  const usageDisplay = getTokenUsageDisplay(chatSession);
+  const latestCompactionEvent = useRunStore((state) =>
+    currentSessionId ? getLatestCompactionEvent(state.sessions[currentSessionId]?.events || []) : null
+  );
+  const compactionBadge = getCompactionBadge(latestCompactionEvent);
 
   return (
     <header className="h-12 flex items-center justify-between px-4 bg-white/85 backdrop-blur dark:bg-gray-900/85">
@@ -53,7 +144,15 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) =>
       </div>
 
       <div className="flex items-center gap-3">
-        <TokenUsageWidget usage={latestUsage} />
+        {compactionBadge && (
+          <span
+            className={`rounded-full px-2 py-1 text-[11px] font-medium ${compactionBadge.className}`}
+            title={compactionBadge.title}
+          >
+            {compactionBadge.label}
+          </span>
+        )}
+        <TokenUsageWidget usage={usageDisplay.usage} mode={usageDisplay.mode} />
         <WSStatusIndicator />
         <ModelDisplay />
         <button

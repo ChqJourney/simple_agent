@@ -8,6 +8,8 @@ import { useTaskStore } from "../stores/taskStore";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { deleteSessionHistory, loadSessionHistory, scanSessions } from "../utils/storage";
 
+const interruptMock = vi.hoisted(() => vi.fn());
+
 vi.mock("../utils/storage", async () => {
   const actual = await vi.importActual<typeof import("../utils/storage")>("../utils/storage");
   return {
@@ -18,6 +20,12 @@ vi.mock("../utils/storage", async () => {
   };
 });
 
+vi.mock("../contexts/WebSocketContext", () => ({
+  useWebSocket: () => ({
+    interrupt: interruptMock,
+  }),
+}));
+
 const deleteSessionHistoryMock = vi.mocked(deleteSessionHistory);
 const loadSessionHistoryMock = vi.mocked(loadSessionHistory);
 const scanSessionsMock = vi.mocked(scanSessions);
@@ -25,6 +33,8 @@ const scanSessionsMock = vi.mocked(scanSessions);
 describe("useSession", () => {
   beforeEach(() => {
     globalThis.localStorage?.clear?.();
+    interruptMock.mockReset();
+    vi.restoreAllMocks();
     deleteSessionHistoryMock.mockReset();
     deleteSessionHistoryMock.mockResolvedValue(undefined);
     loadSessionHistoryMock.mockReset();
@@ -161,5 +171,53 @@ describe("useSession", () => {
         status: "completed",
       },
     ]);
+  });
+
+  it("interrupts the current session before switching when a reply is still streaming", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    useChatStore.setState({
+      sessions: {
+        ...useChatStore.getState().sessions,
+        "session-a": {
+          ...useChatStore.getState().sessions["session-a"],
+          isStreaming: true,
+          assistantStatus: "streaming",
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useSession());
+
+    await act(async () => {
+      await result.current.switchSession("session-b");
+    });
+
+    expect(window.confirm).toHaveBeenCalledWith("A reply is still streaming. Switch sessions and stop it?");
+    expect(interruptMock).toHaveBeenCalledWith("session-a");
+    expect(useSessionStore.getState().currentSessionId).toBe("session-b");
+  });
+
+  it("keeps the current session when switching is cancelled during streaming", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    useChatStore.setState({
+      sessions: {
+        ...useChatStore.getState().sessions,
+        "session-a": {
+          ...useChatStore.getState().sessions["session-a"],
+          isStreaming: true,
+          assistantStatus: "streaming",
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useSession());
+
+    await act(async () => {
+      await result.current.switchSession("session-b");
+    });
+
+    expect(interruptMock).not.toHaveBeenCalled();
+    expect(loadSessionHistoryMock).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().currentSessionId).toBe("session-a");
   });
 });

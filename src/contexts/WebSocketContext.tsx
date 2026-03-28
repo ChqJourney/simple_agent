@@ -133,6 +133,32 @@ function applyFileWriteToolResult(output: unknown) {
   useWorkspaceStore.getState().markChangedFile(output.path, change);
 }
 
+function applyCompactionContextEstimate(sessionId: string, event: { payload: Record<string, unknown>; timestamp: string }) {
+  const postTokensEstimate = typeof event.payload.post_tokens_estimate === 'number'
+    ? event.payload.post_tokens_estimate
+    : null;
+  const explicitContextLength = typeof event.payload.context_length === 'number'
+    ? event.payload.context_length
+    : null;
+  const fallbackContextLength = useChatStore.getState().sessions[sessionId]?.latestUsage?.context_length;
+  const contextLength = explicitContextLength ?? fallbackContextLength ?? null;
+
+  if (postTokensEstimate === null || postTokensEstimate <= 0 || contextLength === null || contextLength <= 0) {
+    return;
+  }
+
+  useChatStore.getState().setContextEstimate(
+    sessionId,
+    {
+      prompt_tokens: postTokensEstimate,
+      completion_tokens: 0,
+      total_tokens: postTokensEstimate,
+      context_length: contextLength,
+    },
+    event.timestamp
+  );
+}
+
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const lastSentConfigKeyRef = useRef<string | null>(null);
@@ -354,6 +380,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           break;
         case 'run_event':
           runStore.addEvent(data.session_id, data.event);
+          if (data.event.event_type === 'session_compaction_completed') {
+            applyCompactionContextEstimate(data.session_id, data.event);
+          }
           break;
         default:
           console.log('Unknown message type:', data);

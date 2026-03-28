@@ -3,10 +3,11 @@ import json
 import logging
 import platform
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from core.user import Message, Session, UserManager
 from llms.base import BaseLLM
+from runtime.contracts import ReplayPlan, SessionCompactionRecord, SessionMemorySnapshot
 from runtime.events import RunEvent
 from runtime.logs import append_run_event
 from skills.base import SkillProvider, SkillSummary
@@ -15,6 +16,10 @@ from tools.shell_execute import ShellExecuteTool
 
 logger = logging.getLogger(__name__)
 MAX_TOOL_EXECUTION_TIMEOUT_SECONDS = 120
+BACKGROUND_COMPACTION_USAGE_THRESHOLD = 0.60
+FORCED_COMPACTION_USAGE_THRESHOLD = 0.75
+RECENT_RAW_MESSAGE_COUNT = 8
+MIN_RECENT_RAW_MESSAGE_COUNT = 4
 
 
 class RunInterrupted(Exception):
@@ -35,6 +40,8 @@ class Agent:
         user_manager: UserManager,
         skill_provider: Optional[SkillProvider] = None,
         custom_system_prompt: str = "",
+        compaction_llm_factory: Optional[Callable[[], BaseLLM]] = None,
+        background_compaction_scheduler: Optional[Callable[[Session, str], Awaitable[None]]] = None,
         max_tool_rounds: int = 10,
         max_retries: int = 3,
     ):
@@ -43,6 +50,8 @@ class Agent:
         self.user_manager = user_manager
         self.skill_provider = skill_provider
         self.custom_system_prompt = custom_system_prompt.strip()
+        self.compaction_llm_factory = compaction_llm_factory
+        self.background_compaction_scheduler = background_compaction_scheduler
         self.max_tool_rounds = max_tool_rounds
         self.max_retries = max_retries
         self._interrupt_event = asyncio.Event()
@@ -279,26 +288,29 @@ class Agent:
             serialized = json.dumps(message, ensure_ascii=False)
         except TypeError:
             serialized = str(message)
-        return max(1, len(serialized) // 4)
+        ascii_chars = sum(1 for char in serialized if ord(char) <= 127)
+        non_ascii_chars = len(serialized) - ascii_chars
+        return max(1, (ascii_chars // 4) + non_ascii_chars)
 
     def _trim_messages_to_context_window(
         self,
         history_messages: List[Dict[str, Any]],
         system_message: Optional[Dict[str, Any]] = None,
+        fixed_messages: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
+        prefix_messages: List[Dict[str, Any]] = [message for message in (fixed_messages or []) if isinstance(message, dict)]
+        if system_message is not None:
+            prefix_messages = [system_message, *prefix_messages]
+
         get_context_length = getattr(self.llm, "_get_context_length", None)
         if not callable(get_context_length):
-            if system_message is None:
-                return history_messages
-            return [system_message, *history_messages]
+            return [*prefix_messages, *history_messages]
 
         context_length = get_context_length()
         if context_length is None or context_length <= 0:
-            if system_message is None:
-                return history_messages
-            return [system_message, *history_messages]
+            return [*prefix_messages, *history_messages]
 
-        if not history_messages and system_message is None:
+        if not history_messages and not prefix_messages:
             return []
 
         get_max_output_tokens = getattr(self.llm, "_get_max_output_tokens", None)
@@ -306,8 +318,8 @@ class Agent:
         if reserved_output_tokens is None or reserved_output_tokens <= 0:
             reserved_output_tokens = min(2048, max(256, context_length // 8))
 
-        system_tokens = self._estimate_message_tokens(system_message) if system_message is not None else 0
-        history_budget = max(context_length - reserved_output_tokens - system_tokens, 0)
+        fixed_tokens = sum(self._estimate_message_tokens(message) for message in prefix_messages)
+        history_budget = max(context_length - reserved_output_tokens - fixed_tokens, 0)
         kept_reversed: List[Dict[str, Any]] = []
         used_tokens = 0
 
@@ -319,12 +331,13 @@ class Agent:
             used_tokens += message_tokens
 
         if not kept_reversed:
-            kept_reversed.append(history_messages[-1])
+            if history_messages:
+                kept_reversed.append(history_messages[-1])
+            else:
+                return prefix_messages
 
         trimmed_history = list(reversed(kept_reversed))
-        if system_message is None:
-            return trimmed_history
-        return [system_message, *trimmed_history]
+        return [*prefix_messages, *trimmed_history]
 
     @staticmethod
     def _validate_tool_arguments(tool: BaseTool, arguments: Dict[str, Any]) -> Optional[str]:
@@ -985,8 +998,26 @@ class Agent:
             metadata={"ui_target": "question_prompt"},
         )
 
-    async def _build_llm_messages(self, session: Session, run_id: str) -> List[Dict[str, Any]]:
-        messages = session.get_messages_for_llm()
+    @staticmethod
+    def _estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
+        return sum(Agent._estimate_message_tokens(message) for message in messages)
+
+    def _get_context_length(self) -> int:
+        get_context_length = getattr(self.llm, "_get_context_length", None)
+        if callable(get_context_length):
+            context_length = get_context_length()
+            if isinstance(context_length, int) and context_length > 0:
+                return context_length
+        return 64000
+
+    def _get_reserved_output_tokens(self, context_length: int) -> int:
+        get_max_output_tokens = getattr(self.llm, "_get_max_output_tokens", None)
+        reserved_output_tokens = get_max_output_tokens() if callable(get_max_output_tokens) else None
+        if isinstance(reserved_output_tokens, int) and reserved_output_tokens > 0:
+            return reserved_output_tokens
+        return min(2048, max(256, context_length // 8))
+
+    async def _build_system_message(self, session: Session, run_id: str) -> Optional[Dict[str, Any]]:
         prompt_sections: List[str] = []
 
         if self.custom_system_prompt:
@@ -1008,8 +1039,331 @@ class Agent:
             if skills:
                 prompt_sections.append(self._format_skill_catalog_section(skills))
 
-        system_message = {"role": "system", "content": "\n\n".join(prompt_sections)} if prompt_sections else None
-        return self._trim_messages_to_context_window(messages, system_message)
+        return {"role": "system", "content": "\n\n".join(prompt_sections)} if prompt_sections else None
+
+    @staticmethod
+    def _format_memory_section(title: str, items: List[str]) -> List[str]:
+        if not items:
+            return []
+        lines = [f"- {title}:"]
+        lines.extend(f"  - {item}" for item in items if isinstance(item, str) and item.strip())
+        return lines
+
+    def _build_memory_message(self, memory: Optional[SessionMemorySnapshot]) -> Optional[Dict[str, Any]]:
+        if memory is None:
+            return None
+
+        lines: List[str] = ["Session memory (compacted history):"]
+        if memory.current_task:
+            lines.append(f"- Current task: {memory.current_task}")
+        lines.extend(self._format_memory_section("Completed milestones", memory.completed_milestones))
+        lines.extend(self._format_memory_section("Decisions and constraints", memory.decisions_and_constraints))
+        lines.extend(self._format_memory_section("Important user preferences", memory.important_user_preferences))
+        lines.extend(self._format_memory_section("Important files and paths", memory.important_files_and_paths))
+        lines.extend(self._format_memory_section("Key tool results", memory.key_tool_results))
+        lines.extend(self._format_memory_section("Open loops", memory.open_loops))
+        lines.extend(self._format_memory_section("Risks or unknowns", memory.risks_or_unknowns))
+        if memory.raw_summary_text:
+            lines.append(f"- Summary: {memory.raw_summary_text}")
+
+        if len(lines) == 1:
+            return None
+        return {"role": "system", "content": "\n".join(lines)}
+
+    def _build_replay_plan(
+        self,
+        session: Session,
+        system_message: Optional[Dict[str, Any]],
+    ) -> ReplayPlan:
+        memory = session.load_memory()
+        memory_message = self._build_memory_message(memory)
+        history_start_index = 0 if memory is None else max(0, memory.covered_until_message_index + 1)
+        history_messages = session.get_messages_for_llm(start_index=history_start_index)
+
+        context_length = self._get_context_length()
+        latest_usage = session.get_latest_usage()
+        latest_prompt_tokens = 0
+        usage_ratio = 0.0
+
+        if isinstance(latest_usage, dict):
+            try:
+                latest_prompt_tokens = max(0, int(latest_usage.get("prompt_tokens") or 0))
+            except (TypeError, ValueError):
+                latest_prompt_tokens = 0
+
+            latest_context_length = latest_usage.get("context_length")
+            if isinstance(latest_context_length, int) and latest_context_length > 0:
+                context_length = min(context_length, latest_context_length)
+
+            if context_length > 0:
+                usage_ratio = latest_prompt_tokens / context_length
+
+        return ReplayPlan(
+            system_message=system_message,
+            memory_message=memory_message,
+            history_messages=history_messages,
+            latest_prompt_tokens=latest_prompt_tokens,
+            context_length=context_length,
+            usage_ratio=usage_ratio,
+            forced_compaction_required=usage_ratio > FORCED_COMPACTION_USAGE_THRESHOLD,
+            background_compaction_recommended=usage_ratio >= BACKGROUND_COMPACTION_USAGE_THRESHOLD,
+        )
+
+    def _select_compaction_source_range(
+        self,
+        session: Session,
+        memory: Optional[SessionMemorySnapshot],
+    ) -> Optional[Tuple[int, int]]:
+        start_index = 0 if memory is None else max(0, memory.covered_until_message_index + 1)
+        total_messages = len(session.messages)
+        candidate_end_index = total_messages - RECENT_RAW_MESSAGE_COUNT
+        if candidate_end_index <= start_index:
+            candidate_end_index = total_messages - MIN_RECENT_RAW_MESSAGE_COUNT
+            if candidate_end_index <= start_index:
+                return None
+
+        source_messages = session.get_messages_for_llm(start_index=start_index, end_index=candidate_end_index)
+        if not source_messages:
+            return None
+        return start_index, candidate_end_index
+
+    @staticmethod
+    def _extract_completion_content(response: Any) -> str:
+        if isinstance(response, dict):
+            choices = response.get("choices") or []
+            if not choices:
+                return ""
+            message = choices[0].get("message") or {}
+            content = message.get("content")
+            return content if isinstance(content, str) else ""
+
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            return ""
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", "") if message else ""
+        return content if isinstance(content, str) else ""
+
+    @staticmethod
+    def _strip_json_fence(raw_text: str) -> str:
+        cleaned = raw_text.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+            if lines:
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+        return cleaned
+
+    async def _create_compaction_llm(self) -> Tuple[BaseLLM, bool]:
+        if callable(self.compaction_llm_factory):
+            return self.compaction_llm_factory(), True
+        return self.llm, False
+
+    async def _close_compaction_llm(self, llm: BaseLLM, should_close: bool) -> None:
+        if not should_close:
+            return
+        aclose = getattr(llm, "aclose", None)
+        if callable(aclose):
+            await aclose()
+
+    def _build_compaction_prompt(
+        self,
+        session: Session,
+        memory: Optional[SessionMemorySnapshot],
+        start_index: int,
+        end_index: int,
+    ) -> List[Dict[str, Any]]:
+        source_messages = session.get_messages_for_llm(start_index=start_index, end_index=end_index)
+        existing_memory = memory.model_dump(mode="json") if memory is not None else None
+        source_payload = json.dumps(source_messages, ensure_ascii=False, indent=2)
+        memory_payload = json.dumps(existing_memory, ensure_ascii=False, indent=2) if existing_memory else "null"
+
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are generating compact working memory for an agent session. "
+                    "Return JSON only. Preserve only information that will matter for future task completion. "
+                    "Do not include markdown fences. Do not invent facts. "
+                    "Required keys: current_task, completed_milestones, decisions_and_constraints, "
+                    "important_user_preferences, important_files_and_paths, key_tool_results, "
+                    "open_loops, risks_or_unknowns, raw_summary_text."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Existing memory JSON:\n{memory_payload}\n\n"
+                    f"New source messages JSON:\n{source_payload}\n\n"
+                    "Merge the existing memory with the new source messages into a single JSON object. "
+                    "All list fields must contain concise strings. raw_summary_text must be brief."
+                ),
+            },
+        ]
+
+    def _coerce_memory_snapshot(
+        self,
+        session: Session,
+        raw_content: str,
+        covered_until_message_index: int,
+        existing_memory: Optional[SessionMemorySnapshot],
+    ) -> SessionMemorySnapshot:
+        cleaned = self._strip_json_fence(raw_content)
+        parsed = json.loads(cleaned)
+        if not isinstance(parsed, dict):
+            raise ValueError("Compaction response must be a JSON object")
+
+        payload = {
+            **parsed,
+            "session_id": session.session_id,
+            "covered_until_message_index": covered_until_message_index - 1,
+            "version": existing_memory.version if existing_memory is not None else 1,
+        }
+        snapshot = SessionMemorySnapshot.model_validate(payload)
+        snapshot.estimated_tokens = self._estimate_message_tokens(
+            self._build_memory_message(snapshot) or {"role": "system", "content": snapshot.raw_summary_text}
+        )
+        return snapshot
+
+    async def _run_compaction(
+        self,
+        session: Session,
+        run_id: str,
+        strategy: str,
+    ) -> bool:
+        memory = session.load_memory()
+        source_range = self._select_compaction_source_range(session, memory)
+        if source_range is None:
+            await self._emit_run_event(
+                session,
+                run_id,
+                "session_compaction_skipped",
+                {"strategy": strategy, "reason": "insufficient_source_messages"},
+            )
+            return False
+
+        start_index, end_index = source_range
+        source_messages = session.get_messages_for_llm(start_index=start_index, end_index=end_index)
+        compaction_llm, should_close = await self._create_compaction_llm()
+        await self._emit_run_event(
+            session,
+            run_id,
+            "session_compaction_started",
+            {
+                "strategy": strategy,
+                "source_start_index": start_index,
+                "source_end_index": end_index - 1,
+                "pre_tokens_estimate": self._estimate_messages_tokens(source_messages),
+            },
+        )
+
+        try:
+            response = await compaction_llm.complete(
+                self._build_compaction_prompt(session, memory, start_index, end_index)
+            )
+            raw_content = self._extract_completion_content(response)
+            next_memory = self._coerce_memory_snapshot(session, raw_content, end_index, memory)
+            await session.save_memory_async(next_memory)
+            await session.append_compaction_record_async(
+                SessionCompactionRecord(
+                    compaction_id=str(uuid.uuid4()),
+                    strategy=strategy,
+                    source_start_index=start_index,
+                    source_end_index=end_index - 1,
+                    pre_tokens_estimate=self._estimate_messages_tokens(source_messages),
+                    post_tokens_estimate=next_memory.estimated_tokens,
+                    model={
+                        "profile_name": str(getattr(compaction_llm, "config", {}).get("profile_name", "") or ""),
+                        "provider": str(getattr(compaction_llm, "config", {}).get("provider", "") or ""),
+                        "model": str(getattr(compaction_llm, "model", "") or ""),
+                    },
+                    notes=(
+                        "Forced compaction before main request"
+                        if strategy == "forced"
+                        else "Background pre-compaction"
+                    ),
+                )
+            )
+            await self._emit_run_event(
+                session,
+                run_id,
+                "session_compaction_completed",
+                {
+                    "strategy": strategy,
+                    "source_start_index": start_index,
+                    "source_end_index": end_index - 1,
+                    "pre_tokens_estimate": self._estimate_messages_tokens(source_messages),
+                    "post_tokens_estimate": next_memory.estimated_tokens,
+                    "context_length": self._get_context_length(),
+                    "memory_covered_until": next_memory.covered_until_message_index,
+                },
+            )
+            return True
+        except Exception as exc:
+            logger.warning("Forced session compaction failed for %s: %s", session.session_id, exc)
+            await self._emit_run_event(
+                session,
+                run_id,
+                "session_compaction_failed",
+                {
+                    "strategy": strategy,
+                    "source_start_index": start_index,
+                    "source_end_index": end_index - 1,
+                    "error": str(exc),
+                },
+            )
+            return False
+        finally:
+            await self._close_compaction_llm(compaction_llm, should_close)
+
+    async def _run_forced_compaction(
+        self,
+        session: Session,
+        run_id: str,
+        replay_plan: ReplayPlan,
+    ) -> bool:
+        return await self._run_compaction(session, run_id, "forced")
+
+    async def run_background_compaction(
+        self,
+        session: Session,
+        trigger_run_id: str,
+    ) -> bool:
+        return await self._run_compaction(session, trigger_run_id, "background")
+
+    async def _build_llm_messages(self, session: Session, run_id: str) -> List[Dict[str, Any]]:
+        system_message = await self._build_system_message(session, run_id)
+        replay_plan = self._build_replay_plan(session, system_message)
+
+        if replay_plan.forced_compaction_required:
+            await self._run_forced_compaction(session, run_id, replay_plan)
+            replay_plan = self._build_replay_plan(session, system_message)
+        elif replay_plan.background_compaction_recommended:
+            memory = session.load_memory()
+            source_range = self._select_compaction_source_range(session, memory)
+            if source_range is not None:
+                scheduler = self.background_compaction_scheduler
+                if callable(scheduler):
+                    await scheduler(session, run_id)
+            else:
+                await self._emit_run_event(
+                    session,
+                    run_id,
+                    "session_compaction_skipped",
+                    {
+                        "strategy": "background",
+                        "reason": "no_compactable_prefix",
+                    },
+                )
+
+        fixed_messages = [message for message in [replay_plan.memory_message] if message is not None]
+        return self._trim_messages_to_context_window(
+            replay_plan.history_messages,
+            system_message=replay_plan.system_message,
+            fixed_messages=fixed_messages,
+        )
 
     @staticmethod
     def _format_custom_system_prompt_section(custom_system_prompt: str) -> str:

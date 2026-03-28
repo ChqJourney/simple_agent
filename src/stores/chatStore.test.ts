@@ -58,6 +58,34 @@ describe("chatStore run events", () => {
       total_tokens: 4352,
       context_length: 128000,
     });
+    expect(useChatStore.getState().sessions["session-a"]?.latestUsageUpdatedAt).toEqual(expect.any(String));
+  });
+
+  it("stores context estimates independently from the latest request usage", () => {
+    useChatStore.getState().startStreaming("session-a");
+    useChatStore.getState().setCompleted("session-a", {
+      prompt_tokens: 4096,
+      completion_tokens: 256,
+      total_tokens: 4352,
+      context_length: 128000,
+    });
+
+    useChatStore.getState().setContextEstimate(
+      "session-a",
+      {
+        prompt_tokens: 22000,
+        completion_tokens: 0,
+        total_tokens: 22000,
+        context_length: 128000,
+      },
+      "2026-03-28T13:45:00.000Z"
+    );
+
+    expect(useChatStore.getState().sessions["session-a"]?.latestUsage?.prompt_tokens).toBe(4096);
+    expect(useChatStore.getState().sessions["session-a"]?.latestContextEstimate?.prompt_tokens).toBe(22000);
+    expect(useChatStore.getState().sessions["session-a"]?.latestContextEstimateUpdatedAt).toBe(
+      "2026-03-28T13:45:00.000Z"
+    );
   });
 
   it("derives latest usage snapshots when loading persisted messages", () => {

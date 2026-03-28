@@ -4,6 +4,7 @@ import { useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
 import {
   MAX_PANEL_WIDTH,
   MIN_PANEL_WIDTH,
+  useRunStore,
   useWorkspaceStore,
   useUIStore,
   useSessionStore,
@@ -15,6 +16,7 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 import { backendHealthUrl, backendHttpBase } from '../utils/backendEndpoint';
 import { loadSessionHistory } from '../utils/storage';
 import { useChatStore } from '../stores/chatStore';
+import { RunEventRecord } from '../types';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -43,6 +45,39 @@ function hasTransientChatState(session: {
     || Boolean(session.pendingToolConfirm)
     || Boolean(session.pendingQuestion)
   );
+}
+
+function hasActiveCompactionState(events: RunEventRecord[] | undefined): boolean {
+  if (!events || events.length === 0) {
+    return false;
+  }
+
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event.event_type.startsWith('session_compaction_')) {
+      continue;
+    }
+
+    return event.event_type === 'session_compaction_started';
+  }
+
+  return false;
+}
+
+function getLeaveWorkspacePrompt(hasActiveReply: boolean, hasActiveCompaction: boolean): string {
+  if (hasActiveReply && hasActiveCompaction) {
+    return 'A reply is still streaming and session compaction is in progress. Leave this workspace and stop both?';
+  }
+
+  if (hasActiveReply) {
+    return 'A reply is still streaming. Leave this workspace and stop it?';
+  }
+
+  if (hasActiveCompaction) {
+    return 'Session compaction is still in progress. Leave this workspace and stop it?';
+  }
+
+  return 'Work is still in progress. Leave this workspace and stop it?';
 }
 
 function normalizeComparableWorkspacePath(path: string): string {
@@ -111,6 +146,7 @@ export const WorkspacePage: React.FC = () => {
   const { isConnected, sendWorkspace, interrupt } = useWebSocket();
   const { loadSessionsFromDisk, setCurrentSession, currentSessionId, sessions } = useSessionStore();
   const chatSessions = useChatStore((state) => state.sessions);
+  const runSessions = useRunStore((state) => state.sessions);
   const [backendReady, setBackendReady] = useState(!IS_DEV);
   const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(null);
   const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
@@ -126,32 +162,51 @@ export const WorkspacePage: React.FC = () => {
   const normalizedWorkspacePath = currentWorkspace?.path
     ? normalizeComparableWorkspacePath(currentWorkspace.path)
     : null;
-  const activeWorkspaceSessionIds = Array.from(
-    new Set(
-      Object.entries(chatSessions)
-        .filter(([sessionId, chatSession]) => {
-          if (!hasTransientChatState(chatSession)) {
-            return false;
-          }
+  const leaveGuardState = Array.from(
+    new Set([
+      ...Object.keys(chatSessions),
+      ...Object.keys(runSessions),
+    ])
+  ).reduce(
+    (acc, sessionId) => {
+      const chatSession = chatSessions[sessionId];
+      const runSession = runSessions[sessionId];
+      const hasReply = Boolean(chatSession && hasTransientChatState(chatSession));
+      const hasCompaction = hasActiveCompactionState(runSession?.events);
 
-          if (currentSessionId && sessionId === currentSessionId) {
-            return true;
-          }
+      if (!hasReply && !hasCompaction) {
+        return acc;
+      }
 
-          if (!normalizedWorkspacePath) {
-            return false;
-          }
+      let belongsToWorkspace = false;
+      if (currentSessionId && sessionId === currentSessionId) {
+        belongsToWorkspace = true;
+      } else if (normalizedWorkspacePath) {
+        const sessionMeta = sessions.find((session) => session.session_id === sessionId);
+        if (sessionMeta?.workspace_path) {
+          belongsToWorkspace =
+            normalizeComparableWorkspacePath(sessionMeta.workspace_path) === normalizedWorkspacePath;
+        }
+      }
 
-          const sessionMeta = sessions.find((session) => session.session_id === sessionId);
-          if (!sessionMeta?.workspace_path) {
-            return false;
-          }
+      if (!belongsToWorkspace) {
+        return acc;
+      }
 
-          return normalizeComparableWorkspacePath(sessionMeta.workspace_path) === normalizedWorkspacePath;
-        })
-        .map(([sessionId]) => sessionId)
-    )
+      acc.sessionIds.push(sessionId);
+      acc.hasActiveReply = acc.hasActiveReply || hasReply;
+      acc.hasActiveCompaction = acc.hasActiveCompaction || hasCompaction;
+      return acc;
+    },
+    {
+      sessionIds: [] as string[],
+      hasActiveReply: false,
+      hasActiveCompaction: false,
+    }
   );
+  const activeWorkspaceSessionIds = leaveGuardState.sessionIds;
+  const hasActiveReply = leaveGuardState.hasActiveReply;
+  const hasActiveCompaction = leaveGuardState.hasActiveCompaction;
   const hasActiveWorkspaceRuns = activeWorkspaceSessionIds.length > 0;
   useBeforeUnload((event) => {
     if (!hasActiveWorkspaceRuns) {
@@ -167,7 +222,7 @@ export const WorkspacePage: React.FC = () => {
       return true;
     }
 
-    const prompt = 'A task is still running. Leave this workspace and stop it?';
+    const prompt = getLeaveWorkspacePrompt(hasActiveReply, hasActiveCompaction);
     const confirmed = hasTauriRuntime()
       ? await (async () => {
           const { confirm } = await import('@tauri-apps/plugin-dialog');

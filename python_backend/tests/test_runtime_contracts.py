@@ -7,7 +7,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from runtime.config import normalize_runtime_config
-from runtime.contracts import LockedModelRef, SessionMetadata
+from runtime.contracts import (
+    LockedModelRef,
+    ReplayPlan,
+    SessionCompactionRecord,
+    SessionMemorySnapshot,
+    SessionMetadata,
+)
 from runtime.events import RunEvent
 
 
@@ -174,6 +180,57 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual("Investigate routing", serialized["title"])
         self.assertEqual("primary", serialized["locked_model"]["profile_name"])
         self.assertEqual("gpt-4o-mini", serialized["locked_model"]["model"])
+
+    def test_session_memory_snapshot_serializes_structured_memory_fields(self) -> None:
+        snapshot = SessionMemorySnapshot(
+            session_id="session-1",
+            covered_until_message_index=12,
+            current_task="Plan session compaction",
+            completed_milestones=["Agreed on thresholds"],
+            open_loops=["Implement phase 1"],
+            estimated_tokens=320,
+        )
+
+        serialized = snapshot.model_dump(mode="json")
+
+        self.assertEqual("session-1", serialized["session_id"])
+        self.assertEqual(12, serialized["covered_until_message_index"])
+        self.assertEqual("Plan session compaction", serialized["current_task"])
+        self.assertEqual(["Agreed on thresholds"], serialized["completed_milestones"])
+        self.assertEqual(["Implement phase 1"], serialized["open_loops"])
+        self.assertEqual(320, serialized["estimated_tokens"])
+        self.assertIn("updated_at", serialized)
+
+    def test_session_compaction_record_serializes_model_metadata(self) -> None:
+        record = SessionCompactionRecord(
+            compaction_id="compact-1",
+            strategy="background",
+            source_start_index=0,
+            source_end_index=15,
+            pre_tokens_estimate=9000,
+            post_tokens_estimate=500,
+            model={
+                "profile_name": "secondary",
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+            },
+        )
+
+        serialized = record.model_dump(mode="json")
+
+        self.assertEqual("compact-1", serialized["compaction_id"])
+        self.assertEqual("background", serialized["strategy"])
+        self.assertEqual(15, serialized["source_end_index"])
+        self.assertEqual("secondary", serialized["model"]["profile_name"])
+        self.assertEqual("gpt-4o-mini", serialized["model"]["model"])
+        self.assertIn("created_at", serialized)
+
+    def test_replay_plan_defaults_history_messages_to_empty_list(self) -> None:
+        plan = ReplayPlan()
+
+        self.assertEqual([], plan.history_messages)
+        self.assertFalse(plan.forced_compaction_required)
+        self.assertFalse(plan.background_compaction_recommended)
 
 
 if __name__ == "__main__":

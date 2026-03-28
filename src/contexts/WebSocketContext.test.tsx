@@ -484,6 +484,49 @@ describe("WebSocketProvider", () => {
     });
   });
 
+  it("updates the current context estimate when compaction completes", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "completed",
+      session_id: "session-a",
+      usage: {
+        prompt_tokens: 4096,
+        completion_tokens: 256,
+        total_tokens: 4352,
+        context_length: 128000,
+      },
+    });
+
+    websocketMockState.messageHandler?.({
+      type: "run_event",
+      session_id: "session-a",
+      event: {
+        event_type: "session_compaction_completed",
+        session_id: "session-a",
+        run_id: "run-1",
+        payload: {
+          strategy: "background",
+          post_tokens_estimate: 22000,
+          context_length: 128000,
+        },
+        timestamp: "2026-03-28T13:42:30.000Z",
+      },
+    });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().sessions["session-a"]?.latestContextEstimate?.prompt_tokens).toBe(22000);
+      expect(useChatStore.getState().sessions["session-a"]?.latestContextEstimate?.context_length).toBe(128000);
+      expect(useChatStore.getState().sessions["session-a"]?.latestContextEstimateUpdatedAt).toBe(
+        "2026-03-28T13:42:30.000Z"
+      );
+    });
+  });
+
   it("sends structured question responses", async () => {
     websocketMockState.sendSucceeded = true;
 

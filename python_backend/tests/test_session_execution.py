@@ -53,6 +53,16 @@ class ClosableLLM:
         self.closed = True
 
 
+class BackgroundCompactionAgent:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.blocker = asyncio.Event()
+
+    async def run_background_compaction(self, session, trigger_run_id) -> None:
+        self.calls += 1
+        await self.blocker.wait()
+
+
 class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -342,6 +352,40 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
             },
             self.messages,
         )
+
+    async def test_background_compaction_task_is_deduplicated_per_session(self) -> None:
+        agent = BackgroundCompactionAgent()
+        session = await backend_main.user_manager.create_session(self.temp_dir.name, "session-bg")
+        await backend_main.user_manager.bind_session_to_connection("session-bg", "conn-a")
+
+        await backend_main._schedule_background_compaction_task(agent, session, "run-1")
+        await backend_main._schedule_background_compaction_task(agent, session, "run-1")
+        await asyncio.sleep(0)
+
+        self.assertEqual(1, agent.calls)
+        self.assertEqual(1, len(backend_main.runtime_state.active_session_compaction_tasks))
+
+        agent.blocker.set()
+        if backend_main.runtime_state.pending_tasks:
+            await asyncio.gather(*backend_main.runtime_state.pending_tasks, return_exceptions=True)
+        await asyncio.sleep(0)
+
+        self.assertEqual({}, backend_main.runtime_state.active_session_compaction_tasks)
+
+    async def test_interrupt_cancels_background_compaction_for_session(self) -> None:
+        agent = BackgroundCompactionAgent()
+        session = await backend_main.user_manager.create_session(self.temp_dir.name, "session-bg")
+        await backend_main.user_manager.bind_session_to_connection("session-bg", "conn-a")
+
+        await backend_main._schedule_background_compaction_task(agent, session, "run-1")
+        await asyncio.sleep(0)
+
+        self.assertIn("session-bg", backend_main.runtime_state.active_session_compaction_tasks)
+
+        await backend_main.handle_interrupt({"session_id": "session-bg"})
+        await asyncio.sleep(0)
+
+        self.assertEqual({}, backend_main.runtime_state.active_session_compaction_tasks)
 
     async def test_handle_message_routes_structured_question_responses(self) -> None:
         await backend_main.user_manager.bind_session_to_connection("session-a", "conn-a")

@@ -126,7 +126,7 @@ jobs:
       - name: Smoke test packaged backend
         shell: pwsh
         run: |
-          $portableZips = @(Get-ChildItem -Path artifacts/release -Recurse -Filter *.zip)
+          $portableZips = @(Get-ChildItem -Path artifacts/release/*/portable -File -Filter *.zip)
           if ($portableZips.Count -ne 1) {
             throw "Expected exactly one portable ZIP artifact, found $($portableZips.Count)."
           }
@@ -231,7 +231,7 @@ jobs:
         run: |
           $tagName = $env:GITHUB_REF_NAME
           $releaseTitle = $tagName
-          $zipFiles = @(Get-ChildItem -Path artifacts/release -Recurse -Filter *.zip)
+          $zipFiles = @(Get-ChildItem -Path artifacts/release/*/portable -File -Filter *.zip)
 
           if ($zipFiles.Count -ne 1) {
             throw "Expected exactly one portable ZIP artifact before publishing the GitHub release, found $($zipFiles.Count)."

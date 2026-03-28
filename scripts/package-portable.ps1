@@ -87,4 +87,8 @@ if (-not (Test-Path -LiteralPath $archivePath)) {
     throw "Portable archive was not created: $archivePath"
 }
 
+if (Test-Path -LiteralPath $portableRoot) {
+    Remove-Item -LiteralPath $portableRoot -Recurse -Force
+}
+
 Write-Host "Portable ZIP packaged at $archivePath"

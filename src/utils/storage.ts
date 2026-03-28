@@ -167,6 +167,7 @@ export function deserializeSessionHistoryEntry(
       id: crypto.randomUUID(),
       role: 'reasoning',
       content: data.reasoning_content,
+      timestamp: typeof data.timestamp === 'string' ? data.timestamp : undefined,
       status: 'completed',
     });
   }
@@ -186,6 +187,7 @@ export function deserializeSessionHistoryEntry(
     id: crypto.randomUUID(),
     role: (data.role as Message['role']) || 'assistant',
     content,
+    timestamp: typeof data.timestamp === 'string' ? data.timestamp : undefined,
     attachments: Array.isArray(data.attachments)
       ? data.attachments
           .map((attachment) => normalizePersistedAttachment(attachment))

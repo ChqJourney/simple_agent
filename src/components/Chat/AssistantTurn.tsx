@@ -15,6 +15,8 @@ interface AssistantTurnProps {
   currentReasoningContent?: string;
   assistantStatus?: AssistantStatus;
   currentToolName?: string;
+  elapsedLabel?: string;
+  onRetry?: () => void;
 }
 
 function getRoundDetailsLabel(messages: Message[], hasStreamingReasoning: boolean): string {
@@ -120,6 +122,8 @@ export const AssistantTurn = ({
   currentReasoningContent = '',
   assistantStatus,
   currentToolName,
+  elapsedLabel,
+  onRetry,
 }: AssistantTurnProps) => {
   const formalAssistantIndex = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -145,6 +149,7 @@ export const AssistantTurn = ({
   const hasFormalContent = Boolean(formalAssistantMessage) || Boolean(streamingContent);
   const hasDetails = detailMessages.length > 0 || Boolean(currentReasoningContent);
   const copyableContent = streamingContent.trim() || formalAssistantMessage?.content?.trim() || '';
+  const isFailedTurn = formalAssistantMessage?.status === 'error';
   const [isExpanded, setIsExpanded] = useState(isStreaming);
   const wasStreamingRef = useRef(isStreaming);
 
@@ -167,6 +172,11 @@ export const AssistantTurn = ({
             Assistant
           </span>
           <div className="flex items-center gap-2">
+            {elapsedLabel && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                {elapsedLabel}
+              </span>
+            )}
             {formalAssistantMessage?.usage && (
               <span className="text-xs text-gray-400 dark:text-gray-500">
                 {formalAssistantMessage.usage.total_tokens} tokens
@@ -249,8 +259,39 @@ export const AssistantTurn = ({
         </div>
       ) : null}
 
+      {isFailedTurn && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-red-200/80 bg-red-50/80 px-3 py-2 text-xs text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300">
+          <div className="flex items-center gap-2">
+            <svg className="h-3.5 w-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fillRule="evenodd" d="M18 10A8 8 0 114 4.73V3a1 1 0 10-2 0v4a1 1 0 001 1h4a1 1 0 100-2H5.22A6 6 0 1010 4a1 1 0 100-2 8 8 0 018 8zm-8-3a1 1 0 00-1 1v3a1 1 0 102 0V8a1 1 0 00-1-1zm0 8a1.25 1.25 0 100-2.5A1.25 1.25 0 0010 15z" clipRule="evenodd" />
+            </svg>
+            <span className="font-medium">Failed</span>
+          </div>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-white/80 text-red-600 transition-colors hover:bg-white hover:text-red-700 dark:border-red-800 dark:bg-red-950/20 dark:text-red-300 dark:hover:bg-red-950/40"
+              aria-label="Resend message"
+              title="Resend message"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M4.93 4.93a7 7 0 111.06 9.04 1 1 0 10-1.68 1.08A9 9 0 1010 1a1 1 0 100 2 7 7 0 00-5.07 1.93V3a1 1 0 10-2 0v4a1 1 0 001 1h4a1 1 0 000-2H4.93z" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+
       {!hasFormalContent && assistantStatus && (
-        <AssistantStatusIndicator status={assistantStatus} toolName={currentToolName} />
+        <div className="space-y-2">
+          {elapsedLabel && (
+            <div className="text-xs text-gray-400 dark:text-gray-500">
+              {elapsedLabel}
+            </div>
+          )}
+          <AssistantStatusIndicator status={assistantStatus} toolName={currentToolName} />
+        </div>
       )}
     </div>
   );

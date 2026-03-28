@@ -2,11 +2,12 @@ import { useCallback, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
+import { useRunStore } from '../../stores/runStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useSession } from '../../hooks/useSession';
-import { Attachment, ExecutionMode, PendingQuestion, ToolDecision, ToolDecisionScope } from '../../types';
+import { Attachment, ExecutionMode, Message, PendingQuestion, ToolDecision, ToolDecisionScope } from '../../types';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { PendingQuestionCard, ToolConfirmModal } from '../Tools';
@@ -70,6 +71,13 @@ export const ChatContainer = () => {
       } : emptySession;
     })
   );
+  const runEvents = useRunStore(
+    useShallow((state) => (
+      currentSessionId
+        ? state.sessions[currentSessionId]?.events || []
+        : []
+    ))
+  );
 
   const handleSend = useCallback((content: string, attachments?: Attachment[], displayContent?: string) => {
     if (!canSendMessage) {
@@ -107,6 +115,14 @@ export const ChatContainer = () => {
     useChatStore.getState().addUserMessage(sessionId, displayContent ?? content, attachments);
     sendMessage(sessionId, content, attachments, currentWorkspace?.path);
   }, [canSendMessage, config, currentSessionId, createSession, draftExecutionMode, sendMessage, currentWorkspace?.path, sessionExecutionModes, setExecutionMode, updateSession]);
+
+  const handleRetryMessage = useCallback((message: Pick<Message, 'content' | 'attachments'>) => {
+    if (isStreaming || !canSendMessage) {
+      return;
+    }
+
+    handleSend(message.content || '', message.attachments, message.content || '');
+  }, [canSendMessage, handleSend, isStreaming]);
 
   const handleExecutionModeChange = useCallback((mode: ExecutionMode) => {
     setDraftExecutionMode(mode);
@@ -164,6 +180,8 @@ export const ChatContainer = () => {
         isStreaming={isStreaming}
         assistantStatus={assistantStatus}
         currentToolName={currentToolName}
+        runEvents={runEvents}
+        onRetryMessage={handleRetryMessage}
       />
 
       {pendingQuestion && (

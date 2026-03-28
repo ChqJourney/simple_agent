@@ -68,6 +68,20 @@ export const markdownComponents: Components = {
       );
     }
 
+    if (!inline) {
+      return (
+        <code
+          className={[
+            className,
+            'font-mono text-sm text-slate-800 dark:text-slate-100',
+          ].filter(Boolean).join(' ')}
+          {...props}
+        >
+          {children}
+        </code>
+      );
+    }
+
     return (
       <code
         className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[0.92em] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"

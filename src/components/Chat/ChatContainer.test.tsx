@@ -12,6 +12,7 @@ const interruptMock = vi.hoisted(() => vi.fn());
 const setExecutionModeMock = vi.hoisted(() => vi.fn());
 const createSessionMock = vi.hoisted(() => vi.fn(() => "session-a"));
 const messageInputPropsMock = vi.hoisted(() => vi.fn());
+const messageListPropsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../contexts/WebSocketContext", () => ({
   useWebSocket: () => ({
@@ -32,7 +33,32 @@ vi.mock("../../hooks/useSession", () => ({
 }));
 
 vi.mock("./MessageList", () => ({
-  MessageList: () => <div>MessageList</div>,
+  MessageList: (props: { onRetryMessage?: (message: { content: string | null; attachments?: Array<{ kind: "image"; path: string; name: string }> }) => void }) => {
+    messageListPropsMock(props);
+    return (
+      <div>
+        MessageList
+        {props.onRetryMessage && (
+          <button
+            type="button"
+            aria-label="retry message"
+            onClick={() => props.onRetryMessage?.({
+              content: "Retry this request",
+              attachments: [
+                {
+                  kind: "image",
+                  path: "/tmp/retry.png",
+                  name: "retry.png",
+                },
+              ],
+            })}
+          >
+            retry message
+          </button>
+        )}
+      </div>
+    );
+  },
 }));
 
 vi.mock("./MessageInput", () => ({
@@ -68,6 +94,7 @@ describe("ChatContainer", () => {
     setExecutionModeMock.mockReset();
     createSessionMock.mockClear();
     messageInputPropsMock.mockReset();
+    messageListPropsMock.mockReset();
     useConfigStore.setState({ config: null as never });
     useWorkspaceStore.setState((state) => ({
       ...state,
@@ -247,6 +274,51 @@ describe("ChatContainer", () => {
         disabled: true,
         placeholder: "Add an API key before sending messages...",
         supportsImageAttachments: true,
+      })
+    );
+  });
+
+  it("re-sends a failed user message through the existing send flow", () => {
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o-mini",
+            api_key: "test-key",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+        },
+      } as never,
+    });
+
+    render(<ChatContainer />);
+
+    fireEvent.click(screen.getByRole("button", { name: "retry message" }));
+
+    expect(sendMessageMock).toHaveBeenCalledWith(
+      "session-a",
+      "Retry this request",
+      [
+        {
+          kind: "image",
+          path: "/tmp/retry.png",
+          name: "retry.png",
+        },
+      ],
+      "C:/Users/patri/source/repos/tauri_agent",
+    );
+    expect(useChatStore.getState().sessions["session-a"]?.messages.at(-1)).toEqual(
+      expect.objectContaining({
+        role: "user",
+        content: "Retry this request",
       })
     );
   });

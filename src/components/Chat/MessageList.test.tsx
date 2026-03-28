@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageList } from "./MessageList";
 import type { Message } from "../../types";
@@ -265,6 +265,30 @@ describe("MessageList", () => {
     expect(screen.getByText("docx")).toBeTruthy();
   });
 
+  it("keeps block code styling on the pre container without inline code chrome", () => {
+    const messages: Message[] = [
+      {
+        id: "assistant-code-block",
+        role: "assistant",
+        content: "```\\nconst answer = 42;\\n```",
+        status: "completed",
+      },
+    ];
+
+    const { container } = render(<MessageList messages={messages} />);
+    const pre = container.querySelector("pre");
+    const code = container.querySelector("pre > code");
+
+    expect(pre).toBeTruthy();
+    expect(pre?.className).toContain("border");
+    expect(pre?.className).toContain("bg-slate-50");
+    expect(code).toBeTruthy();
+    expect(code?.className).toContain("font-mono");
+    expect(code?.className).not.toContain("bg-slate-100");
+    expect(code?.className).not.toContain("border-slate-200");
+    expect(code?.className).not.toContain("rounded-md");
+  });
+
   it("keeps the current scroll position when the user is reading older messages", async () => {
     const { rerender } = render(
       <MessageList
@@ -421,5 +445,97 @@ describe("MessageList", () => {
       expect(readFileMock).toHaveBeenCalledWith("/tmp/from-disk.png");
       expect(screen.getByAltText("Attachment preview: from-disk.png")).toBeTruthy();
     });
+  });
+
+  it("shows elapsed seconds for a completed historical assistant turn", () => {
+    const messages: Message[] = [
+      {
+        id: "user-1",
+        role: "user",
+        content: "Measure this run",
+        timestamp: "2026-03-28T10:00:00.000Z",
+        status: "completed",
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "Done",
+        timestamp: "2026-03-28T10:00:13.000Z",
+        status: "completed",
+      },
+    ];
+
+    render(<MessageList messages={messages} />);
+
+    expect(screen.getByText("13s")).toBeTruthy();
+  });
+
+  it("updates elapsed seconds for the active run from run events", async () => {
+    vi.useFakeTimers();
+
+    try {
+      vi.setSystemTime(new Date("2026-03-28T10:00:12.000Z"));
+
+      const messages: Message[] = [
+        {
+          id: "user-1",
+          role: "user",
+          content: "Still running",
+          timestamp: "2026-03-28T10:00:00.000Z",
+          status: "completed",
+        },
+      ];
+
+      render(
+        <MessageList
+          messages={messages}
+          isStreaming={true}
+          assistantStatus="thinking"
+          runEvents={[
+            {
+              event_type: "run_started",
+              session_id: "session-1",
+              run_id: "run-1",
+              payload: {},
+              timestamp: "2026-03-28T10:00:00.000Z",
+            },
+          ]}
+        />
+      );
+
+      expect(screen.getByText("12s")).toBeTruthy();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+
+      expect(screen.getByText("15s")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows a failed state with a resend button for failed assistant turns", () => {
+    const onRetryMessage = vi.fn();
+    const messages: Message[] = [
+      {
+        id: "user-1",
+        role: "user",
+        content: "Try again",
+        status: "completed",
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "Error: backend failed",
+        status: "error",
+      },
+    ];
+
+    render(<MessageList messages={messages} onRetryMessage={onRetryMessage} />);
+
+    expect(screen.getByText("Failed")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Resend message" }));
+    expect(onRetryMessage).toHaveBeenCalledWith(messages[0]);
   });
 });

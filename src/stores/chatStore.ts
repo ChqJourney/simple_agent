@@ -75,6 +75,10 @@ const createEmptySession = (): SessionState => ({
   pendingQuestion: undefined,
 });
 
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
 export const useChatStore = create<ChatState>((set) => ({
   sessions: {},
 
@@ -118,6 +122,7 @@ export const useChatStore = create<ChatState>((set) => ({
         id: crypto.randomUUID(),
         role: 'reasoning',
         content: session.currentReasoningContent,
+        timestamp: nowIso(),
         status: 'completed',
       });
     }
@@ -155,6 +160,7 @@ export const useChatStore = create<ChatState>((set) => ({
           role: 'assistant',
           content: session.currentStreamingContent || null,
           tool_calls: [toolCall],
+          timestamp: nowIso(),
           status: 'streaming',
         },
       ];
@@ -302,6 +308,7 @@ export const useChatStore = create<ChatState>((set) => ({
               tool_call_id: toolCallId,
               name: toolName,
               content: decisionText,
+              timestamp: nowIso(),
               toolMessage: {
                 kind: 'decision',
                 toolName,
@@ -345,6 +352,7 @@ export const useChatStore = create<ChatState>((set) => ({
               content: createToolResultSummary(resolvedToolName, success),
               tool_call_id: toolCallId,
               name: resolvedToolName,
+              timestamp: nowIso(),
               toolMessage: {
                 kind: 'result',
                 toolName: resolvedToolName,
@@ -408,6 +416,7 @@ export const useChatStore = create<ChatState>((set) => ({
         newMessages[existingAssistantIndex] = {
           ...newMessages[existingAssistantIndex],
           content: session.currentStreamingContent,
+          timestamp: nowIso(),
           status: 'completed',
           usage,
         };
@@ -416,6 +425,7 @@ export const useChatStore = create<ChatState>((set) => ({
           id: crypto.randomUUID(),
           role: 'assistant',
           content: session.currentStreamingContent,
+          timestamp: nowIso(),
           status: 'completed',
           usage,
         });
@@ -426,6 +436,7 @@ export const useChatStore = create<ChatState>((set) => ({
         const index = newMessages.indexOf(lastAssistant);
         newMessages[index] = {
           ...lastAssistant,
+          timestamp: lastAssistant.timestamp || nowIso(),
           status: 'completed',
           usage,
         };
@@ -476,6 +487,7 @@ export const useChatStore = create<ChatState>((set) => ({
         id: crypto.randomUUID(),
         role: 'reasoning',
         content: session.currentReasoningContent,
+        timestamp: nowIso(),
         status: 'completed',
       });
     }
@@ -495,6 +507,7 @@ export const useChatStore = create<ChatState>((set) => ({
         newMessages[existingAssistantIndex] = {
           ...newMessages[existingAssistantIndex],
           content: session.currentStreamingContent,
+          timestamp: nowIso(),
           status: 'completed',
         };
       } else {
@@ -502,6 +515,7 @@ export const useChatStore = create<ChatState>((set) => ({
           id: crypto.randomUUID(),
           role: 'assistant',
           content: session.currentStreamingContent,
+          timestamp: nowIso(),
           status: 'completed',
         });
       }
@@ -539,6 +553,7 @@ export const useChatStore = create<ChatState>((set) => ({
               id: crypto.randomUUID(),
               role: 'assistant',
               content: `Error: ${error}${details ? `\n${details}` : ''}`,
+              timestamp: nowIso(),
               status: 'error',
             },
           ],
@@ -561,6 +576,7 @@ export const useChatStore = create<ChatState>((set) => ({
       id: crypto.randomUUID(),
       role: 'user',
       content,
+      timestamp: nowIso(),
       attachments,
       status: 'completed',
       userStatus: 'sending',

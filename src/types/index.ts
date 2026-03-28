@@ -62,6 +62,7 @@ export interface Message {
   id: string;
   role: MessageRole;
   content: string | null;
+  timestamp?: string;
   attachments?: Attachment[];
   reasoning_content?: string;
   tool_calls?: ToolCall[];

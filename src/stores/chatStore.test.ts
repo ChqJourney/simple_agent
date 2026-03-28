@@ -132,12 +132,14 @@ describe("chatStore run events", () => {
         id: expect.any(String),
         role: "reasoning",
         content: "half reasoning",
+        timestamp: expect.any(String),
         status: "completed",
       },
       {
         id: expect.any(String),
         role: "assistant",
         content: "half answer",
+        timestamp: expect.any(String),
         status: "completed",
       },
     ]);

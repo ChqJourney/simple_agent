@@ -232,12 +232,14 @@ describe("WebSocketProvider", () => {
         id: expect.any(String),
         role: "reasoning",
         content: "partial reasoning",
+        timestamp: expect.any(String),
         status: "completed",
       },
       {
         id: expect.any(String),
         role: "assistant",
         content: "partial answer",
+        timestamp: expect.any(String),
         status: "completed",
       },
     ]);

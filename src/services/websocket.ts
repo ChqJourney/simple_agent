@@ -3,7 +3,7 @@ import { backendWsUrl } from '../utils/backendEndpoint';
 
 export type MessageHandler = (data: ServerWebSocketMessage) => void;
 
-class WebSocketService {
+export class WebSocketService {
   private ws: WebSocket | null = null;
   private messageHandlers: Set<MessageHandler> = new Set();
   private reconnectAttempts = 0;
@@ -14,6 +14,7 @@ class WebSocketService {
   private onConnectedCallbacks: Set<() => void> = new Set();
   private onDisconnectedCallbacks: Set<() => void> = new Set();
   private connectionId = 0;
+  private socketGeneration = 0;
   private cleanupTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private mounted = false;
@@ -55,18 +56,37 @@ class WebSocketService {
   }
 
   private createConnection(): void {
-    if (this.isConnecting || this.ws?.readyState === WebSocket.OPEN) {
+    if (
+      this.isConnecting ||
+      this.ws?.readyState === WebSocket.OPEN ||
+      this.ws?.readyState === WebSocket.CONNECTING
+    ) {
       return;
     }
-    
-    this.isConnecting = true;
-    
-    try {
-      this.ws = new WebSocket(backendWsUrl);
 
-      this.ws.onopen = () => {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    this.isConnecting = true;
+
+    try {
+      const socketGeneration = ++this.socketGeneration;
+      const ws = new WebSocket(backendWsUrl);
+      this.ws = ws;
+
+      ws.onopen = () => {
+        if (socketGeneration !== this.socketGeneration || this.ws !== ws) {
+          try {
+            ws.close();
+          } catch {
+            // Ignore if the stale socket is already closing.
+          }
+          return;
+        }
         if (!this.mounted) {
-          this.ws?.close();
+          ws.close();
           return;
         }
         console.log('WebSocket connected');
@@ -75,7 +95,10 @@ class WebSocketService {
         this.onConnectedCallbacks.forEach(cb => cb());
       };
 
-      this.ws.onmessage = (event) => {
+      ws.onmessage = (event) => {
+        if (socketGeneration !== this.socketGeneration || this.ws !== ws) {
+          return;
+        }
         if (!this.mounted) return;
         try {
           const data = JSON.parse(event.data) as ServerWebSocketMessage;
@@ -85,10 +108,14 @@ class WebSocketService {
         }
       };
 
-      this.ws.onclose = () => {
+      ws.onclose = () => {
+        if (socketGeneration !== this.socketGeneration || this.ws !== ws) {
+          return;
+        }
         const wasManual = this.isManualClose;
         this.isConnecting = false;
-        
+        this.ws = null;
+
         if (!wasManual && this.mounted) {
           console.log('WebSocket disconnected');
           this.onDisconnectedCallbacks.forEach(cb => cb());
@@ -105,7 +132,10 @@ class WebSocketService {
         }
       };
 
-      this.ws.onerror = () => {
+      ws.onerror = () => {
+        if (socketGeneration !== this.socketGeneration || this.ws !== ws) {
+          return;
+        }
         this.isConnecting = false;
       };
     } catch (error) {
@@ -116,20 +146,22 @@ class WebSocketService {
 
   private closeConnection(): void {
     this.isManualClose = true;
-    
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    
-    if (this.ws) {
+
+    const ws = this.ws;
+    if (ws) {
+      this.socketGeneration += 1;
+      this.ws = null;
       try {
-        this.ws.close();
+        ws.close();
       } catch {
         // Ignore errors if already closed
       }
     }
-    this.ws = null;
     this.messageHandlers.clear();
     this.onConnectedCallbacks.clear();
     this.onDisconnectedCallbacks.clear();

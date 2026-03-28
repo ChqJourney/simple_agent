@@ -44,6 +44,7 @@ class Message(BaseModel):
     model_label: Optional[str] = None
     attachments: Optional[List[Dict[str, Any]]] = None
     usage: Optional[Dict[str, Any]] = None
+    success: Optional[bool] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -123,10 +124,6 @@ class Session:
     def _record_message(self, message: Message) -> None:
         self.messages.append(message)
         self.updated_at = datetime.now(timezone.utc)
-
-    def add_message(self, message: Message) -> None:
-        self._record_message(message)
-        self._persist_message_sync(message)
 
     async def add_message_async(self, message: Message) -> None:
         self._record_message(message)

@@ -670,7 +670,7 @@ flowchart TD
 
 | 文件 | 生产方 | 内容 | 消费方 |
 | --- | --- | --- | --- |
-| `sessions/<id>.jsonl` | `Session.add_message()` | user/assistant/tool 原始消息 transcript | 前端历史恢复、后端继续上下文 |
+| `sessions/<id>.jsonl` | `Session.add_message_async()` | user/assistant/tool 原始消息 transcript | 前端历史恢复、后端继续上下文 |
 | `sessions/<id>.meta.json` | `Session.save_metadata()` | title、locked_model、创建更新时间 | SessionList、会话锁模 |
 | `logs/<id>.jsonl` | `append_run_event()` | 结构化运行事件 | run 审计、时间线、调试 |
 

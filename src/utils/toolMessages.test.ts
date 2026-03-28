@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createToolCallSummary,
   formatToolTechnicalValue,
+  inferPersistedToolResult,
   renderToolResultDetails,
 } from "./toolMessages";
 
@@ -172,5 +173,12 @@ describe("toolMessages", () => {
 
     expect(formatted).toContain("truncated");
     expect(formatted.length).toBeLessThan(5000);
+  });
+
+  it("uses explicit persisted success when available", () => {
+    expect(inferPersistedToolResult("Error: README.md", true)).toEqual({
+      success: true,
+      details: "Error: README.md",
+    });
   });
 });

@@ -112,7 +112,7 @@ class ProviderReasoningRequestTests(unittest.IsolatedAsyncioTestCase):
     async def test_kimi_reasoning_request_preserves_reasoning_content_for_assistant_tool_call_messages(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             session = Session("session-kimi", temp_dir)
-            session.add_message(
+            await session.add_message_async(
                 Message(
                     role="assistant",
                     content="I'll inspect that.",

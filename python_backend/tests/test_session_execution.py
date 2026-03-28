@@ -561,7 +561,7 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.agent_a.llm = title_llm
 
         session = await backend_main.user_manager.create_session(self.temp_dir.name, "session-a")
-        session.add_message(Message(role="user", content="old message"))
+        await session.add_message_async(Message(role="user", content="old message"))
 
         await backend_main.handle_user_message(
             {

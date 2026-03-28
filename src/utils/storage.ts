@@ -217,7 +217,10 @@ export function deserializeSessionHistoryEntry(
       message.status = parsedDecision.decision === 'reject' ? 'error' : 'completed';
     }
   } else if (message.role === 'tool' && toolCallId) {
-    const inferredResult = inferPersistedToolResult(content);
+    const inferredResult = inferPersistedToolResult(
+      content,
+      typeof data.success === 'boolean' ? data.success : undefined
+    );
     message.name = resolvedToolName;
     message.content = createToolResultSummary(resolvedToolName, inferredResult.success);
     message.toolMessage = {

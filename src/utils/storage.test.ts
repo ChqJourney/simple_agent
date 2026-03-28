@@ -47,4 +47,42 @@ describe("storage", () => {
       context_length: 128000,
     });
   });
+
+  it("prefers persisted tool success metadata over content heuristics", () => {
+    const messages = deserializeSessionHistoryEntry({
+      role: "tool",
+      tool_call_id: "tool-1",
+      name: "file_read",
+      content: "Error: README.md",
+      success: true,
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].status).toBe("completed");
+    expect(messages[0].content).toBe("文件读取完成");
+    expect(messages[0].toolMessage).toEqual({
+      kind: "result",
+      toolName: "file_read",
+      success: true,
+      details: "Error: README.md",
+    });
+  });
+
+  it("falls back to legacy persisted tool content heuristics", () => {
+    const messages = deserializeSessionHistoryEntry({
+      role: "tool",
+      tool_call_id: "tool-2",
+      name: "file_read",
+      content: "Error: file missing",
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].status).toBe("error");
+    expect(messages[0].toolMessage).toEqual({
+      kind: "result",
+      toolName: "file_read",
+      success: false,
+      details: "Error: file missing",
+    });
+  });
 });

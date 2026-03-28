@@ -160,7 +160,8 @@ class Agent:
                         role="tool",
                         tool_call_id=result.tool_call_id,
                         name=result.tool_name,
-                        content=self._serialize_tool_message_content(content)
+                        content=self._serialize_tool_message_content(content),
+                        success=result.success,
                     ))
 
             await self._emit_run_event(

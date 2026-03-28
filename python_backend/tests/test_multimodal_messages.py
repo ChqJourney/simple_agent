@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import sys
 import tempfile
@@ -20,7 +21,7 @@ class MultimodalMessageTests(unittest.TestCase):
             image_path.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRXcAAAAASUVORK5CYII="))
 
             session = Session("session-1", temp_dir)
-            session.add_message(
+            asyncio.run(session.add_message_async(
                 Message(
                     role="user",
                     content="Describe this image",
@@ -33,7 +34,7 @@ class MultimodalMessageTests(unittest.TestCase):
                         }
                     ],
                 )
-            )
+            ))
 
             reloaded = Session.from_disk("session-1", temp_dir)
 
@@ -47,7 +48,7 @@ class MultimodalMessageTests(unittest.TestCase):
             image_path.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRXcAAAAASUVORK5CYII="))
 
             session = Session("session-1", temp_dir)
-            session.add_message(
+            asyncio.run(session.add_message_async(
                 Message(
                     role="user",
                     content="Summarize the screenshot",
@@ -60,7 +61,7 @@ class MultimodalMessageTests(unittest.TestCase):
                         }
                     ],
                 )
-            )
+            ))
 
             llm_messages = session.get_messages_for_llm()
 
@@ -74,12 +75,12 @@ class MultimodalMessageTests(unittest.TestCase):
     def test_dragged_paths_stay_as_plain_text_messages(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             session = Session("session-1", temp_dir)
-            session.add_message(
+            asyncio.run(session.add_message_async(
                 Message(
                     role="user",
                     content="Check these paths:\n- src/app.ts\n- src/components",
                 )
-            )
+            ))
 
             llm_messages = session.get_messages_for_llm()
 
@@ -91,13 +92,13 @@ class MultimodalMessageTests(unittest.TestCase):
     def test_get_messages_for_llm_does_not_replay_assistant_reasoning_content_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             session = Session("session-1", temp_dir)
-            session.add_message(
+            asyncio.run(session.add_message_async(
                 Message(
                     role="assistant",
                     content="I'll inspect that.",
                     reasoning_content="Need to check file layout first.",
                 )
-            )
+            ))
 
             llm_messages = session.get_messages_for_llm()
 
@@ -107,7 +108,7 @@ class MultimodalMessageTests(unittest.TestCase):
     def test_get_messages_for_llm_can_include_reasoning_when_explicitly_requested(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             session = Session("session-1", temp_dir)
-            session.add_message(
+            asyncio.run(session.add_message_async(
                 Message(
                     role="assistant",
                     content="I'll inspect that.",
@@ -123,7 +124,7 @@ class MultimodalMessageTests(unittest.TestCase):
                         }
                     ],
                 )
-            )
+            ))
 
             llm_messages = session.get_messages_for_llm(include_reasoning_content=True)
 
@@ -134,7 +135,7 @@ class MultimodalMessageTests(unittest.TestCase):
     def test_get_messages_for_llm_preserves_reasoning_for_assistant_tool_call_messages(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             session = Session("session-1", temp_dir)
-            session.add_message(
+            asyncio.run(session.add_message_async(
                 Message(
                     role="assistant",
                     content="I'll inspect that.",
@@ -150,7 +151,7 @@ class MultimodalMessageTests(unittest.TestCase):
                         }
                     ],
                 )
-            )
+            ))
 
             llm_messages = session.get_messages_for_llm()
 

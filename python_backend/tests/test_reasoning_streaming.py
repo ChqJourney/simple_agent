@@ -327,9 +327,9 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         session = await user_manager.create_session(temp_dir.name, 'session-1')
         await user_manager.bind_session_to_connection('session-1', 'conn-1')
 
-        session.add_message(Message(role='user', content='old-user-' + ('a' * 220)))
-        session.add_message(Message(role='assistant', content='old-assistant-' + ('b' * 220)))
-        session.add_message(Message(role='user', content='recent-user-' + ('c' * 60)))
+        await session.add_message_async(Message(role='user', content='old-user-' + ('a' * 220)))
+        await session.add_message_async(Message(role='assistant', content='old-assistant-' + ('b' * 220)))
+        await session.add_message_async(Message(role='user', content='recent-user-' + ('c' * 60)))
 
         agent = Agent(llm, ToolRegistry(), user_manager)
         await agent.run('latest prompt', session)
@@ -357,13 +357,13 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         await user_manager.bind_session_to_connection('session-compact', 'conn-1')
 
         for index in range(13):
-            session.add_message(
+            await session.add_message_async(
                 Message(
                     role='user' if index % 2 == 0 else 'assistant',
                     content=f'old-message-{index}-' + ('x' * 90),
                 )
             )
-        session.add_message(
+        await session.add_message_async(
             Message(
                 role='assistant',
                 content='latest usage anchor',
@@ -437,13 +437,13 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         await user_manager.bind_session_to_connection('session-bg', 'conn-1')
 
         for index in range(15):
-            session.add_message(
+            await session.add_message_async(
                 Message(
                     role='user' if index % 2 == 0 else 'assistant',
                     content=f'background-message-{index}-' + ('y' * 24),
                 )
             )
-        session.add_message(
+        await session.add_message_async(
             Message(
                 role='assistant',
                 content='latest usage anchor',
@@ -497,13 +497,13 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
             '把刚才的内容写入当前目录',
         ]
         for index, prompt in enumerate(prompts):
-            session.add_message(
+            await session.add_message_async(
                 Message(
                     role='user' if index % 2 == 0 else 'assistant',
                     content=prompt + ('，' + ('时' * 80)),
                 )
             )
-        session.add_message(
+        await session.add_message_async(
             Message(
                 role='assistant',
                 content='上一轮回答',
@@ -544,8 +544,8 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         session = await user_manager.create_session(temp_dir.name, 'session-bg-skip')
         await user_manager.bind_session_to_connection('session-bg-skip', 'conn-1')
 
-        session.add_message(Message(role='user', content='第一轮问题'))
-        session.add_message(
+        await session.add_message_async(Message(role='user', content='第一轮问题'))
+        await session.add_message_async(
             Message(
                 role='assistant',
                 content='上一轮回答',

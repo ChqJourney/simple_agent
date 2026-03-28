@@ -586,12 +586,17 @@ export function parseToolDecisionContent(
   };
 }
 
-export function inferPersistedToolResult(content: string | null): {
+export function inferPersistedToolResult(
+  content: string | null,
+  persistedSuccess?: boolean
+): {
   success: boolean;
   details: string;
 } {
   const details = content ?? '';
-  const success = !details.startsWith('Error:');
+  const success = typeof persistedSuccess === 'boolean'
+    ? persistedSuccess
+    : !details.startsWith('Error:');
   return {
     success,
     details,

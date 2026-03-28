@@ -152,7 +152,7 @@ class RunLoggingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_logs_and_session_history_preserve_unicode_text(self) -> None:
         session = Session("session-unicode", self.temp_dir.name)
-        session.add_message(Message(role="user", content="帮我计算125的3次方"))
+        await session.add_message_async(Message(role="user", content="帮我计算125的3次方"))
 
         await append_run_event(
             self.temp_dir.name,

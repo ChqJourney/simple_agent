@@ -4,7 +4,7 @@ import { TopBar } from "./TopBar";
 import { useChatStore, useRunStore, useSessionStore, useUIStore, useWorkspaceStore } from "../../stores";
 
 const navigateMock = vi.hoisted(() => vi.fn());
-const tokenUsageWidgetMock = vi.hoisted(() => vi.fn(() => <div>Tokens</div>));
+const tokenUsageWidgetMock = vi.hoisted(() => vi.fn<(props: unknown) => unknown>(() => <div>Tokens</div>));
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");

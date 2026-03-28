@@ -315,7 +315,9 @@ describe("ChatContainer", () => {
       ],
       "C:/Users/patri/source/repos/tauri_agent",
     );
-    expect(useChatStore.getState().sessions["session-a"]?.messages.at(-1)).toEqual(
+    const sessionMessages = useChatStore.getState().sessions["session-a"]?.messages;
+
+    expect(sessionMessages?.[sessionMessages.length - 1]).toEqual(
       expect.objectContaining({
         role: "user",
         content: "Retry this request",

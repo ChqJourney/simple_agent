@@ -3,8 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageList } from "./MessageList";
 import type { Message } from "../../types";
 
+const readFileMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@tauri-apps/plugin-fs", () => ({
+  readFile: readFileMock,
+}));
+
 describe("MessageList", () => {
   beforeEach(() => {
+    readFileMock.mockReset();
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
@@ -355,6 +362,64 @@ describe("MessageList", () => {
 
     await waitFor(() => {
       expect(scroller.scrollTop).toBe(520);
+    });
+  });
+
+  it("shows image thumbnails in message history and opens a modal preview on double click", async () => {
+    const messages: Message[] = [
+      {
+        id: "user-image",
+        role: "user",
+        content: "看看这张图",
+        attachments: [
+          {
+            kind: "image",
+            path: "/tmp/diagram.png",
+            name: "diagram.png",
+            mime_type: "image/png",
+            data_url: "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+          },
+        ],
+        status: "completed",
+      },
+    ];
+
+    render(<MessageList messages={messages} />);
+
+    expect(screen.getByAltText("Attachment preview: diagram.png")).toBeTruthy();
+    fireEvent.doubleClick(screen.getByRole("button", { name: "Open image preview for diagram.png" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Image preview: diagram.png" })).toBeTruthy();
+      expect(screen.getByAltText("Expanded preview: diagram.png")).toBeTruthy();
+    });
+  });
+
+  it("loads a thumbnail from the local attachment path when history only has the file path", async () => {
+    readFileMock.mockResolvedValue(Uint8Array.from([137, 80, 78, 71]));
+
+    const messages: Message[] = [
+      {
+        id: "user-image-path-only",
+        role: "user",
+        content: "本地图片",
+        attachments: [
+          {
+            kind: "image",
+            path: "/tmp/from-disk.png",
+            name: "from-disk.png",
+            mime_type: "image/png",
+          },
+        ],
+        status: "completed",
+      },
+    ];
+
+    render(<MessageList messages={messages} />);
+
+    await waitFor(() => {
+      expect(readFileMock).toHaveBeenCalledWith("/tmp/from-disk.png");
+      expect(screen.getByAltText("Attachment preview: from-disk.png")).toBeTruthy();
     });
   });
 });

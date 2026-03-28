@@ -1,8 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { readFile } from '@tauri-apps/plugin-fs';
 import { Attachment, ExecutionMode } from '../../types';
-import { getPathExtension, isImagePath } from '../../utils/fileTypes';
+import { isImagePath } from '../../utils/fileTypes';
 import { clearActiveDraggedFileDescriptors, getActiveDraggedFileDescriptors } from '../../utils/internalDragState';
+import {
+  arrayBufferToBase64,
+  getAttachmentPreviewSrc as getInlineAttachmentPreviewSrc,
+  guessImageMimeType,
+} from '../../utils/imageAttachments';
 import { CustomSelect } from '../common';
 
 const FILE_TREE_DRAG_MIME = 'application/x-tauri-agent-file';
@@ -54,19 +58,6 @@ function parseDraggedDescriptors(raw: string): DraggedFileDescriptor[] {
   }
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = '';
-
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return btoa(binary);
-}
-
 async function fileToAttachment(file: File): Promise<Attachment | null> {
   if (!isImageFile(file)) {
     return null;
@@ -88,35 +79,12 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/') || isImagePath(file.name);
 }
 
-function guessImageMimeType(path: string): string {
-  switch (getPathExtension(path)) {
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg';
-    case '.gif':
-      return 'image/gif';
-    case '.webp':
-      return 'image/webp';
-    case '.bmp':
-      return 'image/bmp';
-    case '.svg':
-      return 'image/svg+xml';
-    case '.ico':
-      return 'image/x-icon';
-    case '.tif':
-    case '.tiff':
-      return 'image/tiff';
-    case '.png':
-    default:
-      return 'image/png';
-  }
-}
-
 async function descriptorToImageAttachment(descriptor: DraggedFileDescriptor): Promise<Attachment> {
   const name = descriptor.name || descriptor.path.split(/[\\/]/).filter(Boolean).pop() || descriptor.path;
   const mimeType = guessImageMimeType(descriptor.path);
 
   try {
+    const { readFile } = await import('@tauri-apps/plugin-fs');
     const bytes = await readFile(descriptor.path);
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const base64 = arrayBufferToBase64(buffer);
@@ -143,7 +111,7 @@ async function descriptorsToImageAttachments(descriptors: DraggedFileDescriptor[
 }
 
 function getAttachmentPreviewSrc(attachment: Attachment): string | null {
-  return attachment.data_url || null;
+  return getInlineAttachmentPreviewSrc(attachment);
 }
 
 function hasImagePayload(dataTransfer: DataTransfer): boolean {

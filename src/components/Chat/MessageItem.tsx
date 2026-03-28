@@ -8,6 +8,7 @@ import { ToolCallDisplay, ToolMessageDisplay } from '../Tools';
 import { UserStatusIndicator } from './UserStatusIndicator';
 import { AssistantStatusIndicator } from './AssistantStatusIndicator';
 import { CopyMessageButton } from './CopyMessageButton';
+import { ImageAttachmentGallery } from './ImageAttachmentGallery';
 
 interface MessageItemProps {
   message: Message;
@@ -98,16 +99,7 @@ export const MessageItem = memo<MessageItemProps>(({
           )}
 
           {message.attachments && message.attachments.length > 0 && (
-            <div className="mt-3 flex flex-wrap justify-end gap-2">
-              {message.attachments.map((attachment) => (
-                <span
-                  key={`${attachment.name}:${attachment.path}`}
-                  className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200"
-                >
-                  {attachment.name}
-                </span>
-              ))}
-            </div>
+            <ImageAttachmentGallery attachments={message.attachments} align={isUser ? 'end' : 'start'} />
           )}
 
           {message.tool_calls && message.tool_calls.length > 0 && (

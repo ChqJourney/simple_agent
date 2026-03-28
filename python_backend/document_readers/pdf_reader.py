@@ -194,6 +194,25 @@ def parse_range_spec(
     return normalized
 
 
+def parse_page_spec(
+    spec: int | str | Sequence[int],
+    *,
+    page_count: int,
+) -> list[int]:
+    if isinstance(spec, str):
+        normalized = spec.strip().casefold()
+        if normalized in {"all", "*"}:
+            return list(range(1, page_count + 1))
+
+    try:
+        return parse_range_spec(spec, label="pages", max_value=page_count)
+    except ValueError as exc:
+        raise ValueError(
+            "Invalid pages spec. Use 'all', a single page like '23', "
+            "or a range like '34-40' or '1-3,8-10'."
+        ) from exc
+
+
 def _get_table_regions(page: "pymupdf_types.Page") -> list[list[float]]:
     regions: list[list[float]] = []
     try:
@@ -466,7 +485,7 @@ class PdfReader:
         options: ExtractionOptions | None = None,
     ) -> dict[str, Any]:
         options = options or ExtractionOptions()
-        page_numbers = parse_range_spec(pages, label="pages", max_value=self.page_count)
+        page_numbers = parse_page_spec(pages, page_count=self.page_count)
         allowed_modes = {"page_text", "visual_lines", "blocks"}
         if mode not in allowed_modes:
             raise ValueError(f"Unsupported mode: {mode}. Supported modes: {sorted(allowed_modes)}")

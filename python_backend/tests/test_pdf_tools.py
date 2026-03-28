@@ -15,9 +15,18 @@ from tools.pdf_tools import (
     PdfReadPagesTool,
     PdfSearchTool,
 )
+from document_readers.pdf_reader import parse_page_spec
 
 
 class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
+    def test_parse_page_spec_accepts_all_alias(self) -> None:
+        self.assertEqual([1, 2, 3, 4], parse_page_spec("all", page_count=4))
+        self.assertEqual([1, 2, 3], parse_page_spec("*", page_count=3))
+
+    def test_parse_page_spec_returns_friendly_error(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Invalid pages spec"):
+            parse_page_spec("foo", page_count=10)
+
     async def test_pdf_info_tool_wraps_reader_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             pdf_path = Path(temp_dir) / "manual.pdf"
@@ -83,6 +92,33 @@ class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result.success)
             self.assertEqual("pdf_pages", result.output["event"])
             self.assertEqual([2, 3], result.output["summary"]["requested_pages"])
+
+    async def test_pdf_read_pages_tool_allows_all_pages_keyword(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "manual.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7")
+
+            with patch(
+                "tools.pdf_tools.read_pdf_pages",
+                return_value={
+                    "pdf_path": str(pdf_path),
+                    "page_count": 12,
+                    "pages": list(range(1, 13)),
+                    "mode": "page_text",
+                    "filters": {},
+                    "items": [{"page_number": 1, "text": "scope", "total_lines": 10}],
+                },
+            ) as mocked:
+                result = await PdfReadPagesTool().execute(
+                    tool_call_id="pdf-pages-all",
+                    workspace_path=temp_dir,
+                    path="manual.pdf",
+                    pages="all",
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual("all", mocked.call_args.kwargs["pages"])
+            self.assertEqual(list(range(1, 13)), result.output["summary"]["requested_pages"])
 
     async def test_pdf_read_lines_tool_returns_line_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

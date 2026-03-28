@@ -198,7 +198,11 @@ class PdfGetOutlineTool(PdfToolMixin, BaseTool):
 
 class PdfReadPagesTool(PdfToolMixin, BaseTool):
     name = "pdf_read_pages"
-    description = "Read full PDF pages by page range, with optional visual lines or block output."
+    description = (
+        "Read PDF pages by page selector. "
+        "Use pages='all' for the whole file, or selectors like '23', '34-40', or '1-3,8-10'. "
+        "Mode can return page text, visual lines, or text blocks."
+    )
     display_name = "PDF Read Pages"
     category = "workspace"
     read_only = True
@@ -218,7 +222,7 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
             },
             "pages": {
                 "type": "string",
-                "description": "Page range such as '23' or '34-40' or '1-3,8-10'",
+                "description": "Use 'all' for every page, or selectors like '23', '34-40', or '1-3,8-10'",
             },
             "mode": {
                 "type": "string",

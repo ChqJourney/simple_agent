@@ -1,0 +1,472 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Optional
+
+from document_readers.pdf_reader import (
+    get_pdf_info,
+    get_pdf_outline,
+    read_pdf_lines,
+    read_pdf_pages,
+    search_pdf,
+)
+
+from .base import BaseTool, ToolResult
+from .path_utils import resolve_workspace_path
+
+
+def _filter_properties() -> dict[str, dict[str, Any]]:
+    return {
+        "exclude_header_footer": {"type": "boolean", "default": True},
+        "header_ratio": {"type": "number", "default": 0.05},
+        "footer_ratio": {"type": "number", "default": 0.05},
+        "exclude_watermark": {"type": "boolean", "default": True},
+        "angle_threshold": {"type": "number", "default": 5.0},
+        "exclude_tables": {"type": "boolean", "default": True},
+        "y_tolerance": {"type": "number", "default": 3.0},
+    }
+
+
+class PdfToolMixin:
+    @staticmethod
+    def _resolve_pdf_path(
+        path: str,
+        workspace_path: Optional[str],
+        tool_call_id: str,
+        tool_name: str,
+    ) -> tuple[Optional[Path], Optional[ToolResult]]:
+        file_path, resolve_error = resolve_workspace_path(path, workspace_path)
+        if resolve_error or file_path is None:
+            return None, ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                success=False,
+                output=None,
+                error=resolve_error or "Invalid path",
+            )
+
+        if not file_path.exists():
+            return None, ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                success=False,
+                output=None,
+                error=f"File not found: {path}",
+            )
+
+        if not file_path.is_file():
+            return None, ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                success=False,
+                output=None,
+                error=f"Path is not a file: {file_path}",
+            )
+
+        if file_path.suffix.lower() != ".pdf":
+            return None, ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                success=False,
+                output=None,
+                error=f"Unsupported file type for PDF tool: {file_path.suffix or '(none)'}",
+            )
+
+        return file_path, None
+
+
+class PdfGetInfoTool(PdfToolMixin, BaseTool):
+    name = "pdf_get_info"
+    description = "Read PDF metadata such as page count and embedded outline presence."
+    display_name = "PDF Get Info"
+    category = "workspace"
+    read_only = True
+    risk_level = "low"
+    preferred_order = 14
+    use_when = "Use when you need to inspect a PDF before searching or reading it."
+    avoid_when = "Avoid when you already know the PDF structure and need content directly."
+    user_summary_template = "Inspecting PDF {path}"
+    result_preview_fields = ["summary"]
+    tags = ["document", "pdf", "safe-read"]
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Absolute path or path relative to current workspace",
+            },
+        },
+        "required": ["path"],
+        "additionalProperties": False,
+    }
+
+    async def execute(
+        self,
+        path: str,
+        tool_call_id: str = "",
+        workspace_path: Optional[str] = None,
+        **_: Any,
+    ) -> ToolResult:
+        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        if failure:
+            return failure
+
+        try:
+            info = get_pdf_info(file_path)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))
+
+        return ToolResult(
+            tool_call_id=tool_call_id,
+            tool_name=self.name,
+            success=True,
+            output={
+                "event": "pdf_info",
+                "path": str(file_path),
+                "summary": {
+                    "page_count": info["page_count"],
+                    "has_outline": info["has_outline"],
+                    "outline_count": info["outline_count"],
+                },
+                "info": info,
+            },
+        )
+
+
+class PdfGetOutlineTool(PdfToolMixin, BaseTool):
+    name = "pdf_get_outline"
+    description = "Read a PDF embedded outline to locate chapters and section anchors."
+    display_name = "PDF Get Outline"
+    category = "workspace"
+    read_only = True
+    risk_level = "low"
+    preferred_order = 15
+    use_when = "Use when you need chapter structure or section navigation for a PDF."
+    avoid_when = "Avoid when the PDF has no outline or you only need a keyword search."
+    user_summary_template = "Reading PDF outline from {path}"
+    result_preview_fields = ["summary", "items"]
+    tags = ["document", "pdf", "outline", "safe-read"]
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Absolute path or path relative to current workspace",
+            },
+            "max_depth": {
+                "type": "integer",
+                "default": 4,
+            },
+        },
+        "required": ["path"],
+        "additionalProperties": False,
+    }
+
+    async def execute(
+        self,
+        path: str,
+        max_depth: int = 4,
+        tool_call_id: str = "",
+        workspace_path: Optional[str] = None,
+        **_: Any,
+    ) -> ToolResult:
+        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        if failure:
+            return failure
+
+        try:
+            normalized_max_depth = max(1, int(max_depth)) if max_depth is not None else None
+            outline = get_pdf_outline(file_path, max_depth=normalized_max_depth)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))
+
+        return ToolResult(
+            tool_call_id=tool_call_id,
+            tool_name=self.name,
+            success=True,
+            output={
+                "event": "pdf_outline",
+                "path": str(file_path),
+                "summary": {
+                    "page_count": outline["page_count"],
+                    "item_count": len(outline["items"]),
+                },
+                "items": outline["items"],
+            },
+        )
+
+
+class PdfReadPagesTool(PdfToolMixin, BaseTool):
+    name = "pdf_read_pages"
+    description = "Read full PDF pages by page range, with optional visual lines or block output."
+    display_name = "PDF Read Pages"
+    category = "workspace"
+    read_only = True
+    risk_level = "low"
+    preferred_order = 16
+    use_when = "Use when you need page-level PDF content before narrowing to line ranges."
+    avoid_when = "Avoid when you only need a few specific lines or a keyword search."
+    user_summary_template = "Reading PDF pages from {path}"
+    result_preview_fields = ["summary", "items"]
+    tags = ["document", "pdf", "safe-read", "excerpt"]
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Absolute path or path relative to current workspace",
+            },
+            "pages": {
+                "type": "string",
+                "description": "Page range such as '23' or '34-40' or '1-3,8-10'",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["page_text", "visual_lines", "blocks"],
+                "default": "page_text",
+            },
+            **_filter_properties(),
+        },
+        "required": ["path", "pages"],
+        "additionalProperties": False,
+    }
+
+    async def execute(
+        self,
+        path: str,
+        pages: str,
+        mode: str = "page_text",
+        exclude_header_footer: bool = True,
+        header_ratio: float = 0.05,
+        footer_ratio: float = 0.05,
+        exclude_watermark: bool = True,
+        angle_threshold: float = 5.0,
+        exclude_tables: bool = True,
+        y_tolerance: float = 3.0,
+        tool_call_id: str = "",
+        workspace_path: Optional[str] = None,
+        **_: Any,
+    ) -> ToolResult:
+        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        if failure:
+            return failure
+
+        try:
+            result = read_pdf_pages(
+                file_path,
+                pages=pages,
+                mode=mode,
+                exclude_header_footer=exclude_header_footer,
+                header_ratio=header_ratio,
+                footer_ratio=footer_ratio,
+                exclude_watermark=exclude_watermark,
+                angle_threshold=angle_threshold,
+                exclude_tables=exclude_tables,
+                y_tolerance=y_tolerance,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))
+
+        return ToolResult(
+            tool_call_id=tool_call_id,
+            tool_name=self.name,
+            success=True,
+            output={
+                "event": "pdf_pages",
+                "path": str(file_path),
+                "summary": {
+                    "page_count": result["page_count"],
+                    "requested_pages": result["pages"],
+                    "mode": result["mode"],
+                    "returned_items": len(result["items"]),
+                },
+                **result,
+            },
+        )
+
+
+class PdfReadLinesTool(PdfToolMixin, BaseTool):
+    name = "pdf_read_lines"
+    description = "Read specific visual line ranges from a PDF page, optionally including nearby context lines."
+    display_name = "PDF Read Lines"
+    category = "workspace"
+    read_only = True
+    risk_level = "low"
+    preferred_order = 17
+    use_when = "Use when you already know the PDF page and want stable line-range reads."
+    avoid_when = "Avoid when you first need to locate the relevant page or chapter."
+    user_summary_template = "Reading PDF lines from {path}"
+    result_preview_fields = ["summary", "items"]
+    tags = ["document", "pdf", "safe-read", "excerpt", "line-range"]
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Absolute path or path relative to current workspace",
+            },
+            "page_number": {
+                "type": "integer",
+                "description": "1-based PDF page number",
+            },
+            "line_numbers": {
+                "type": "string",
+                "description": "Line range such as '1-3,8-10'",
+            },
+            "include_context": {
+                "type": "integer",
+                "default": 0,
+            },
+            **_filter_properties(),
+        },
+        "required": ["path", "page_number", "line_numbers"],
+        "additionalProperties": False,
+    }
+
+    async def execute(
+        self,
+        path: str,
+        page_number: int,
+        line_numbers: str,
+        include_context: int = 0,
+        exclude_header_footer: bool = True,
+        header_ratio: float = 0.05,
+        footer_ratio: float = 0.05,
+        exclude_watermark: bool = True,
+        angle_threshold: float = 5.0,
+        exclude_tables: bool = True,
+        y_tolerance: float = 3.0,
+        tool_call_id: str = "",
+        workspace_path: Optional[str] = None,
+        **_: Any,
+    ) -> ToolResult:
+        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        if failure:
+            return failure
+
+        try:
+            result = read_pdf_lines(
+                file_path,
+                page_number=page_number,
+                line_numbers=line_numbers,
+                include_context=include_context,
+                exclude_header_footer=exclude_header_footer,
+                header_ratio=header_ratio,
+                footer_ratio=footer_ratio,
+                exclude_watermark=exclude_watermark,
+                angle_threshold=angle_threshold,
+                exclude_tables=exclude_tables,
+                y_tolerance=y_tolerance,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))
+
+        return ToolResult(
+            tool_call_id=tool_call_id,
+            tool_name=self.name,
+            success=True,
+            output={
+                "event": "pdf_lines",
+                "path": str(file_path),
+                "summary": {
+                    "page_number": result["page_number"],
+                    "requested_lines": result["requested_lines"],
+                    "returned_items": len(result["items"]),
+                },
+                **result,
+            },
+        )
+
+
+class PdfSearchTool(PdfToolMixin, BaseTool):
+    name = "pdf_search"
+    description = "Search PDF content by page or by visual line with structured location metadata."
+    display_name = "PDF Search"
+    category = "workspace"
+    read_only = True
+    risk_level = "low"
+    preferred_order = 18
+    use_when = "Use when you need to locate terms or clauses inside a PDF before reading excerpts."
+    avoid_when = "Avoid when you already know the exact page and line range."
+    user_summary_template = "Searching PDF {path} for {query}"
+    result_preview_fields = ["summary", "items"]
+    tags = ["document", "pdf", "search", "safe-read"]
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Absolute path or path relative to current workspace",
+            },
+            "query": {
+                "type": "string",
+                "description": "Search keyword",
+            },
+            "top_k": {
+                "type": "integer",
+                "default": 5,
+            },
+            "search_mode": {
+                "type": "string",
+                "enum": ["page", "line"],
+                "default": "page",
+            },
+            **_filter_properties(),
+        },
+        "required": ["path", "query"],
+        "additionalProperties": False,
+    }
+
+    async def execute(
+        self,
+        path: str,
+        query: str,
+        top_k: int = 5,
+        search_mode: str = "page",
+        exclude_header_footer: bool = True,
+        header_ratio: float = 0.05,
+        footer_ratio: float = 0.05,
+        exclude_watermark: bool = True,
+        angle_threshold: float = 5.0,
+        exclude_tables: bool = True,
+        y_tolerance: float = 3.0,
+        tool_call_id: str = "",
+        workspace_path: Optional[str] = None,
+        **_: Any,
+    ) -> ToolResult:
+        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        if failure:
+            return failure
+
+        try:
+            result = search_pdf(
+                file_path,
+                query=query,
+                top_k=top_k,
+                search_mode=search_mode,
+                exclude_header_footer=exclude_header_footer,
+                header_ratio=header_ratio,
+                footer_ratio=footer_ratio,
+                exclude_watermark=exclude_watermark,
+                angle_threshold=angle_threshold,
+                exclude_tables=exclude_tables,
+                y_tolerance=y_tolerance,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))
+
+        return ToolResult(
+            tool_call_id=tool_call_id,
+            tool_name=self.name,
+            success=True,
+            output={
+                "event": "pdf_search",
+                "path": str(file_path),
+                "summary": {
+                    "query": result["query"],
+                    "search_mode": result["search_mode"],
+                    "result_count": len(result["items"]),
+                },
+                **result,
+            },
+        )

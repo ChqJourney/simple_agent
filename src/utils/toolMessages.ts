@@ -66,37 +66,43 @@ function isDirectoryTreeOutput(value: unknown): value is {
 }
 
 function isSearchResultsOutput(value: unknown): value is {
-  event: 'search_results';
+  event: 'document_search_results';
   summary?: {
     hit_count?: number;
     file_count?: number;
   };
 } {
-  return isRecord(value) && value.event === 'search_results';
+  return isRecord(value) && value.event === 'document_search_results';
 }
 
-function isFileExcerptOutput(value: unknown): value is {
-  event: 'file_excerpt';
+function isDocumentSegmentOutput(value: unknown): value is {
+  event: 'document_segment';
   content?: string;
-  unit?: string;
-  start?: number;
-  end?: number;
+  document_type?: string;
+  segment_type?: string;
+  locator?: Record<string, unknown>;
   summary?: {
-    line_count?: number;
     char_count?: number;
+    line_count?: number;
+    page_count?: number;
+    page_number?: number;
+    document_type?: string;
+    segment_type?: string;
   };
 } {
-  return isRecord(value) && value.event === 'file_excerpt';
+  return isRecord(value) && value.event === 'document_segment';
 }
 
-function isDocumentOutlineOutput(value: unknown): value is {
-  event: 'document_outline';
+function isDocumentStructureOutput(value: unknown): value is {
+  event: 'document_structure';
   summary?: {
     node_count?: number;
     max_level?: number;
+    document_type?: string;
+    structure_type?: string;
   };
 } {
-  return isRecord(value) && value.event === 'document_outline';
+  return isRecord(value) && value.event === 'document_structure';
 }
 
 function isSkillLoaderOutput(value: unknown): value is {
@@ -167,15 +173,15 @@ export function getToolCategoryLabel(toolName: string): string {
     return '目录浏览';
   }
 
-  if (toolName === 'search_files') {
+  if (toolName === 'search_documents') {
     return '全文搜索';
   }
 
-  if (toolName === 'read_file_excerpt' || toolName === 'file_read') {
+  if (toolName === 'read_document_segment' || toolName === 'file_read') {
     return '内容读取';
   }
 
-  if (toolName === 'get_document_outline') {
+  if (toolName === 'get_document_structure') {
     return '文档结构';
   }
 
@@ -236,20 +242,19 @@ export function createToolCallSummary(toolCall: Pick<ToolCall, 'name' | 'argumen
     return `正在扫描目录 ${path}，深度 ${depth}`;
   }
 
-  if (toolCall.name === 'search_files') {
+  if (toolCall.name === 'search_documents') {
     const query = typeof args.query === 'string' ? args.query : '';
-    return query ? `正在搜索 "${query}"` : '正在搜索文件内容';
+    return query ? `正在搜索 "${query}"` : '正在搜索文档内容';
   }
 
-  if (toolCall.name === 'read_file_excerpt') {
+  if (toolCall.name === 'read_document_segment') {
     const path = typeof args.path === 'string' ? args.path : '文件';
-    const unit = typeof args.unit === 'string' ? args.unit : 'line';
-    const start = typeof args.start === 'number' ? args.start : '?';
-    const end = typeof args.end === 'number' ? args.end : '?';
-    return `正在读取 ${path} 的 ${unit} ${start}-${end}`;
+    const locator = typeof args.locator === 'object' && args.locator !== null ? args.locator as Record<string, unknown> : null;
+    const locatorType = typeof locator?.type === 'string' ? locator.type : 'segment';
+    return `正在读取 ${path} 的 ${locatorType}`;
   }
 
-  if (toolCall.name === 'get_document_outline') {
+  if (toolCall.name === 'get_document_structure') {
     const path = typeof args.path === 'string' ? args.path : '文件';
     return `正在提取 ${path} 的文档结构`;
   }
@@ -390,23 +395,29 @@ export function renderToolResultDetails(success: boolean, output: unknown, error
       ].join('\n');
     }
 
-    if (isFileExcerptOutput(output)) {
-      const count = output.unit === 'char'
-        ? `${output.summary?.char_count ?? 0} characters`
-        : `${output.summary?.line_count ?? 0} lines`;
+    if (isDocumentSegmentOutput(output)) {
+      const count = output.summary?.page_count
+        ? `${output.summary.page_count} pages`
+        : output.summary?.line_count
+          ? `${output.summary.line_count} lines`
+          : `${output.summary?.char_count ?? 0} chars`;
       return [
-        `Excerpt: ${output.unit || 'line'} ${output.start ?? '?'}-${output.end ?? '?'}`,
-        `Range size: ${count}`,
+        `文档片段读取完成`,
+        `文档类型: ${output.summary?.document_type ?? output.document_type ?? 'unknown'}`,
+        `片段类型: ${output.summary?.segment_type ?? output.segment_type ?? 'unknown'}`,
+        `范围大小: ${count}`,
         '',
         typeof output.content === 'string' ? output.content : '',
       ].join('\n');
     }
 
-    if (isDocumentOutlineOutput(output)) {
+    if (isDocumentStructureOutput(output)) {
       return [
         `文档结构提取完成`,
         `结构节点: ${output.summary?.node_count ?? 0}`,
         `最大层级: ${output.summary?.max_level ?? 0}`,
+        output.summary?.document_type ? `文档类型: ${output.summary.document_type}` : '',
+        output.summary?.structure_type ? `结构类型: ${output.summary.structure_type}` : '',
       ].join('\n');
     }
 
@@ -513,17 +524,17 @@ export function createToolResultSummary(toolName: string, success: boolean): str
   const resolvedToolName = toolName || 'tool';
   const successMessages: Record<string, string> = {
     list_directory_tree: '目录扫描完成',
-    search_files: '文件搜索完成',
-    read_file_excerpt: '片段读取完成',
-    get_document_outline: '文档结构提取完成',
+    search_documents: '文档搜索完成',
+    read_document_segment: '文档片段读取完成',
+    get_document_structure: '文档结构提取完成',
     file_read: '文件读取完成',
     file_write: '文件写入完成',
   };
   const failureMessages: Record<string, string> = {
     list_directory_tree: '目录扫描失败',
-    search_files: '文件搜索失败',
-    read_file_excerpt: '片段读取失败',
-    get_document_outline: '文档结构提取失败',
+    search_documents: '文档搜索失败',
+    read_document_segment: '文档片段读取失败',
+    get_document_structure: '文档结构提取失败',
     file_read: '文件读取失败',
     file_write: '文件写入失败',
   };

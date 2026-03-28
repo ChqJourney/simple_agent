@@ -31,11 +31,13 @@ flowchart LR
     Backend --> Runtime["Runtime State<br/>config / provider bundle / active agents"]
     Backend --> Agent["Agent Loop"]
     Agent --> LLM["LLM Providers<br/>OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama"]
-    Agent --> Tools["Tool Registry<br/>directory/search/excerpt/outline/file/exec/task/question/skill"]
+    Agent --> Tools["Tool Registry<br/>directory/document/file/exec/task/question/skill"]
+    Tools --> Readers["Document Readers<br/>pdf / word / excel / pptx"]
     Agent --> Context["Context Providers<br/>Local Skills"]
     Agent --> Persist["Workspace Persistence<br/>.agent/sessions / .agent/logs"]
 
     Tools --> Workspace["Workspace Files"]
+    Readers --> Workspace
     Persist --> Workspace
     Tauri --> Workspace
     UI --> Workspace
@@ -99,7 +101,8 @@ flowchart LR
 | Context Provider 注册 | `python_backend/runtime/provider_registry.py` | 构建 skill provider bundle | normalized config | `ContextProviderBundle` |
 | 运行事件 | `python_backend/runtime/events.py` `python_backend/runtime/logs.py` | 定义并写入 run_event | Agent loop 阶段事件 | `.agent/logs/*.jsonl` |
 | LLM Provider | `python_backend/llms/*.py` | 对接 OpenAI 兼容 API、provider 特定 reasoning/usage 适配、Kimi 温度约束 | messages、tools、runtime policy | 流式 chunk / completion |
-| Tool 系统 | `python_backend/tools/*.py` | 文档读取/搜索/结构提取、文件写入、执行、任务、提问、skill 加载等工具 | tool call arguments | ToolResult + descriptor metadata |
+| Tool 系统 | `python_backend/tools/*.py` | 统一文档工具、PDF 专家工具、文件写入、执行、任务、提问、skill 加载等工具 | tool call arguments | ToolResult + descriptor metadata |
+| 文档 Reader | `python_backend/document_readers/*.py` | 按格式解析 `pdf/docx/xlsx/pptx`，向主工具提供结构、搜索和片段读取能力 | workspace 文件路径 | 结构化文档快照与定位结果 |
 | Context Providers | `python_backend/skills/*` | 扫描本地 skill metadata catalog，并按名称加载 skill 正文 | app data skill root、workspace path | 附加到 system prompt 的 metadata 与 `skill_loader` 运行时加载结果 |
 
 ## 4. 关键功能视图
@@ -112,6 +115,8 @@ flowchart LR
 | 会话锁模 | `src/components/Chat/ChatContainer.tsx` `python_backend/main.py` | 首次发送消息时锁定 session 的 provider/model，后续必须匹配 |
 | 流式文本与 reasoning | `src/contexts/WebSocketContext.tsx` `python_backend/core/agent.py` | 分别消费 `token` 与 `reasoning_token`，最后由 `reasoning_complete` 收束 |
 | Tool Calling | `python_backend/core/agent.py` `python_backend/tools/base.py` | LLM 输出 tool calls，后端并发执行工具并回传结果，schema 中附带 `x-tool-meta` descriptor 扩展信息 |
+| 文档工具主链路 | `python_backend/tools/get_document_structure.py` `python_backend/tools/search_documents.py` `python_backend/tools/read_document_segment.py` | 统一覆盖“看结构 -> 搜命中 -> 读片段”，对外收口到稳定工具面 |
+| 文档格式解析 | `python_backend/document_readers/pdf_reader.py` `python_backend/document_readers/word_reader.py` `python_backend/document_readers/excel_reader.py` `python_backend/document_readers/pptx_reader.py` | 底层按格式拆分，分别处理 PDF 视觉行、Word 段落/表格、Excel sheet/单元格、PPTX slide 文本 |
 | Tool 审批 | `src/components/Tools/ToolConfirmModal.tsx` `python_backend/core/user.py` | 对需要确认的工具建立 pending future，前端按只读/写入/高级执行风险展示审批文案 |
 | 交互式提问 | `src/components/Tools/PendingQuestionCard.tsx` `python_backend/core/agent.py` | `ask_question` 工具通过 WebSocket 向用户发问并等待回答 |
 | 工具业务化展示 | `src/components/Tools/ToolCallDisplay.tsx` `src/components/Tools/ToolMessageDisplay.tsx` `src/utils/toolMessages.ts` | 把工具调用与结果渲染成“正在做什么 / 风险类型 / 结果摘要 / 技术详情” |
@@ -202,6 +207,8 @@ sequenceDiagram
    - 把每个 skill 的 YAML frontmatter catalog 拼入 system prompt
    - 需要完整 skill 指令时，由模型调用 `skill_loader`
    - 工具列表通过 OpenAI-compatible function schema 暴露，并附带 `x-tool-meta`
+   - 文档任务优先走 `get_document_structure`、`search_documents`、`read_document_segment`
+   - 若是 PDF 精细读取任务，可进一步调用 `pdf_get_outline`、`pdf_read_lines` 等格式专属工具
 4. 调用 provider 的 `stream()`
 
 #### E. 流式回传与工具执行

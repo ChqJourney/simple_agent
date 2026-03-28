@@ -7,10 +7,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.ask_question import AskQuestionTool
-from tools.get_document_outline import GetDocumentOutlineTool
+from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
-from tools.read_file_excerpt import ReadFileExcerptTool
-from tools.search_files import SearchFilesTool
+from tools.pdf_tools import PdfGetInfoTool, PdfSearchTool
+from tools.read_document_segment import ReadDocumentSegmentTool
+from tools.search_documents import SearchDocumentsTool
 from tools.skill_loader import SkillLoaderTool
 from tools.registry import ToolRegistry
 from tools.todo_task import TodoTaskTool
@@ -21,9 +22,11 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_registry_exposes_descriptors_and_category_lookup(self) -> None:
         registry = ToolRegistry()
         registry.register(ListDirectoryTreeTool())
-        registry.register(SearchFilesTool())
-        registry.register(ReadFileExcerptTool())
-        registry.register(GetDocumentOutlineTool())
+        registry.register(SearchDocumentsTool())
+        registry.register(ReadDocumentSegmentTool())
+        registry.register(GetDocumentStructureTool())
+        registry.register(PdfGetInfoTool())
+        registry.register(PdfSearchTool())
         registry.register(TodoTaskTool())
         registry.register(AskQuestionTool())
         registry.register(SkillLoaderTool(LocalSkillLoader(search_roots=[])))
@@ -33,10 +36,12 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [
                 "ask_question",
-                "get_document_outline",
+                "get_document_structure",
                 "list_directory_tree",
-                "read_file_excerpt",
-                "search_files",
+                "pdf_get_info",
+                "pdf_search",
+                "read_document_segment",
+                "search_documents",
                 "skill_loader",
                 "todo_task",
             ],
@@ -44,7 +49,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(["todo_task"], [tool.name for tool in registry.list_by_category("task")])
         self.assertEqual(["ask_question"], [tool.name for tool in registry.list_by_category("interaction")])
-        search_descriptor = next(d for d in descriptors if d.name == "search_files")
+        search_descriptor = next(d for d in descriptors if d.name == "search_documents")
         self.assertTrue(search_descriptor.read_only)
         self.assertEqual("low", search_descriptor.risk_level)
         self.assertIn("search", search_descriptor.tags)

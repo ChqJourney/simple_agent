@@ -20,14 +20,17 @@ describe("toolMessages", () => {
 
   it("creates business-friendly summaries for foundational tools", () => {
     expect(createToolCallSummary({
-      name: "search_files",
+      name: "search_documents",
       arguments: { query: "GB/T 19001" },
     } as never)).toBe('正在搜索 "GB/T 19001"');
 
     expect(createToolCallSummary({
-      name: "read_file_excerpt",
-      arguments: { path: "report.md", unit: "line", start: 12, end: 20 },
-    } as never)).toBe("正在读取 report.md 的 line 12-20");
+      name: "read_document_segment",
+      arguments: {
+        path: "report.md",
+        locator: { type: "text_line_range", line_start: 12, line_end: 20 },
+      },
+    } as never)).toBe("正在读取 report.md 的 text_line_range");
   });
 
   it("formats directory tree results in a readable way", () => {
@@ -42,6 +45,62 @@ describe("toolMessages", () => {
     expect(details).toContain("目录扫描完成");
     expect(details).toContain("文件数: 42");
     expect(details).toContain("目录数: 7");
+  });
+
+  it("formats document structure results in a readable way", () => {
+    expect(createToolCallSummary({
+      name: "get_document_structure",
+      arguments: { path: "manual.pdf" },
+    } as never)).toBe("正在提取 manual.pdf 的文档结构");
+
+    const details = renderToolResultDetails(true, {
+      event: "document_structure",
+      summary: {
+        node_count: 12,
+        max_level: 3,
+        document_type: "pdf",
+        structure_type: "pdf_outline",
+      },
+    });
+
+    expect(details).toContain("文档结构提取完成");
+    expect(details).toContain("结构节点: 12");
+    expect(details).toContain("最大层级: 3");
+    expect(details).toContain("文档类型: pdf");
+    expect(details).toContain("结构类型: pdf_outline");
+  });
+
+  it("formats document search results in a readable way", () => {
+    const details = renderToolResultDetails(true, {
+      event: "document_search_results",
+      summary: {
+        hit_count: 5,
+        file_count: 2,
+      },
+    });
+
+    expect(details).toContain("搜索完成");
+    expect(details).toContain("命中数: 5");
+    expect(details).toContain("涉及文件: 2");
+  });
+
+  it("formats document segment results in a readable way", () => {
+    const details = renderToolResultDetails(true, {
+      event: "document_segment",
+      summary: {
+        char_count: 18,
+        line_count: 2,
+        document_type: "pdf",
+        segment_type: "pdf_line_range",
+      },
+      content: "[L10] target line",
+    });
+
+    expect(details).toContain("文档片段读取完成");
+    expect(details).toContain("文档类型: pdf");
+    expect(details).toContain("片段类型: pdf_line_range");
+    expect(details).toContain("范围大小: 2 lines");
+    expect(details).toContain("[L10] target line");
   });
 
   it("formats pending questions in a readable way", () => {

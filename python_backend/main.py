@@ -39,12 +39,13 @@ from tools.base import ToolRegistry
 from tools.ask_question import AskQuestionTool
 from tools.file_read import FileReadTool
 from tools.file_write import FileWriteTool
-from tools.get_document_outline import GetDocumentOutlineTool
+from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
 from tools.node_execute import NodeExecuteTool
+from tools.pdf_tools import PdfGetInfoTool, PdfGetOutlineTool, PdfReadLinesTool, PdfReadPagesTool, PdfSearchTool
 from tools.python_execute import PythonExecuteTool
-from tools.read_file_excerpt import ReadFileExcerptTool
-from tools.search_files import SearchFilesTool
+from tools.read_document_segment import ReadDocumentSegmentTool
+from tools.search_documents import SearchDocumentsTool
 from tools.skill_loader import SkillLoaderTool
 from tools.shell_execute import ShellExecuteTool
 from tools.todo_task import TodoTaskTool
@@ -99,9 +100,14 @@ app.add_middleware(
 
 tool_registry = ToolRegistry()
 tool_registry.register(ListDirectoryTreeTool())
-tool_registry.register(SearchFilesTool())
-tool_registry.register(ReadFileExcerptTool())
-tool_registry.register(GetDocumentOutlineTool())
+tool_registry.register(SearchDocumentsTool())
+tool_registry.register(ReadDocumentSegmentTool())
+tool_registry.register(GetDocumentStructureTool())
+tool_registry.register(PdfGetInfoTool())
+tool_registry.register(PdfGetOutlineTool())
+tool_registry.register(PdfReadPagesTool())
+tool_registry.register(PdfReadLinesTool())
+tool_registry.register(PdfSearchTool())
 tool_registry.register(FileReadTool())
 tool_registry.register(FileWriteTool())
 tool_registry.register(ShellExecuteTool())

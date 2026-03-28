@@ -98,7 +98,7 @@ describe("MessageList", () => {
         tool_calls: [
           {
             tool_call_id: "tool-1",
-            name: "search_files",
+            name: "search_documents",
             arguments: { query: "ISO 17025" },
           },
         ],
@@ -107,12 +107,12 @@ describe("MessageList", () => {
       {
         id: "tool-decision-1",
         role: "tool",
-        content: "已允许 search_files 本次执行",
+        content: "已允许 search_documents 本次执行",
         tool_call_id: "tool-1",
-        name: "search_files",
+        name: "search_documents",
         toolMessage: {
           kind: "decision",
-          toolName: "search_files",
+          toolName: "search_documents",
           decision: "approve_once",
           scope: "session",
         },
@@ -149,7 +149,7 @@ describe("MessageList", () => {
         tool_calls: [
           {
             tool_call_id: "tool-1",
-            name: "search_files",
+            name: "search_documents",
             arguments: { query: "4.1" },
           },
         ],
@@ -158,12 +158,12 @@ describe("MessageList", () => {
       {
         id: "tool-result-1",
         role: "tool",
-        content: "文件搜索完成",
+        content: "文档搜索完成",
         tool_call_id: "tool-1",
-        name: "search_files",
+        name: "search_documents",
         toolMessage: {
           kind: "result",
-          toolName: "search_files",
+          toolName: "search_documents",
           success: true,
           details: "搜索完成\n命中数: 2\n涉及文件: 1",
         },
@@ -182,11 +182,11 @@ describe("MessageList", () => {
 
     await waitFor(() => {
       expect(screen.getByText("现在开始第二轮判断")).toBeTruthy();
-      expect(screen.getByText("文件搜索完成")).toBeTruthy();
+      expect(screen.getByText("文档搜索完成")).toBeTruthy();
     });
 
     const detailContent = screen.getByText("现在开始第二轮判断").closest(".space-y-3")?.textContent || "";
-    expect(detailContent.indexOf("文件搜索完成")).toBeLessThan(detailContent.indexOf("现在开始第二轮判断"));
+    expect(detailContent.indexOf("文档搜索完成")).toBeLessThan(detailContent.indexOf("现在开始第二轮判断"));
   });
 
   it("copies visible user and assistant message bodies from the message list", async () => {

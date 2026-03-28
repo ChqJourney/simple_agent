@@ -6,7 +6,7 @@
 
 - 结构化运行日志与可观测 agent loop
 - 多模型 profile、session 级模型锁定
-- 可扩展工具系统，含基础文档工具与高级 fallback 执行工具
+- 可扩展工具系统，含统一文档工具、PDF 专家工具与高级 fallback 执行工具
 - 本地 skill metadata catalog 注入与 `skill_loader` 按需加载
 - 图片输入与工作区拖拽交互
 - 会话标题生成与会话元数据持久化
@@ -118,9 +118,14 @@ Workspace
 内置工具：
 
 - `list_directory_tree`
-- `search_files`
-- `read_file_excerpt`
-- `get_document_outline`
+- `search_documents`
+- `read_document_segment`
+- `get_document_structure`
+- `pdf_get_info`
+- `pdf_get_outline`
+- `pdf_read_pages`
+- `pdf_read_lines`
+- `pdf_search`
 - `file_read`
 - `file_write`
 - `shell_execute`
@@ -134,10 +139,33 @@ Workspace
 
 当前工具系统的设计原则：
 
-- 优先使用基础文档工具完成“看目录、搜内容、读局部、理解结构”
+- 优先使用统一文档工具完成“看目录、搜内容、读局部、理解结构”
+- 对 `pdf/docx/xlsx/pptx` 采用“底层按文件类型拆 reader，对外按功能收口主工具”的设计
+- `pdf_get_*` 工具作为格式专属专家能力保留，用于更稳定的 PDF 视觉行和 outline 读取
 - `shell_execute`、`python_execute`、`node_execute` 继续保留，作为 LLM 的最后兜底能力
 - 认证/文档/条款判断等更强业务语义，优先放在 skill 层组合实现，而不是堆进底层工具
 - 工具 descriptor 已补充元数据，既帮助 LLM 选工具，也帮助前端更好地解释工具行为
+
+当前文档工具主链路：
+
+- `get_document_structure`
+  - 支持 `md/txt/rst`
+  - 支持 `pdf`
+  - 支持 `docx`
+  - 支持 `xlsx`
+  - 支持 `pptx`
+- `search_documents`
+  - 支持文本文件逐行搜索
+  - 支持 PDF 视觉行搜索
+  - 支持 Word 段落与表格单元格搜索
+  - 支持 Excel 单元格搜索
+  - 支持 PPTX slide 文本与 notes 搜索
+- `read_document_segment`
+  - 支持文本按行/字符读取
+  - 支持 PDF 按页/视觉行读取
+  - 支持 Word 按段落/表格范围读取
+  - 支持 Excel 按 sheet 区域读取
+  - 支持 PPTX 按 slide 范围读取
 
 工具 descriptor 当前包含：
 

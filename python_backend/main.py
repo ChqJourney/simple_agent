@@ -564,7 +564,7 @@ async def handle_message(
     elif message_type == "tool_confirm":
         await handle_tool_confirm(data, connection_id)
     elif message_type == "question_response":
-        await handle_question_response(data)
+        await handle_question_response(data, connection_id)
     elif message_type == "interrupt":
         await handle_interrupt(data)
     elif message_type == "set_execution_mode":
@@ -857,7 +857,8 @@ async def handle_tool_confirm(data: Dict[str, Any], connection_id: str) -> None:
     )
 
 
-async def handle_question_response(data: Dict[str, Any]) -> None:
+async def handle_question_response(data: Dict[str, Any], connection_id: str) -> None:
+    session_id = data.get("session_id")
     tool_call_id = data.get("tool_call_id")
     answer = data.get("answer")
     action = data.get("action", "submit")
@@ -876,6 +877,8 @@ async def handle_question_response(data: Dict[str, Any]) -> None:
         tool_call_id=tool_call_id,
         answer=answer,
         action=action,
+        session_id=session_id,
+        connection_id=connection_id,
     )
 
     logger.info(

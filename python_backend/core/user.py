@@ -690,10 +690,34 @@ class UserManager:
         tool_call_id: str,
         answer: Optional[str] = None,
         action: Literal["submit", "dismiss"] = "submit",
+        session_id: Optional[str] = None,
+        connection_id: Optional[str] = None,
     ) -> bool:
         async with self._lock:
             if tool_call_id not in self.question_responses:
                 logger.warning("No pending question for %s", tool_call_id)
+                return False
+
+            context = self.pending_question_context.get(tool_call_id, {})
+            expected_session_id = context.get("session_id")
+            expected_connection_id = context.get("connection_id")
+
+            if session_id is not None and expected_session_id and session_id != expected_session_id:
+                logger.warning(
+                    "Question response session mismatch for %s: expected=%s actual=%s",
+                    tool_call_id,
+                    expected_session_id,
+                    session_id,
+                )
+                return False
+
+            if connection_id is not None and expected_connection_id and connection_id != expected_connection_id:
+                logger.warning(
+                    "Question response connection mismatch for %s: expected=%s actual=%s",
+                    tool_call_id,
+                    expected_connection_id,
+                    connection_id,
+                )
                 return False
 
             future = self.question_responses.pop(tool_call_id)

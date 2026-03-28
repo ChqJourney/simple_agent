@@ -5,7 +5,12 @@ from .base import BaseTool, ToolResult
 
 class AskQuestionTool(BaseTool):
     name = "ask_question"
-    description = "Pause execution to request clarification or approval from the user"
+    description = (
+        "Pause execution to request clarification or approval from the user. "
+        "Ask one short, concrete question. Use `details` for brief supporting context. "
+        "If you provide `options`, the UI renders them as quick-reply buttons; when you omit `options`, "
+        "the user can answer with free text. Prefer 2-5 distinct options when the next step is a choice."
+    )
     display_name = "Ask Question"
     category = "interaction"
     read_only = True
@@ -21,16 +26,23 @@ class AskQuestionTool(BaseTool):
         "properties": {
             "question": {
                 "type": "string",
-                "description": "Question to present to the user",
+                "description": (
+                    "A single, user-facing question. Keep it short, specific, and directly tied to the next decision."
+                ),
             },
             "details": {
                 "type": "string",
-                "description": "Extra context shown beneath the question",
+                "description": (
+                    "Optional brief context shown beneath the question, such as tradeoffs, assumptions, or why the answer matters."
+                ),
             },
             "options": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Suggested user choices",
+                "description": (
+                    "Optional suggested choices. These render as clickable quick-reply buttons in the UI. "
+                    "Omit this field when you need an open-ended free-text answer."
+                ),
             },
         },
         "required": ["question"],

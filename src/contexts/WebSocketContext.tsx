@@ -26,7 +26,7 @@ interface WebSocketContextValue {
   connectionStatus: ConnectionStatus;
   isConnected: boolean;
   sendMessage: (sessionId: string, content: string, attachments?: Attachment[], workspacePath?: string) => void;
-  answerQuestion: (toolCallId: string, answer?: string, action?: 'submit' | 'dismiss') => boolean;
+  answerQuestion: (sessionId: string, toolCallId: string, answer?: string, action?: 'submit' | 'dismiss') => boolean;
   sendConfig: (configOverride?: ProviderConfig) => void;
   confirmTool: (sessionId: string, toolCallId: string, decision: ToolDecision, scope?: ToolDecisionScope) => boolean;
   interrupt: (sessionId: string) => void;
@@ -512,9 +512,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     send(message);
   }, [send]);
 
-  const answerQuestion = useCallback((toolCallId: string, answer?: string, action: 'submit' | 'dismiss' = 'submit') => {
+  const answerQuestion = useCallback((
+    sessionId: string,
+    toolCallId: string,
+    answer?: string,
+    action: 'submit' | 'dismiss' = 'submit',
+  ) => {
     return send({
       type: 'question_response',
+      session_id: sessionId,
       tool_call_id: toolCallId,
       answer,
       action,

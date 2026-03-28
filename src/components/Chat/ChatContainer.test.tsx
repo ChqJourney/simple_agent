@@ -138,6 +138,7 @@ describe("ChatContainer", () => {
     fireEvent.click(screen.getByRole("button", { name: "continue" }));
 
     expect(answerQuestionMock).toHaveBeenCalledWith(
+      "session-a",
       "question-1",
       "continue",
       "submit",
@@ -157,12 +158,51 @@ describe("ChatContainer", () => {
     fireEvent.click(screen.getByRole("button", { name: "continue" }));
 
     expect(answerQuestionMock).toHaveBeenCalledWith(
+      "session-a",
       "question-1",
       "continue",
       "submit",
     );
     expect((screen.getByRole("button", { name: "continue" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Dismiss" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("submits a free-text answer when the question has no preset options", () => {
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [],
+          currentStreamingContent: "",
+          currentReasoningContent: "",
+          isStreaming: false,
+          assistantStatus: "idle",
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          pendingQuestion: {
+            tool_call_id: "question-2",
+            tool_name: "ask_question",
+            question: "Which branch should I compare against?",
+            details: "I couldn't infer the release target from the repo state.",
+            options: [],
+            status: "idle",
+          },
+        },
+      },
+    });
+
+    render(<ChatContainer />);
+
+    fireEvent.change(screen.getByPlaceholderText("Type your answer"), {
+      target: { value: "release/2026.03" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    expect(answerQuestionMock).toHaveBeenCalledWith(
+      "session-a",
+      "question-2",
+      "release/2026.03",
+      "submit",
+    );
   });
 
   it("keeps tool approval visible when confirmation sending fails", () => {

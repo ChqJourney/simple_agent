@@ -265,16 +265,10 @@ function Get-PortableAppExecutableFileName {
 function Get-PortableArchiveFileName {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Version,
-        [ValidateSet("full", "no_runtime")]
-        [string]$Variant = "full"
+        [string]$Version
     )
 
     $artifactBaseName = Get-SafeArtifactName -Name (Get-AppName)
-    if ($Variant -eq "no_runtime") {
-        return "${artifactBaseName}_${Version}_windows_x64_no_runtime.zip"
-    }
-
     return "${artifactBaseName}_${Version}_windows_x64.zip"
 }
 
@@ -324,17 +318,6 @@ function Get-PortableReleaseRoot {
     )
 
     return (Join-Path (Get-ReleaseArtifactsRoot) "$Version/portable")
-}
-
-function Get-PortableVariantRoot {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Version,
-        [ValidateSet("full", "no_runtime")]
-        [string]$Variant
-    )
-
-    return (Join-Path (Get-PortableReleaseRoot -Version $Version) $Variant)
 }
 
 function Get-LegacyReleaseArtifactsRoot {

@@ -151,7 +151,11 @@ class Agent:
                         content = result.output
                     else:
                         parts = [f"Error: {result.error}"]
-                        if result.output and isinstance(result.output, dict):
+                        if result.tool_name == "ask_question" and result.output is not None:
+                            parts.append(
+                                f"Question result: {self._serialize_tool_message_content(result.output)}"
+                            )
+                        elif result.output and isinstance(result.output, dict):
                             stderr = result.output.get("stderr", "")
                             if stderr:
                                 parts.append(f"stderr: {stderr}")

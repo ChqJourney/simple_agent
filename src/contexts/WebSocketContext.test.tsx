@@ -77,7 +77,7 @@ function Probe() {
       </button>
       <button
         type="button"
-        onClick={() => context.answerQuestion("question-1", "continue")}
+        onClick={() => context.answerQuestion("session-a", "question-1", "continue")}
         aria-label="answer question"
       >
         answer
@@ -542,6 +542,7 @@ describe("WebSocketProvider", () => {
 
     expect(websocketMockState.sendMock).toHaveBeenCalledWith({
       type: "question_response",
+      session_id: "session-a",
       tool_call_id: "question-1",
       answer: "continue",
       action: "submit",

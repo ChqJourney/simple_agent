@@ -206,6 +206,7 @@ export interface ClientToolConfirm {
 
 export interface ClientQuestionResponse {
   type: 'question_response';
+  session_id: string;
   tool_call_id: string;
   answer?: string;
   action: 'submit' | 'dismiss';

@@ -127,20 +127,11 @@ jobs:
         shell: pwsh
         run: |
           $portableZips = @(Get-ChildItem -Path artifacts/release -Recurse -Filter *.zip)
-          if ($portableZips.Count -lt 2) {
-            throw "Expected both runtime and no-runtime ZIP artifacts, found $($portableZips.Count)."
+          if ($portableZips.Count -ne 1) {
+            throw "Expected exactly one portable ZIP artifact, found $($portableZips.Count)."
           }
 
-          $runtimeZip = $portableZips | Where-Object { $_.Name -notlike "*_no_runtime.zip" } | Select-Object -First 1
-          $noRuntimeZip = $portableZips | Where-Object { $_.Name -like "*_no_runtime.zip" } | Select-Object -First 1
-
-          if ($null -eq $runtimeZip) {
-            throw "Runtime ZIP artifact was not created."
-          }
-
-          if ($null -eq $noRuntimeZip) {
-            throw "No-runtime ZIP artifact was not created."
-          }
+          $runtimeZip = $portableZips[0]
 
           $smokeRoot = Join-Path $env:RUNNER_TEMP "portable-smoke"
           if (Test-Path -LiteralPath $smokeRoot) {
@@ -148,7 +139,6 @@ jobs:
           }
 
           Expand-Archive -LiteralPath $runtimeZip.FullName -DestinationPath (Join-Path $smokeRoot "runtime") -Force
-          Expand-Archive -LiteralPath $noRuntimeZip.FullName -DestinationPath (Join-Path $smokeRoot "no-runtime") -Force
 
           $runtimeAppRoot = Get-ChildItem -Path (Join-Path $smokeRoot "runtime") -Directory | Select-Object -First 1
           if ($null -eq $runtimeAppRoot) {
@@ -159,15 +149,9 @@ jobs:
             throw "Runtime ZIP still contains nested resources/resources directories."
           }
 
-          foreach ($appRoot in @($runtimeAppRoot, (Get-ChildItem -Path (Join-Path $smokeRoot "no-runtime") -Directory | Select-Object -First 1))) {
-            if ($null -eq $appRoot) {
-              throw "Portable ZIP did not extract a portable app directory."
-            }
-
-            $appExe = Get-ChildItem -Path $appRoot.FullName -File -Filter "work agent.exe" | Select-Object -First 1
-            if ($null -eq $appExe) {
-              throw "Portable app executable work agent.exe was not found under $($appRoot.FullName)"
-            }
+          $appExe = Get-ChildItem -Path $runtimeAppRoot.FullName -File -Filter "work agent.exe" | Select-Object -First 1
+          if ($null -eq $appExe) {
+            throw "Portable app executable work agent.exe was not found under $($runtimeAppRoot.FullName)"
           }
 
           foreach ($requiredRuntimeDir in @(
@@ -182,11 +166,6 @@ jobs:
           $backendExe = Get-ChildItem -Path (Join-Path $smokeRoot "runtime") -Recurse -Filter core.exe | Select-Object -First 1
           if ($null -eq $backendExe) {
             throw "Packaged backend executable was not found after extracting $($runtimeZip.FullName)"
-          }
-
-          $noRuntimeRuntimes = Get-ChildItem -Path (Join-Path $smokeRoot "no-runtime") -Recurse -Directory -Filter runtimes | Select-Object -First 1
-          if ($null -ne $noRuntimeRuntimes) {
-            throw "No-runtime ZIP still contains embedded runtimes."
           }
 
           $stdoutLog = Join-Path $smokeRoot "backend-stdout.log"
@@ -240,7 +219,7 @@ jobs:
       - name: Upload portable ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-portable-zips
+          name: windows-portable-zip
           path: artifacts/release/*/portable/*.zip
           if-no-files-found: error
 
@@ -254,8 +233,8 @@ jobs:
           $releaseTitle = $tagName
           $zipFiles = @(Get-ChildItem -Path artifacts/release -Recurse -Filter *.zip)
 
-          if ($zipFiles.Count -lt 2) {
-            throw "Expected both portable ZIP artifacts before publishing the GitHub release."
+          if ($zipFiles.Count -ne 1) {
+            throw "Expected exactly one portable ZIP artifact before publishing the GitHub release, found $($zipFiles.Count)."
           }
 
           gh release view $tagName --repo $env:GITHUB_REPOSITORY *> $null
@@ -263,5 +242,4 @@ jobs:
             gh release create $tagName --repo $env:GITHUB_REPOSITORY --title $releaseTitle --generate-notes
           }
 
-          $assetPaths = $zipFiles | ForEach-Object { $_.FullName }
-          gh release upload $tagName --repo $env:GITHUB_REPOSITORY --clobber $assetPaths
+          gh release upload $tagName --repo $env:GITHUB_REPOSITORY --clobber $zipFiles[0].FullName

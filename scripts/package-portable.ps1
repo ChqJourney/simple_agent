@@ -27,12 +27,8 @@ $compiledSidecar = Join-Path $projectRoot "src-tauri/target/release/$($manifest.
 $portableResources = Get-PortableResourcesPath
 $iconSource = Join-Path $projectRoot "src-tauri/icons/icon.ico"
 $releaseRoot = Get-PortableReleaseRoot -Version $releaseVersion
-$fullPortableParent = Get-PortableVariantRoot -Version $releaseVersion -Variant "full"
-$fullPortableRoot = Join-Path $fullPortableParent $artifactBaseName
-$fullArchivePath = Join-Path $releaseRoot (Get-PortableArchiveFileName -Version $releaseVersion -Variant "full")
-$noRuntimePortableParent = Get-PortableVariantRoot -Version $releaseVersion -Variant "no_runtime"
-$noRuntimePortableRoot = Join-Path $noRuntimePortableParent $artifactBaseName
-$noRuntimeArchivePath = Join-Path $releaseRoot (Get-PortableArchiveFileName -Version $releaseVersion -Variant "no_runtime")
+$portableRoot = Join-Path $releaseRoot $artifactBaseName
+$archivePath = Join-Path $releaseRoot (Get-PortableArchiveFileName -Version $releaseVersion)
 
 if (-not $SkipAppBuild) {
     $buildArgs = @("-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "package-app.ps1"), "-Version", $releaseVersion)
@@ -57,56 +53,38 @@ if (-not (Test-Path -LiteralPath $portableResources)) {
 
 Ensure-Directory -Path (Split-Path $releaseRoot -Parent)
 Reset-Directory -Path $releaseRoot
-Ensure-Directory -Path $fullPortableRoot
-Ensure-Directory -Path $noRuntimePortableRoot
+Ensure-Directory -Path $portableRoot
+Copy-Item -LiteralPath $releaseExecutable -Destination (Join-Path $portableRoot $portableAppExecutableName) -Force
+Copy-Item -LiteralPath $compiledSidecar -Destination (Join-Path $portableRoot (Split-Path $compiledSidecar -Leaf)) -Force
+Ensure-Directory -Path (Join-Path $portableRoot "resources")
 
-foreach ($portableRoot in @($fullPortableRoot, $noRuntimePortableRoot)) {
-    Copy-Item -LiteralPath $releaseExecutable -Destination (Join-Path $portableRoot $portableAppExecutableName) -Force
-    Copy-Item -LiteralPath $compiledSidecar -Destination (Join-Path $portableRoot (Split-Path $compiledSidecar -Leaf)) -Force
-    Ensure-Directory -Path (Join-Path $portableRoot "resources")
-}
-
-$fullRuntimeRoot = Join-Path $fullPortableRoot "runtimes"
-$fullResourceRoot = Join-Path $fullPortableRoot "resources"
+$runtimeRoot = Join-Path $portableRoot "runtimes"
+$resourceRoot = Join-Path $portableRoot "resources"
 
 Get-ChildItem -LiteralPath $portableResources -Force | ForEach-Object {
     if ($_.Name -eq "runtimes") {
-        Ensure-Directory -Path $fullRuntimeRoot
+        Ensure-Directory -Path $runtimeRoot
         Get-ChildItem -LiteralPath $_.FullName -Force | ForEach-Object {
-            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $fullRuntimeRoot $_.Name) -Recurse -Force
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $runtimeRoot $_.Name) -Recurse -Force
         }
     }
     else {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $fullResourceRoot $_.Name) -Recurse -Force
-    }
-}
-
-$noRuntimeResources = Join-Path $noRuntimePortableRoot "resources"
-Get-ChildItem -LiteralPath $portableResources -Force | ForEach-Object {
-    if ($_.Name -ne "runtimes") {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $noRuntimeResources $_.Name) -Recurse -Force
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $resourceRoot $_.Name) -Recurse -Force
     }
 }
 
 if (Test-Path -LiteralPath $iconSource) {
-    Copy-Item -LiteralPath $iconSource -Destination (Join-Path $fullPortableRoot "resources/icon.ico") -Force
-    Copy-Item -LiteralPath $iconSource -Destination (Join-Path $noRuntimePortableRoot "resources/icon.ico") -Force
+    Copy-Item -LiteralPath $iconSource -Destination (Join-Path $portableRoot "resources/icon.ico") -Force
 }
 
-foreach ($archivePath in @($fullArchivePath, $noRuntimeArchivePath)) {
-    if (Test-Path -LiteralPath $archivePath) {
-        Remove-Item -LiteralPath $archivePath -Force
-    }
+if (Test-Path -LiteralPath $archivePath) {
+    Remove-Item -LiteralPath $archivePath -Force
 }
 
-Compress-Archive -Path $fullPortableRoot -DestinationPath $fullArchivePath -CompressionLevel Optimal
-Compress-Archive -Path $noRuntimePortableRoot -DestinationPath $noRuntimeArchivePath -CompressionLevel Optimal
+Compress-Archive -Path $portableRoot -DestinationPath $archivePath -CompressionLevel Optimal
 
-foreach ($archivePath in @($fullArchivePath, $noRuntimeArchivePath)) {
-    if (-not (Test-Path -LiteralPath $archivePath)) {
-        throw "Portable archive was not created: $archivePath"
-    }
+if (-not (Test-Path -LiteralPath $archivePath)) {
+    throw "Portable archive was not created: $archivePath"
 }
 
-Write-Host "Portable ZIP packaged at $fullArchivePath"
-Write-Host "Portable ZIP packaged at $noRuntimeArchivePath"
+Write-Host "Portable ZIP packaged at $archivePath"

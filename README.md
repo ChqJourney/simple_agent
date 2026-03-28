@@ -522,16 +522,15 @@ git diff --check
 - GitHub Actions 工作流位于 `.github/workflows/release-windows.yml`
 - 工作流会从当前仓库的 release asset 下载 vendor bundle，再调用 `scripts/release.ps1`
 - vendor bundle release tag 默认是 `vendor-202603`，也可以在手动触发 workflow 时覆盖
-- 发布会生成两份 ZIP：`*_windows_x64.zip` 为完整 runtime 版本
-- `*_windows_x64_no_runtime.zip`：不包含 embedded Python / Node runtime 的瘦身版本
+- 发布会只生成一份 ZIP：`*_windows_x64.zip`，包含 embedded Python / Node runtime
 - 手动触发 `workflow_dispatch` 默认只上传 Actions artifact，不自动创建应用 release
-- 推送 `v*` tag 时，workflow 会自动创建或更新同名 GitHub Release，并把两份 ZIP 作为 release assets 上传
+- 推送 `v*` tag 时，workflow 会自动创建或更新同名 GitHub Release，并把单个 ZIP 作为 release asset 上传
 
 ### 发布前提
 
 - 当前仓库远端：`git@github.com:ChqJourney/simple_agent.git`
 - vendor bundle 需要先上传到当前仓库 release，例如 `vendor-202603`
-- 当前 workflow 产物始终会出现在 GitHub Actions artifact `windows-portable-zips` 中
+- 当前 workflow 产物始终会出现在 GitHub Actions artifact `windows-portable-zip` 中
 - 只有 `v*` tag 触发的 workflow 才会自动附加到应用 release
 
 ### 维护 vendor bundle
@@ -600,7 +599,7 @@ git push origin v0.1.0
 - 推送 `v*` tag 会自动触发 `release-windows.yml`
 - workflow 会把 `v0.1.0` 解析为应用版本 `0.1.0`
 - tag 触发时默认使用 `vendor-202603`
-- tag 触发成功后，会创建或更新名为 `v0.1.0` 的 GitHub Release，并上传两份 ZIP
+- tag 触发成功后，会创建或更新名为 `v0.1.0` 的 GitHub Release，并上传单个 ZIP
 
 ### 查看执行状态
 
@@ -629,15 +628,14 @@ gh run view <run-id> --repo ChqJourney/simple_agent --log
 ```bash
 gh run download <run-id> \
   --repo ChqJourney/simple_agent \
-  --name windows-portable-zips \
+  --name windows-portable-zip \
   --dir ./artifacts-gh
 ```
 
-下载后应能看到两份 ZIP：
+下载后应能看到一份 ZIP：
 
 ```text
 *_windows_x64.zip
-*_windows_x64_no_runtime.zip
 ```
 
 ## 关键目录

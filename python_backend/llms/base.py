@@ -43,7 +43,7 @@ class BaseLLM(ABC):
 
     def _build_tool_schemas(self, tools: List[Any]) -> Optional[List[Dict]]:
         """Convert tool registry to OpenAI function calling format.
-        
+
         Tools are expected to have .name, .description, and .parameters attributes.
         """
         if not tools:
@@ -51,11 +51,21 @@ class BaseLLM(ABC):
 
         schemas = []
         for tool in tools:
+            description = str(getattr(tool, "description", "") or "").strip()
+            use_when = str(getattr(tool, "use_when", "") or "").strip()
+            avoid_when = str(getattr(tool, "avoid_when", "") or "").strip()
+
+            description_lines = [description] if description else []
+            if use_when:
+                description_lines.append(f"Use when: {use_when}")
+            if avoid_when:
+                description_lines.append(f"Avoid when: {avoid_when}")
+
             schema = {
                 "type": "function",
                 "function": {
                     "name": tool.name,
-                    "description": tool.description,
+                    "description": "\n".join(description_lines),
                     "parameters": tool.parameters
                 }
             }

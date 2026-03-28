@@ -153,10 +153,10 @@ export const ChatContainer = () => {
     interrupt(currentSessionId);
   }, [currentSessionId, interrupt, isStreaming]);
 
-  const handleQuestionOption = useCallback((option: string) => {
+  const handleQuestionAnswer = useCallback((answer: string) => {
     if (!currentSessionId || !pendingQuestion || pendingQuestion.status === 'submitting') return;
     useChatStore.getState().markPendingQuestionSubmitting(currentSessionId, pendingQuestion.tool_call_id);
-    const sent = answerQuestion(pendingQuestion.tool_call_id, option, 'submit');
+    const sent = answerQuestion(currentSessionId, pendingQuestion.tool_call_id, answer, 'submit');
     if (!sent) {
       useChatStore.getState().markPendingQuestionIdle(currentSessionId, pendingQuestion.tool_call_id);
     }
@@ -165,7 +165,7 @@ export const ChatContainer = () => {
   const handleDismissQuestion = useCallback(() => {
     if (!currentSessionId || !pendingQuestion || pendingQuestion.status === 'submitting') return;
     useChatStore.getState().markPendingQuestionSubmitting(currentSessionId, pendingQuestion.tool_call_id);
-    const sent = answerQuestion(pendingQuestion.tool_call_id, undefined, 'dismiss');
+    const sent = answerQuestion(currentSessionId, pendingQuestion.tool_call_id, undefined, 'dismiss');
     if (!sent) {
       useChatStore.getState().markPendingQuestionIdle(currentSessionId, pendingQuestion.tool_call_id);
     }
@@ -187,7 +187,7 @@ export const ChatContainer = () => {
       {pendingQuestion && (
         <PendingQuestionCard
           question={pendingQuestion}
-          onSelectOption={handleQuestionOption}
+          onSubmitAnswer={handleQuestionAnswer}
           onDismiss={handleDismissQuestion}
         />
       )}

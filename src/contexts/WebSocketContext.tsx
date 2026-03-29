@@ -44,6 +44,11 @@ interface QueuedWorkspaceMessage {
   message: ClientMessage;
 }
 
+type QueuedAuthenticatedMessage =
+  | Extract<ClientWebSocketMessage, { type: 'question_response' }>
+  | Extract<ClientWebSocketMessage, { type: 'tool_confirm' }>
+  | Extract<ClientWebSocketMessage, { type: 'interrupt' }>;
+
 function hasTransientChatState(session: {
   isStreaming: boolean;
   currentStreamingContent: string;
@@ -170,6 +175,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const workspaceBoundRef = useRef(false);
   const pendingWorkspacePathRef = useRef<string | null>(null);
   const queuedMessagesRef = useRef<QueuedWorkspaceMessage[]>([]);
+  const queuedAuthenticatedMessagesRef = useRef<QueuedAuthenticatedMessage[]>([]);
   const queuedExecutionModesRef = useRef<Record<string, ExecutionMode>>({});
   const config = useConfigStore((state) => state.config);
   const isConnected = connectionStatus === 'connected';
@@ -318,6 +324,18 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           backendAuthenticatedRef.current = true;
           workspaceBoundRef.current = false;
           lastConfigErrorRef.current = null;
+          if (queuedAuthenticatedMessagesRef.current.length > 0) {
+            const remainingMessages: QueuedAuthenticatedMessage[] = [];
+
+            queuedAuthenticatedMessagesRef.current.forEach((message) => {
+              const sent = wsService.send(message);
+              if (!sent) {
+                remainingMessages.push(message);
+              }
+            });
+
+            queuedAuthenticatedMessagesRef.current = remainingMessages;
+          }
           for (const [sessionId, executionMode] of Object.entries(queuedExecutionModesRef.current)) {
             const sent = wsService.send({
               type: 'set_execution_mode',
@@ -415,6 +433,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const send = useCallback((message: ClientWebSocketMessage) => {
     return wsService.send(message);
   }, []);
+
+  const sendAuthenticatedMessage = useCallback((message: QueuedAuthenticatedMessage) => {
+    if (!backendAuthenticatedRef.current) {
+      queuedAuthenticatedMessagesRef.current.push(message);
+      return true;
+    }
+
+    return send(message);
+  }, [send]);
 
   const fetchAuthToken = useCallback(async (): Promise<string | null> => {
     if (authTokenRef.current !== null) {
@@ -518,14 +545,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     answer?: string,
     action: 'submit' | 'dismiss' = 'submit',
   ) => {
-    return send({
+    return sendAuthenticatedMessage({
       type: 'question_response',
       session_id: sessionId,
       tool_call_id: toolCallId,
       answer,
       action,
     });
-  }, [send]);
+  }, [sendAuthenticatedMessage]);
 
   const confirmTool = useCallback((
     sessionId: string,
@@ -533,7 +560,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     decision: ToolDecision,
     scope: ToolDecisionScope = 'session'
   ) => {
-    return send({
+    return sendAuthenticatedMessage({
       type: 'tool_confirm',
       session_id: sessionId,
       tool_call_id: toolCallId,
@@ -541,11 +568,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       scope,
       approved: decision !== 'reject',
     });
-  }, [send]);
+  }, [sendAuthenticatedMessage]);
 
   const interrupt = useCallback((sessionId: string) => {
-    send({ type: 'interrupt', session_id: sessionId });
-  }, [send]);
+    sendAuthenticatedMessage({ type: 'interrupt', session_id: sessionId });
+  }, [sendAuthenticatedMessage]);
 
   const sendWorkspace = useCallback((workspacePath: string) => {
     pendingWorkspacePathRef.current = workspacePath;

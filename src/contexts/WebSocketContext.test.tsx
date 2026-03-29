@@ -84,6 +84,20 @@ function Probe() {
       </button>
       <button
         type="button"
+        onClick={() => context.confirmTool("session-a", "tool-1", "approve_once")}
+        aria-label="confirm tool"
+      >
+        confirm
+      </button>
+      <button
+        type="button"
+        onClick={() => context.interrupt("session-a")}
+        aria-label="interrupt session"
+      >
+        interrupt
+      </button>
+      <button
+        type="button"
         onClick={() => context.setExecutionMode?.("session-a", "free")}
         aria-label="set execution mode"
       >
@@ -538,6 +552,12 @@ describe("WebSocketProvider", () => {
       </WebSocketProvider>
     );
 
+    websocketMockState.messageHandler?.({
+      type: "config_updated",
+      provider: "openai",
+      model: "gpt-4o",
+    });
+
     fireEvent.click(screen.getByRole("button", { name: "answer question" }));
 
     expect(websocketMockState.sendMock).toHaveBeenCalledWith({
@@ -546,6 +566,48 @@ describe("WebSocketProvider", () => {
       tool_call_id: "question-1",
       answer: "continue",
       action: "submit",
+    });
+  });
+
+  it("queues auth-sensitive control messages until config handshake completes", async () => {
+    websocketMockState.sendSucceeded = true;
+
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "answer question" }));
+    fireEvent.click(screen.getByRole("button", { name: "confirm tool" }));
+    fireEvent.click(screen.getByRole("button", { name: "interrupt session" }));
+
+    expect(websocketMockState.sendMock).not.toHaveBeenCalled();
+
+    websocketMockState.messageHandler?.({
+      type: "config_updated",
+      provider: "openai",
+      model: "gpt-4o",
+    });
+
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(1, {
+      type: "question_response",
+      session_id: "session-a",
+      tool_call_id: "question-1",
+      answer: "continue",
+      action: "submit",
+    });
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(2, {
+      type: "tool_confirm",
+      session_id: "session-a",
+      tool_call_id: "tool-1",
+      decision: "approve_once",
+      scope: "session",
+      approved: true,
+    });
+    expect(websocketMockState.sendMock).toHaveBeenNthCalledWith(3, {
+      type: "interrupt",
+      session_id: "session-a",
     });
   });
 

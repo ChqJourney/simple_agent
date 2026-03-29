@@ -22,6 +22,31 @@ const QWEN_IMAGE_SUPPORTED_PREFIXES = ['qvq'];
 const QWEN_IMAGE_UNSUPPORTED_PREFIXES = ['qwen3', 'qwq'];
 const OLLAMA_IMAGE_SUPPORTED_PREFIXES: string[] = [];
 const OLLAMA_IMAGE_UNSUPPORTED_PREFIXES: string[] = [];
+const DEFAULT_CONTEXT_LENGTH_PREFIXES: Partial<Record<ProviderType, Record<string, number>>> = {
+  openai: {
+    'gpt-4o': 128000,
+    'gpt-4-turbo': 128000,
+    o1: 128000,
+    o3: 128000,
+    o4: 128000,
+    'gpt-5': 128000,
+  },
+  deepseek: {
+    'deepseek-chat': 128000,
+    'deepseek-reasoner': 128000,
+  },
+  kimi: {
+    'kimi-k2.5': 256000,
+  },
+  glm: {
+    'glm-5': 128000,
+    'glm-4.7': 128000,
+    'glm-4.6': 128000,
+  },
+  minimax: {
+    'minimax-m2': 200000,
+  },
+};
 
 function normalizeModel(model: string): string {
   return model.trim().toLowerCase();
@@ -129,4 +154,18 @@ export function getSupportedInputTypes(provider: ProviderType, model: string): I
 
 export function getDefaultReasoningEnabled(provider: ProviderType, model: string): boolean {
   return supportsReasoning(provider, model);
+}
+
+export function getDefaultContextLength(provider: ProviderType, model: string): number | undefined {
+  const normalizedModel = normalizeModel(model);
+  if (!normalizedModel) {
+    return undefined;
+  }
+
+  const providerDefaults = DEFAULT_CONTEXT_LENGTH_PREFIXES[provider];
+  if (!providerDefaults) {
+    return undefined;
+  }
+
+  return Object.entries(providerDefaults).find(([prefix]) => normalizedModel.startsWith(prefix))?.[1];
 }

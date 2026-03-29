@@ -80,20 +80,23 @@ describe("SettingsPage", () => {
             enable_reasoning: false,
             profile_name: "primary",
           },
-          secondary: {
+          background: {
             provider: "openai",
             model: "gpt-4o-mini",
             api_key: "test-key",
             base_url: "https://api.openai.com/v1",
             enable_reasoning: false,
-            profile_name: "secondary",
+            profile_name: "background",
           },
         },
         runtime: {
-          context_length: 64000,
-          max_output_tokens: 4000,
-          max_tool_rounds: 20,
-          max_retries: 3,
+          shared: {
+            context_length: 64000,
+            max_output_tokens: 4000,
+            max_tool_rounds: 20,
+            max_retries: 3,
+            timeout_seconds: 30,
+          },
         },
         context_providers: {
           skills: {
@@ -112,20 +115,26 @@ describe("SettingsPage", () => {
     }));
   });
 
-  it("renders primary and secondary profile settings plus context provider controls", () => {
+  it("renders primary and background profile settings plus context provider controls", () => {
     render(<SettingsPage />);
 
     expect(screen.getByText("Primary Model")).toBeTruthy();
-    expect(screen.getByText("Secondary Model")).toBeTruthy();
+    expect(screen.getByText("Background Model")).toBeTruthy();
     expect(
-      screen.getByText("Used for background helper tasks such as title generation. Falls back to the primary model when unset.")
+      screen.getByText("Used for title generation, session compaction, and future delegated background tasks. Falls back to the primary model when unset.")
     ).toBeTruthy();
 
     openTab("Runtime");
-    expect(screen.getByLabelText("Context Length")).toBeTruthy();
-    expect(screen.getByLabelText("Max Output Tokens")).toBeTruthy();
-    expect(screen.getByLabelText("Max Tool Rounds")).toBeTruthy();
-    expect(screen.getByLabelText("Max Retries")).toBeTruthy();
+    expect(screen.getByText("Shared Runtime")).toBeTruthy();
+    expect(screen.getByText("Conversation Overrides")).toBeTruthy();
+    expect(screen.getByText("Background Overrides")).toBeTruthy();
+    expect(screen.getByText("Compaction Overrides")).toBeTruthy();
+    expect(screen.getByText("Delegated Task Overrides")).toBeTruthy();
+    expect(screen.getByLabelText("Shared Runtime Context Length")).toBeTruthy();
+    expect(screen.getByLabelText("Conversation Overrides Max Output Tokens")).toBeTruthy();
+    expect(screen.getByLabelText("Background Overrides Max Tool Rounds")).toBeTruthy();
+    expect(screen.getByLabelText("Compaction Overrides Max Retries")).toBeTruthy();
+    expect(screen.getByLabelText("Delegated Task Overrides Timeout Seconds")).toBeTruthy();
 
     openTab("Skill");
     expect(screen.getByLabelText("Enable Local Skills")).toBeTruthy();
@@ -134,11 +143,11 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Base Font Size")).toBeTruthy();
   }, 10000);
 
-  it("renders separate connection test actions for primary and secondary profiles", () => {
+  it("renders separate connection test actions for primary and background profiles", () => {
     render(<SettingsPage />);
 
     expect(screen.getByRole("button", { name: "Test Primary Connection" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Test Secondary Connection" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Test Background Connection" })).toBeTruthy();
   });
 
   it("renders all configured system skill roots", async () => {
@@ -177,10 +186,92 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     openTab("Runtime");
-    expect((screen.getByLabelText("Context Length") as HTMLInputElement).value).toBe("64000");
-    expect((screen.getByLabelText("Max Output Tokens") as HTMLInputElement).value).toBe("4000");
-    expect((screen.getByLabelText("Max Tool Rounds") as HTMLInputElement).value).toBe("20");
-    expect((screen.getByLabelText("Max Retries") as HTMLInputElement).value).toBe("3");
+    expect((screen.getByLabelText("Shared Runtime Context Length") as HTMLInputElement).value).toBe("64000");
+    expect((screen.getByLabelText("Shared Runtime Max Output Tokens") as HTMLInputElement).value).toBe("4000");
+    expect((screen.getByLabelText("Shared Runtime Max Tool Rounds") as HTMLInputElement).value).toBe("20");
+    expect((screen.getByLabelText("Shared Runtime Max Retries") as HTMLInputElement).value).toBe("3");
+    expect((screen.getByLabelText("Delegated Task Overrides Timeout Seconds") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Conversation Overrides Context Length") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Background Overrides Max Output Tokens") as HTMLInputElement).value).toBe("");
+  });
+
+  it("saves delegated task timeout overrides through normalized config", () => {
+    render(<SettingsPage />);
+
+    openTab("Runtime");
+    fireEvent.change(screen.getByLabelText("Delegated Task Overrides Timeout Seconds"), {
+      target: { value: "90" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(setConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtime: expect.objectContaining({
+          delegated_task: expect.objectContaining({
+            timeout_seconds: 90,
+          }),
+        }),
+      })
+    );
+    expect(sendConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtime: expect.objectContaining({
+          delegated_task: expect.objectContaining({
+            timeout_seconds: 90,
+          }),
+        }),
+      })
+    );
+  });
+
+  it("shows runtime guardrail warnings when effective values exceed the selected role model window", () => {
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o",
+            api_key: "test-key",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+          background: {
+            provider: "deepseek",
+            model: "deepseek-chat",
+            api_key: "test-key",
+            base_url: "https://api.deepseek.com",
+            enable_reasoning: false,
+            profile_name: "background",
+          },
+        },
+        runtime: {
+          shared: {
+            context_length: 160000,
+            max_output_tokens: 4000,
+            max_tool_rounds: 20,
+            max_retries: 3,
+          },
+          background: {
+            max_output_tokens: 200000,
+          },
+        },
+      },
+      setConfig: setConfigMock,
+    });
+
+    render(<SettingsPage />);
+
+    openTab("Runtime");
+
+    expect(screen.getByText(/Context length \(160000\) is higher than the known openai\/gpt-4o window \(128000\)/)).toBeTruthy();
+    expect(screen.getByText(/Max output tokens \(200000\) exceeds the effective context length \(160000\)/)).toBeTruthy();
+    expect(screen.getAllByText(/Context length \(160000\) is higher than the known deepseek\/deepseek-chat window \(128000\)/).length).toBeGreaterThan(0);
   });
 
   it("saves a custom system prompt through normalized config", () => {
@@ -296,25 +387,27 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByLabelText("Enable Local Skills"));
 
     openTab("Runtime");
-    fireEvent.change(screen.getByLabelText("Max Output Tokens"), {
+    fireEvent.change(screen.getByLabelText("Shared Runtime Max Output Tokens"), {
       target: { value: "2048" },
     });
-    fireEvent.change(screen.getByLabelText("Max Tool Rounds"), {
+    fireEvent.change(screen.getByLabelText("Shared Runtime Max Tool Rounds"), {
       target: { value: "6" },
     });
-    fireEvent.change(screen.getByLabelText("Max Retries"), {
+    fireEvent.change(screen.getByLabelText("Shared Runtime Max Retries"), {
       target: { value: "4" },
     });
     fireEvent.click(screen.getByText("Save"));
 
     expect(setConfigMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        runtime: {
-          context_length: 64000,
-          max_output_tokens: 2048,
-          max_tool_rounds: 6,
-          max_retries: 4,
-        },
+        runtime: expect.objectContaining({
+          shared: expect.objectContaining({
+            context_length: 64000,
+            max_output_tokens: 2048,
+            max_tool_rounds: 6,
+            max_retries: 4,
+          }),
+        }),
         context_providers: {
           skills: {
             local: {
@@ -332,6 +425,44 @@ describe("SettingsPage", () => {
               enabled: false,
             },
           }),
+        }),
+      })
+    );
+  });
+
+  it("saves role-specific runtime overrides alongside shared runtime defaults", () => {
+    render(<SettingsPage />);
+
+    openTab("Runtime");
+    fireEvent.change(screen.getByLabelText("Conversation Overrides Max Output Tokens"), {
+      target: { value: "1024" },
+    });
+    fireEvent.change(screen.getByLabelText("Background Overrides Max Tool Rounds"), {
+      target: { value: "8" },
+    });
+    fireEvent.change(screen.getByLabelText("Compaction Overrides Context Length"), {
+      target: { value: "32000" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(setConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtime: expect.objectContaining({
+          shared: expect.objectContaining({
+            context_length: 64000,
+            max_output_tokens: 4000,
+            max_tool_rounds: 20,
+            max_retries: 3,
+          }),
+          conversation: {
+            max_output_tokens: 1024,
+          },
+          background: {
+            max_tool_rounds: 8,
+          },
+          compaction: {
+            context_length: 32000,
+          },
         }),
       })
     );

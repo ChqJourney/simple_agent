@@ -14,6 +14,7 @@ from runtime.embedded_runtime import (
     get_python_executable,
 )
 from runtime.events import RunEvent
+from runtime.router import build_execution_spec, resolve_runtime_policy
 
 __all__ = [
     "get_node_executable",
@@ -23,6 +24,8 @@ __all__ = [
     "get_primary_profile_config",
     "get_python_executable",
     "normalize_runtime_config",
+    "build_execution_spec",
+    "resolve_runtime_policy",
     "LockedModelRef",
     "ReplayPlan",
     "SessionCompactionRecord",

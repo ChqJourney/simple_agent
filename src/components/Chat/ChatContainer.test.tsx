@@ -318,6 +318,45 @@ describe("ChatContainer", () => {
     );
   });
 
+  it("uses the conversation role capability even when the background model is text-only", () => {
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o",
+            api_key: "test-key",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+          background: {
+            provider: "deepseek",
+            model: "deepseek-chat",
+            api_key: "test-key",
+            base_url: "https://api.deepseek.com",
+            enable_reasoning: false,
+            profile_name: "background",
+          },
+        },
+      } as never,
+    });
+
+    render(<ChatContainer />);
+
+    expect(messageInputPropsMock.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        disabled: false,
+        supportsImageAttachments: true,
+      })
+    );
+  });
+
   it("re-sends a failed user message through the existing send flow", () => {
     useConfigStore.setState({
       config: {

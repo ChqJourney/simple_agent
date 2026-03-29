@@ -7,6 +7,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.ask_question import AskQuestionTool
+from tools.delegate_task import DelegateTaskTool
 from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
 from tools.pdf_tools import PdfGetInfoTool, PdfSearchTool
@@ -16,6 +17,21 @@ from tools.skill_loader import SkillLoaderTool
 from tools.registry import ToolRegistry
 from tools.todo_task import TodoTaskTool
 from skills.local_loader import LocalSkillLoader
+
+
+class FakeDelegatedTaskExecutor:
+    async def execute(self, *, task: str, expected_output: str = "text", context=None):
+        return {
+            "event": "delegated_task",
+            "summary": f"Handled: {task}",
+            "data": context or {},
+            "expected_output": expected_output,
+            "worker": {
+                "profile_name": "background",
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+            },
+        }
 
 
 class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
@@ -29,6 +45,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         registry.register(PdfSearchTool())
         registry.register(TodoTaskTool())
         registry.register(AskQuestionTool())
+        registry.register(DelegateTaskTool(FakeDelegatedTaskExecutor()))
         registry.register(SkillLoaderTool(LocalSkillLoader(search_roots=[])))
 
         descriptors = registry.get_descriptors()
@@ -36,6 +53,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [
                 "ask_question",
+                "delegate_task",
                 "get_document_structure",
                 "list_directory_tree",
                 "pdf_get_info",
@@ -47,7 +65,10 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             ],
             descriptor_names,
         )
-        self.assertEqual(["todo_task"], [tool.name for tool in registry.list_by_category("task")])
+        self.assertEqual(
+            ["delegate_task", "todo_task"],
+            sorted(tool.name for tool in registry.list_by_category("task")),
+        )
         self.assertEqual(["ask_question"], [tool.name for tool in registry.list_by_category("interaction")])
         search_descriptor = next(d for d in descriptors if d.name == "search_documents")
         self.assertTrue(search_descriptor.read_only)
@@ -76,6 +97,12 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             details="The shell command will modify files.",
             options=["continue", "stop"],
         )
+        delegated_result = await DelegateTaskTool(FakeDelegatedTaskExecutor()).execute(
+            tool_call_id="delegate-1",
+            task="Summarize unresolved risks",
+            expected_output="json",
+            context={"tool_results": ["runtime clamp pending"]},
+        )
 
         self.assertTrue(todo_result.success)
         self.assertEqual("todo_task", todo_result.tool_name)
@@ -88,6 +115,13 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("pending_question", question_result.output["event"])
         self.assertEqual("Need approval to continue?", question_result.output["question"])
         self.assertEqual(["continue", "stop"], question_result.output["options"])
+
+        self.assertTrue(delegated_result.success)
+        self.assertEqual("delegated_task", delegated_result.output["event"])
+        self.assertEqual("Handled: Summarize unresolved risks", delegated_result.output["summary"])
+        self.assertEqual("background", delegated_result.output["worker"]["profile_name"])
+        self.assertEqual("gpt-4o-mini", delegated_result.metadata["worker"]["model"])
+        self.assertEqual(120, DelegateTaskTool(FakeDelegatedTaskExecutor()).policy.timeout_seconds)
 
 
 if __name__ == "__main__":

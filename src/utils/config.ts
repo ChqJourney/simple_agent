@@ -1,10 +1,13 @@
 import {
   AppearanceConfig,
   ContextProviderConfig,
+  ExecutionRole,
+  InputType,
   ModelProfile,
   ProviderConfig,
   ProviderMemoryEntry,
   ProviderType,
+  RuntimeConfig,
   RuntimePolicy,
 } from '../types';
 import { getSupportedInputTypes, supportsReasoning } from './modelCapabilities';
@@ -24,6 +27,11 @@ export const DEFAULT_RUNTIME_POLICY: Required<RuntimePolicy> = {
   max_output_tokens: 4000,
   max_tool_rounds: 20,
   max_retries: 3,
+  timeout_seconds: 120,
+};
+
+export const DEFAULT_RUNTIME_CONFIG: Required<Pick<RuntimeConfig, 'shared'>> = {
+  shared: DEFAULT_RUNTIME_POLICY,
 };
 
 export const MIN_BASE_FONT_SIZE = 12;
@@ -108,12 +116,53 @@ export function hasRunnableConversationProfile(config?: ProviderConfig | null): 
     return false;
   }
 
-  const primaryProfile = config.profiles?.primary || config;
+  const primaryProfile = resolveProfileForRole(config, 'conversation');
   if (!hasConfiguredModelProfile(primaryProfile)) {
     return false;
   }
 
   return primaryProfile.provider === 'ollama' || Boolean(primaryProfile.api_key?.trim());
+}
+
+export function resolveProfileForRole(
+  config: ProviderConfig | null | undefined,
+  role: ExecutionRole
+): Partial<ModelProfile> | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  const primaryProfile = config.profiles?.primary || config;
+  if (role === 'conversation') {
+    return primaryProfile;
+  }
+
+  return config.profiles?.background || primaryProfile;
+}
+
+export function resolveCapabilitySummaryForRole(
+  config: ProviderConfig | null | undefined,
+  role: ExecutionRole
+): { supportedInputTypes: InputType[]; reasoningSupported: boolean } {
+  const profile = resolveProfileForRole(config, role);
+  if (!hasConfiguredModelProfile(profile)) {
+    return {
+      supportedInputTypes: ['text'],
+      reasoningSupported: false,
+    };
+  }
+
+  return {
+    supportedInputTypes: getSupportedInputTypes(profile.provider, profile.model),
+    reasoningSupported: supportsReasoning(profile.provider, profile.model),
+  };
+}
+
+export function supportsImageAttachmentsForRole(
+  config: ProviderConfig | null | undefined,
+  role: ExecutionRole
+): boolean {
+  return resolveCapabilitySummaryForRole(config, role).supportedInputTypes.includes('image');
 }
 
 function normalizePositiveInt(value: unknown, fallback: number): number {
@@ -130,6 +179,63 @@ export function normalizeRuntimePolicy(runtime?: RuntimePolicy): Required<Runtim
     max_output_tokens: normalizePositiveInt(runtime?.max_output_tokens, DEFAULT_RUNTIME_POLICY.max_output_tokens),
     max_tool_rounds: normalizePositiveInt(runtime?.max_tool_rounds, DEFAULT_RUNTIME_POLICY.max_tool_rounds),
     max_retries: normalizePositiveInt(runtime?.max_retries, DEFAULT_RUNTIME_POLICY.max_retries),
+    timeout_seconds: normalizePositiveInt(runtime?.timeout_seconds, DEFAULT_RUNTIME_POLICY.timeout_seconds),
+  };
+}
+
+function normalizeRuntimePolicyOverrides(runtime?: RuntimePolicy): RuntimePolicy | undefined {
+  const normalized: RuntimePolicy = {};
+  const contextLength = normalizePositiveInt(runtime?.context_length, 0);
+  const maxOutputTokens = normalizePositiveInt(runtime?.max_output_tokens, 0);
+  const maxToolRounds = normalizePositiveInt(runtime?.max_tool_rounds, 0);
+  const maxRetries = normalizePositiveInt(runtime?.max_retries, 0);
+  const timeoutSeconds = normalizePositiveInt(runtime?.timeout_seconds, 0);
+
+  if (contextLength > 0) {
+    normalized.context_length = contextLength;
+  }
+  if (maxOutputTokens > 0) {
+    normalized.max_output_tokens = maxOutputTokens;
+  }
+  if (maxToolRounds > 0) {
+    normalized.max_tool_rounds = maxToolRounds;
+  }
+  if (maxRetries > 0) {
+    normalized.max_retries = maxRetries;
+  }
+  if (timeoutSeconds > 0) {
+    normalized.timeout_seconds = timeoutSeconds;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+export function normalizeRuntimeConfig(runtime?: RuntimeConfig): RuntimeConfig & { shared: Required<RuntimePolicy> } {
+  return {
+    shared: normalizeRuntimePolicy(runtime?.shared),
+    ...(normalizeRuntimePolicyOverrides(runtime?.conversation)
+      ? { conversation: normalizeRuntimePolicyOverrides(runtime?.conversation) }
+      : {}),
+    ...(normalizeRuntimePolicyOverrides(runtime?.background)
+      ? { background: normalizeRuntimePolicyOverrides(runtime?.background) }
+      : {}),
+    ...(normalizeRuntimePolicyOverrides(runtime?.compaction)
+      ? { compaction: normalizeRuntimePolicyOverrides(runtime?.compaction) }
+      : {}),
+    ...(normalizeRuntimePolicyOverrides(runtime?.delegated_task)
+      ? { delegated_task: normalizeRuntimePolicyOverrides(runtime?.delegated_task) }
+      : {}),
+  };
+}
+
+export function resolveRuntimePolicy(
+  runtime: RuntimeConfig | undefined,
+  role: ExecutionRole
+): Required<RuntimePolicy> {
+  const normalizedRuntime = normalizeRuntimeConfig(runtime);
+  return {
+    ...normalizedRuntime.shared,
+    ...(normalizedRuntime[role] || {}),
   };
 }
 
@@ -150,8 +256,8 @@ export function normalizeAppearanceConfig(appearance?: AppearanceConfig): Requir
 
 export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig {
   const primaryProfile = normalizeProfileConfig(config.profiles?.primary || config, 'primary');
-  const secondaryProfile = config.profiles?.secondary
-    ? normalizeProfileConfig(config.profiles.secondary, 'secondary')
+  const backgroundProfile = config.profiles?.background
+    ? normalizeProfileConfig(config.profiles.background, 'background')
     : undefined;
 
   return {
@@ -159,11 +265,11 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
     ...primaryProfile,
     profiles: {
       primary: primaryProfile,
-      ...(secondaryProfile ? { secondary: secondaryProfile } : {}),
+      ...(backgroundProfile ? { background: backgroundProfile } : {}),
     },
     system_prompt: normalizeSystemPrompt(config.system_prompt),
     provider_memory: normalizeProviderMemory(config.provider_memory),
-    runtime: normalizeRuntimePolicy(config.runtime),
+    runtime: normalizeRuntimeConfig(config.runtime),
     appearance: normalizeAppearanceConfig(config.appearance),
     context_providers: normalizeContextProviders(config.context_providers),
   };

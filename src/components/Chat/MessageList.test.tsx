@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageList } from "./MessageList";
 import type { Message } from "../../types";
@@ -537,5 +537,216 @@ describe("MessageList", () => {
     expect(screen.getByText("Failed")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Resend message" }));
     expect(onRetryMessage).toHaveBeenCalledWith(messages[0]);
+  });
+
+  it("renders delegated worker cards in the message flow and opens a detail modal", async () => {
+    const delegatedOutput = {
+      event: "delegated_task",
+      summary: "Background handled: Summarize unresolved risks",
+      data: {
+        risks: ["runtime clamp pending"],
+      },
+      expected_output: "json",
+      worker: {
+        profile_name: "background",
+        provider: "openai",
+        model: "gpt-4o-mini",
+      },
+    };
+
+    const messages: Message[] = [
+      {
+        id: "user-1",
+        role: "user",
+        content: "Please analyze the current risks",
+        status: "completed",
+      },
+      {
+        id: "assistant-tool-call",
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            tool_call_id: "delegate-1",
+            name: "delegate_task",
+            arguments: {
+              task: "Summarize unresolved risks",
+            },
+          },
+        ],
+        status: "completed",
+      },
+      {
+        id: "tool-result-1",
+        role: "tool",
+        content: "delegate_task 执行成功",
+        tool_call_id: "delegate-1",
+        name: "delegate_task",
+        timestamp: "2026-03-28T10:00:02.000Z",
+        toolMessage: {
+          kind: "result",
+          toolName: "delegate_task",
+          success: true,
+          details: JSON.stringify(delegatedOutput, null, 2),
+          output: delegatedOutput,
+        },
+        status: "completed",
+      },
+      {
+        id: "assistant-final",
+        role: "assistant",
+        content: "我已经整理好了。",
+        status: "completed",
+      },
+    ];
+
+    render(
+      <MessageList
+        messages={messages}
+        runEvents={[
+          {
+            event_type: "delegated_task_started",
+            session_id: "session-1",
+            run_id: "run-1",
+            payload: {
+              tool_call_id: "delegate-1",
+              task: "Summarize unresolved risks",
+              expected_output: "json",
+            },
+            timestamp: "2026-03-28T10:00:00.000Z",
+          },
+          {
+            event_type: "delegated_task_completed",
+            session_id: "session-1",
+            run_id: "run-1",
+            payload: {
+              tool_call_id: "delegate-1",
+              success: true,
+              worker_profile_name: "background",
+              worker_provider: "openai",
+              worker_model: "gpt-4o-mini",
+            },
+            timestamp: "2026-03-28T10:00:02.000Z",
+          },
+        ]}
+      />,
+    );
+
+    const completedWorkerCard = screen.getByTestId("delegated-worker-card-delegate-1");
+    expect(completedWorkerCard).toBeTruthy();
+    expect(within(completedWorkerCard).getByText("Summarize unresolved risks")).toBeTruthy();
+    expect(within(completedWorkerCard).getByText("Completed")).toBeTruthy();
+    expect(within(completedWorkerCard).getByText("2s")).toBeTruthy();
+    expect(screen.queryByText("delegate_task 执行成功")).toBeNull();
+    const messageListText = screen.getByText("我已经整理好了。").closest(".space-y-5")?.textContent || "";
+    expect(messageListText.indexOf("我已经整理好了。")).toBeLessThan(
+      messageListText.indexOf("Summarize unresolved risks"),
+    );
+
+    fireEvent.click(completedWorkerCard);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "Delegated worker detail: Summarize unresolved risks" }),
+      ).toBeTruthy();
+    });
+
+    expect(screen.getByText("Background handled: Summarize unresolved risks")).toBeTruthy();
+    expect(screen.getByText("openai/gpt-4o-mini · background")).toBeTruthy();
+    expect(screen.getByText(/"risks"/)).toBeTruthy();
+  });
+
+  it("shows multiple running delegated workers with independent elapsed times", async () => {
+    vi.useFakeTimers();
+
+    try {
+      vi.setSystemTime(new Date("2026-03-28T10:00:05.000Z"));
+
+      const messages: Message[] = [
+        {
+          id: "user-1",
+          role: "user",
+          content: "Split the work",
+          status: "completed",
+        },
+        {
+          id: "assistant-tool-call",
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              tool_call_id: "delegate-1",
+              name: "delegate_task",
+              arguments: {
+                task: "Collect open issues",
+              },
+            },
+            {
+              tool_call_id: "delegate-2",
+              name: "delegate_task",
+              arguments: {
+                task: "Check runtime clamps",
+              },
+            },
+          ],
+          status: "completed",
+        },
+      ];
+
+      render(
+        <MessageList
+          messages={messages}
+          isStreaming={true}
+          assistantStatus="tool_calling"
+          runEvents={[
+            {
+              event_type: "run_started",
+              session_id: "session-1",
+              run_id: "run-1",
+              payload: {},
+              timestamp: "2026-03-28T10:00:00.000Z",
+            },
+            {
+              event_type: "delegated_task_started",
+              session_id: "session-1",
+              run_id: "run-1",
+              payload: {
+                tool_call_id: "delegate-1",
+                task: "Collect open issues",
+              },
+              timestamp: "2026-03-28T10:00:00.000Z",
+            },
+            {
+              event_type: "delegated_task_started",
+              session_id: "session-1",
+              run_id: "run-1",
+              payload: {
+                tool_call_id: "delegate-2",
+                task: "Check runtime clamps",
+              },
+              timestamp: "2026-03-28T10:00:02.000Z",
+            },
+          ]}
+        />,
+      );
+
+      const workerCardOne = screen.getByTestId("delegated-worker-card-delegate-1");
+      const workerCardTwo = screen.getByTestId("delegated-worker-card-delegate-2");
+
+      expect(workerCardOne).toBeTruthy();
+      expect(workerCardTwo).toBeTruthy();
+      expect(screen.getAllByText("Running")).toHaveLength(2);
+      expect(within(workerCardOne).getByText("5s")).toBeTruthy();
+      expect(within(workerCardTwo).getByText("3s")).toBeTruthy();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+
+      expect(within(workerCardOne).getByText("7s")).toBeTruthy();
+      expect(within(workerCardTwo).getByText("5s")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

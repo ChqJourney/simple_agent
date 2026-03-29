@@ -160,7 +160,7 @@ class FakeCompactionLLM(BaseLLM):
     def __init__(self):
         super().__init__({
             'provider': 'openai',
-            'profile_name': 'secondary',
+            'profile_name': 'background',
             'model': 'fake-compactor',
         })
         self.complete_calls = 0

@@ -75,7 +75,7 @@ flowchart LR
 | 通信层 | `src/contexts/WebSocketContext.tsx` `src/services/websocket.ts` | 建立 WebSocket、发送协议消息、分发后端事件 | ProviderConfig、聊天输入、工具确认 | chat/session/run/task/workspace store 更新 |
 | 状态层 | `src/stores/*.ts` | Zustand 持有聊天、会话、工作区、配置、运行状态、UI 状态 | WebSocket 事件、用户操作 | 组件渲染数据 |
 | 工作区 UI | `src/components/Workspace/*` | TopBar、SessionList、FileTree、TaskList | workspace/session/chat store | 工作区侧栏、文件变化高亮 |
-| 聊天 UI | `src/components/Chat/*` | 消息流渲染、输入框、流式输出、interrupt、Markdown/GFM 正文展示 | chat store、WebSocket actions | 消息发送、reasoning/tool 展示 |
+| 聊天 UI | `src/components/Chat/*` | 消息流渲染、输入框、流式输出、interrupt、Markdown/GFM 正文展示、delegated worker 单行卡片与 detail modal | chat store、WebSocket actions | 消息发送、reasoning/tool 展示、worker 状态感知 |
 | 工具交互 UI | `src/components/Tools/*` | ToolConfirmModal、PendingQuestionCard、ToolCallDisplay、ToolMessageDisplay | tool_confirm_request / question_request / tool_result | 审批、答复回传、业务化工具摘要 |
 | 运行观测 UI | `src/components/Run/RunTimeline.tsx` | 渲染 `run_event` 为时间线 | run store、chat store | run 过程可视化 |
 | 本地读取工具 | `src/utils/storage.ts` | 通过 Tauri command 恢复 session 列表与历史，并派生 UI 数据 | Tauri invoke | Session 列表、历史消息恢复 |
@@ -112,7 +112,7 @@ flowchart LR
 | --- | --- | --- |
 | 多 Provider 配置 | `src/pages/SettingsPage.tsx` `python_backend/runtime/config.py` | 支持 OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama，前后端各自做 normalize |
 | Provider 配置记忆 | `src/pages/SettingsPage.tsx` `src/utils/config.ts` | 前端持久化 `provider_memory`，切换 provider 时恢复上次保存的 `model / api_key / base_url` |
-| 主/辅模型 profile | `src/types/index.ts` `python_backend/runtime/router.py` | `primary` 负责主对话，`secondary` 负责标题生成等后台任务 |
+| 主/后台模型 profile | `src/types/index.ts` `python_backend/runtime/router.py` | `primary` 负责主对话，`background` 负责标题生成、compaction 与 delegated task 等后台任务 |
 | 会话锁模 | `src/components/Chat/ChatContainer.tsx` `python_backend/main.py` | 首次发送消息时锁定 session 的 provider/model，后续必须匹配 |
 | 流式文本与 reasoning | `src/contexts/WebSocketContext.tsx` `python_backend/core/agent.py` | 分别消费 `token` 与 `reasoning_token`，最后由 `reasoning_complete` 收束 |
 | Tool Calling | `python_backend/core/agent.py` `python_backend/tools/base.py` | LLM 输出 tool calls，后端并发执行工具并回传结果，schema 中附带 `x-tool-meta` descriptor 扩展信息 |
@@ -120,6 +120,7 @@ flowchart LR
 | 文档格式解析 | `python_backend/document_readers/pdf_reader.py` `python_backend/document_readers/word_reader.py` `python_backend/document_readers/excel_reader.py` `python_backend/document_readers/pptx_reader.py` | 底层按格式拆分，分别处理 PDF 视觉行、Word 段落/表格、Excel sheet/单元格、PPTX slide 文本 |
 | Tool 审批 | `src/components/Tools/ToolConfirmModal.tsx` `python_backend/core/user.py` | 对需要确认的工具建立 pending future，前端按只读/写入/高级执行风险展示审批文案 |
 | 交互式提问 | `src/components/Tools/PendingQuestionCard.tsx` `python_backend/core/agent.py` | `ask_question` 工具通过 WebSocket 向用户发问并等待回答 |
+| Delegated Task | `python_backend/runtime/delegation.py` `python_backend/tools/delegate_task.py` `src/components/Chat/DelegatedWorkerCards.tsx` | `delegate_task` 使用 background model 执行只读子任务，并在消息流中展示 worker 卡片与 detail modal |
 | 工具业务化展示 | `src/components/Tools/ToolCallDisplay.tsx` `src/components/Tools/ToolMessageDisplay.tsx` `src/utils/toolMessages.ts` | 把工具调用与结果渲染成“正在做什么 / 风险类型 / 结果摘要 / 技术详情” |
 | Run Timeline | `src/components/Run/RunTimeline.tsx` `python_backend/runtime/events.py` | run_event 同时写入前端和磁盘日志 |
 | 工作区文件联动 | `src/utils/storage.ts` `src/components/Workspace/FileTree.tsx` | 前端经 Tauri 读取工作区文件；`file_write` 成功后高亮变更文件 |
@@ -227,7 +228,7 @@ sequenceDiagram
 5. compaction 结果写入：
    - `.agent/sessions/<session-id>.memory.json`
    - `.agent/sessions/<session-id>.compactions.jsonl`
-6. compaction model 优先走 `secondary` profile；未配置时回退 `primary`
+6. compaction model 优先走 `background` profile；未配置时回退 `primary`
 7. run timeline 会记录 `session_compaction_started/completed/failed/skipped`
 
 #### E. 流式回传与工具执行
@@ -374,9 +375,14 @@ flowchart TD
 Tool 系统当前注册了以下内置工具：
 
 - `list_directory_tree`
-- `search_files`
-- `read_file_excerpt`
-- `get_document_outline`
+- `search_documents`
+- `read_document_segment`
+- `get_document_structure`
+- `pdf_get_info`
+- `pdf_get_outline`
+- `pdf_read_pages`
+- `pdf_read_lines`
+- `pdf_search`
 - `file_read`
 - `file_write`
 - `shell_execute`
@@ -384,17 +390,24 @@ Tool 系统当前注册了以下内置工具：
 - `node_execute`
 - `todo_task`
 - `ask_question`
+- `delegate_task`
 - `skill_loader`
 
 它们统一通过 `ToolRegistry` 暴露为 OpenAI-compatible function schemas，供 LLM 生成 tool call。
 
-当前工具体系按职责大致分为四层：
+当前工具体系按职责大致分为五层：
 
 - 基础文档工具：
   - `list_directory_tree`
-  - `search_files`
-  - `read_file_excerpt`
-  - `get_document_outline`
+  - `search_documents`
+  - `read_document_segment`
+  - `get_document_structure`
+- PDF 专家工具：
+  - `pdf_get_info`
+  - `pdf_get_outline`
+  - `pdf_read_pages`
+  - `pdf_read_lines`
+  - `pdf_search`
 - 通用工作区工具：
   - `file_read`
   - `file_write`
@@ -406,6 +419,7 @@ Tool 系统当前注册了以下内置工具：
 - UI/交互工具：
   - `todo_task`
   - `ask_question`
+  - `delegate_task`
 
 当前不按任务场景裁剪工具集合，而是通过 descriptor 元数据来影响模型偏好与前端展示。
 
@@ -439,10 +453,11 @@ Tool 系统当前注册了以下内置工具：
 - `error`
 - `metadata`
 
-其中前端特别消费两类工具结果：
+其中前端特别消费三类工具结果：
 
 - `file_write`：标记文件树中的变更文件
 - `todo_task`：更新任务面板
+- `delegate_task`：在消息流中聚合 worker 状态卡，并通过 modal 展示 summary、structured data 与错误信息
 
 而通用展示层会额外基于工具 metadata 和结果内容，生成：
 
@@ -522,8 +537,8 @@ Tool 系统当前注册了以下内置工具：
       "provider": "openai",
       "model": "gpt-4o-mini"
     },
-    "secondary": {
-      "profile_name": "secondary",
+    "background": {
+      "profile_name": "background",
       "provider": "openai",
       "model": "gpt-4.1-mini"
     }
@@ -541,10 +556,19 @@ Tool 系统当前注册了以下内置工具：
     }
   },
   "runtime": {
-    "context_length": 64000,
-    "max_output_tokens": 4000,
-    "max_tool_rounds": 20,
-    "max_retries": 3
+    "shared": {
+      "context_length": 64000,
+      "max_output_tokens": 4000,
+      "max_tool_rounds": 20,
+      "max_retries": 3,
+      "timeout_seconds": 120
+    },
+    "background": {
+      "max_output_tokens": 2048
+    },
+    "delegated_task": {
+      "timeout_seconds": 180
+    }
   },
   "context_providers": {
     "skills": {
@@ -556,7 +580,8 @@ Tool 系统当前注册了以下内置工具：
 
 补充说明：
 
-- `profiles.primary/secondary` 是后端真正参与运行的配置
+- `profiles.primary/background` 是后端真正参与运行的配置
+- `runtime.shared` 是默认值，`runtime.conversation/background/compaction/delegated_task` 是按 role 的 override
 - `provider_memory` 是前端设置页的辅助持久化字段，用于在切换 provider 时恢复该 provider 最近保存的 `model / api_key / base_url`
 - 后端标准化配置时不会依赖 `provider_memory`
 
@@ -592,6 +617,8 @@ Tool 系统当前注册了以下内置工具：
 - `tool_call_requested`
 - `tool_execution_started`
 - `tool_execution_completed`
+- `delegated_task_started`
+- `delegated_task_completed`
 - `question_requested`
 - `question_answered`
 - `retry_scheduled`

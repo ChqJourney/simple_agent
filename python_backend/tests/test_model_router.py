@@ -11,7 +11,13 @@ if str(PROJECT_ROOT) not in sys.path:
 import main as backend_main
 from core.user import Session, UserManager
 from runtime.contracts import LockedModelRef
-from runtime.router import resolve_background_profile, resolve_compaction_profile, resolve_conversation_profile
+from runtime.router import (
+    build_execution_spec,
+    resolve_background_profile,
+    resolve_compaction_profile,
+    resolve_conversation_profile,
+    resolve_runtime_policy,
+)
 
 
 class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
@@ -48,19 +54,32 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                     "enable_reasoning": False,
                     "profile_name": "primary",
                 },
-                "secondary": {
+                "background": {
                     "provider": "openai",
                     "model": "gpt-4o-mini",
                     "api_key": "test-key",
                     "base_url": "https://api.openai.com/v1",
                     "enable_reasoning": False,
-                    "profile_name": "secondary",
+                    "profile_name": "background",
                 },
             },
             "runtime": {
-                "max_tool_rounds": 2,
-                "max_retries": 5,
-                "max_output_tokens": 256,
+                "shared": {
+                    "max_tool_rounds": 2,
+                    "max_retries": 5,
+                    "max_output_tokens": 256,
+                    "timeout_seconds": 120,
+                },
+                "background": {
+                    "max_output_tokens": 128,
+                },
+                "compaction": {
+                    "max_output_tokens": 64,
+                },
+                "delegated_task": {
+                    "max_output_tokens": 96,
+                    "timeout_seconds": 90,
+                },
             },
         }
         backend_main.runtime_state.default_workspace = self.temp_dir.name
@@ -167,43 +186,95 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("primary", selected["profile_name"])
         self.assertEqual("gpt-4o", selected["model"])
 
-    def test_resolve_background_profile_prefers_secondary(self) -> None:
+    def test_resolve_background_profile_prefers_background(self) -> None:
         selected = resolve_background_profile(backend_main.runtime_state.current_config)
 
-        self.assertEqual("secondary", selected["profile_name"])
+        self.assertEqual("background", selected["profile_name"])
         self.assertEqual("gpt-4o-mini", selected["model"])
 
     def test_resolve_background_profile_falls_back_to_primary(self) -> None:
-        config_without_secondary = {
+        config_without_background = {
             **backend_main.runtime_state.current_config,
             "profiles": {
                 "primary": backend_main.runtime_state.current_config["profiles"]["primary"],
             },
         }
 
-        selected = resolve_background_profile(config_without_secondary)
+        selected = resolve_background_profile(config_without_background)
 
         self.assertEqual("primary", selected["profile_name"])
         self.assertEqual("gpt-4o", selected["model"])
 
-    def test_resolve_compaction_profile_prefers_secondary(self) -> None:
+    def test_resolve_compaction_profile_prefers_background(self) -> None:
         selected = resolve_compaction_profile(backend_main.runtime_state.current_config)
 
-        self.assertEqual("secondary", selected["profile_name"])
+        self.assertEqual("background", selected["profile_name"])
         self.assertEqual("gpt-4o-mini", selected["model"])
 
     def test_resolve_compaction_profile_falls_back_to_primary(self) -> None:
-        config_without_secondary = {
+        config_without_background = {
             **backend_main.runtime_state.current_config,
             "profiles": {
                 "primary": backend_main.runtime_state.current_config["profiles"]["primary"],
             },
         }
 
-        selected = resolve_compaction_profile(config_without_secondary)
+        selected = resolve_compaction_profile(config_without_background)
 
         self.assertEqual("primary", selected["profile_name"])
         self.assertEqual("gpt-4o", selected["model"])
+
+    def test_resolve_runtime_policy_applies_shared_then_role_overrides(self) -> None:
+        background_runtime = resolve_runtime_policy(backend_main.runtime_state.current_config, "background")
+        compaction_runtime = resolve_runtime_policy(backend_main.runtime_state.current_config, "compaction")
+
+        self.assertEqual(128, background_runtime["max_output_tokens"])
+        self.assertEqual(64, compaction_runtime["max_output_tokens"])
+        self.assertEqual(2, background_runtime["max_tool_rounds"])
+        self.assertEqual(5, compaction_runtime["max_retries"])
+        self.assertEqual(120, background_runtime["timeout_seconds"])
+
+    def test_build_execution_spec_returns_profile_runtime_and_capabilities_for_role(self) -> None:
+        execution_spec = build_execution_spec(backend_main.runtime_state.current_config, "background")
+
+        self.assertEqual("background", execution_spec["role"])
+        self.assertEqual("background", execution_spec["profile"]["profile_name"])
+        self.assertEqual(128, execution_spec["runtime"]["max_output_tokens"])
+        self.assertEqual(["text", "image"], execution_spec["capability_summary"]["supported_input_types"])
+        self.assertFalse(execution_spec["capability_summary"]["reasoning_supported"])
+
+    def test_build_execution_spec_supports_dedicated_runtime_for_delegated_task_role(self) -> None:
+        execution_spec = build_execution_spec(backend_main.runtime_state.current_config, "delegated_task")
+
+        self.assertEqual("delegated_task", execution_spec["role"])
+        self.assertEqual("background", execution_spec["profile"]["profile_name"])
+        self.assertEqual(96, execution_spec["runtime"]["max_output_tokens"])
+        self.assertEqual(90, execution_spec["runtime"]["timeout_seconds"])
+
+    def test_build_execution_spec_clamps_context_length_and_output_tokens(self) -> None:
+        config = {
+            **backend_main.runtime_state.current_config,
+            "runtime": {
+                "shared": {
+                    "context_length": 256000,
+                    "max_output_tokens": 200000,
+                    "max_tool_rounds": 2,
+                    "max_retries": 5,
+                },
+            },
+        }
+
+        execution_spec = build_execution_spec(config, "conversation")
+
+        self.assertEqual(128000, execution_spec["runtime"]["context_length"])
+        self.assertEqual(128000, execution_spec["runtime"]["max_output_tokens"])
+        self.assertEqual(
+            [
+                "context_length 256000 exceeds known model window 128000",
+                "max_output_tokens 200000 exceeds effective context_length 128000",
+            ],
+            execution_spec["guardrails"]["warnings"],
+        )
 
     async def test_handle_user_message_rejects_session_when_locked_model_mismatches_active_profile(self) -> None:
         session = Session(
@@ -274,8 +345,9 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(self.title_task_calls)
         title_llm = self.title_task_calls[0]["llm"]
-        self.assertEqual("secondary", title_llm["profile_name"])
+        self.assertEqual("background", title_llm["profile_name"])
         self.assertEqual("gpt-4o-mini", title_llm["model"])
+        self.assertEqual(128, title_llm["max_output_tokens"])
 
         session = backend_main.user_manager.get_session("session-title")
         self.assertEqual("primary", session.locked_model.profile_name)
@@ -305,6 +377,23 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
         title_llm = self.title_task_calls[0]["llm"]
         self.assertEqual("primary", title_llm["profile_name"])
         self.assertEqual("gpt-4o", title_llm["model"])
+
+    async def test_agent_compaction_factory_uses_compaction_role_runtime(self) -> None:
+        await backend_main.handle_user_message(
+            {
+                "session_id": "session-compaction",
+                "content": "Ping?",
+                "workspace_path": self.temp_dir.name,
+            },
+            self.send_callback,
+            "conn-1",
+        )
+
+        self.assertTrue(self.created_agents)
+        compaction_llm = self.created_agents[0].compaction_llm_factory()
+        self.assertEqual("background", compaction_llm["profile_name"])
+        self.assertEqual("gpt-4o-mini", compaction_llm["model"])
+        self.assertEqual(64, compaction_llm["max_output_tokens"])
 
     async def test_session_title_closes_title_llm_after_task_finishes(self) -> None:
         await backend_main.handle_user_message(

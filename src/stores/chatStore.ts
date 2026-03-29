@@ -358,6 +358,8 @@ export const useChatStore = create<ChatState>((set) => ({
                 toolName: resolvedToolName,
                 success,
                 details: renderedOutput,
+                output,
+                error: error ?? null,
               },
               status: success ? 'completed' : 'error',
             },

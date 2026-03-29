@@ -7,9 +7,11 @@ import { ToolCallDisplay, ToolMessageDisplay } from '../Tools';
 import { MessageItem } from './MessageItem';
 import { AssistantStatusIndicator } from './AssistantStatusIndicator';
 import { CopyMessageButton } from './CopyMessageButton';
+import { DelegatedWorkerCards, DelegatedWorkerViewModel } from './DelegatedWorkerCards';
 
 interface AssistantTurnProps {
   messages: Message[];
+  delegatedWorkers?: DelegatedWorkerViewModel[];
   isStreaming?: boolean;
   streamingContent?: string;
   currentReasoningContent?: string;
@@ -19,7 +21,39 @@ interface AssistantTurnProps {
   onRetry?: () => void;
 }
 
-function getRoundDetailsLabel(messages: Message[], hasStreamingReasoning: boolean): string {
+function hasVisibleToolResult(message: Message, hiddenToolCallIds: Set<string>): boolean {
+  if (message.role !== 'tool') {
+    return false;
+  }
+
+  return !(message.tool_call_id && hiddenToolCallIds.has(message.tool_call_id));
+}
+
+function getVisibleToolCalls(message: Message, hiddenToolCallIds: Set<string>) {
+  return (message.tool_calls || []).filter((toolCall) => !hiddenToolCallIds.has(toolCall.tool_call_id));
+}
+
+function hasVisibleDetailContent(message: Message, hiddenToolCallIds: Set<string>): boolean {
+  if (message.role === 'reasoning') {
+    return Boolean(message.content);
+  }
+
+  if (message.role === 'tool') {
+    return hasVisibleToolResult(message, hiddenToolCallIds);
+  }
+
+  if (message.role === 'assistant') {
+    return Boolean(message.content) || getVisibleToolCalls(message, hiddenToolCallIds).length > 0;
+  }
+
+  return false;
+}
+
+function getRoundDetailsLabel(
+  messages: Message[],
+  hasStreamingReasoning: boolean,
+  hiddenToolCallIds: Set<string>,
+): string {
   let reasoningCount = hasStreamingReasoning ? 1 : 0;
   let toolCallCount = 0;
   let toolResultCount = 0;
@@ -32,11 +66,14 @@ function getRoundDetailsLabel(messages: Message[], hasStreamingReasoning: boolea
     }
 
     if (message.role === 'assistant' && message.tool_calls?.length) {
-      toolCallCount += message.tool_calls.length;
+      toolCallCount += getVisibleToolCalls(message, hiddenToolCallIds).length;
       return;
     }
 
     if (message.role === 'tool') {
+      if (message.tool_call_id && hiddenToolCallIds.has(message.tool_call_id)) {
+        return;
+      }
       if (message.toolMessage?.kind === 'decision') {
         userActionCount += 1;
         return;
@@ -66,18 +103,22 @@ function renderToolMessage(message: Message) {
   return <ToolMessageDisplay message={message} collapsible={false} />;
 }
 
-function renderDetailMessage(message: Message) {
+function renderDetailMessage(message: Message, hiddenToolCallIds: Set<string>) {
   if (message.role === 'reasoning') {
     return <ReasoningBlock content={message.content || ''} collapsible={false} defaultExpanded={true} />;
   }
 
   if (message.role === 'tool') {
+    if (message.tool_call_id && hiddenToolCallIds.has(message.tool_call_id)) {
+      return null;
+    }
     return renderToolMessage(message);
   }
 
   if (message.role === 'assistant') {
     const hasContent = Boolean(message.content);
-    const hasToolCalls = Boolean(message.tool_calls && message.tool_calls.length > 0);
+    const visibleToolCalls = getVisibleToolCalls(message, hiddenToolCallIds);
+    const hasToolCalls = visibleToolCalls.length > 0;
     if (!hasContent && !hasToolCalls) {
       return null;
     }
@@ -99,7 +140,7 @@ function renderDetailMessage(message: Message) {
         )}
         {hasToolCalls && (
           <div className={`${hasContent ? 'mt-3' : 'mt-3'} space-y-2`}>
-            {message.tool_calls?.map((toolCall) => (
+            {visibleToolCalls.map((toolCall) => (
               <ToolCallDisplay
                 key={toolCall.tool_call_id}
                 toolCall={toolCall}
@@ -117,6 +158,7 @@ function renderDetailMessage(message: Message) {
 
 export const AssistantTurn = ({
   messages,
+  delegatedWorkers = [],
   isStreaming = false,
   streamingContent = '',
   currentReasoningContent = '',
@@ -125,6 +167,10 @@ export const AssistantTurn = ({
   elapsedLabel,
   onRetry,
 }: AssistantTurnProps) => {
+  const hiddenDelegatedToolCallIds = useMemo(
+    () => new Set(delegatedWorkers.map((worker) => worker.toolCallId)),
+    [delegatedWorkers],
+  );
   const formalAssistantIndex = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index];
@@ -146,8 +192,11 @@ export const AssistantTurn = ({
 
   const formalAssistantMessage = formalAssistantIndex >= 0 ? messages[formalAssistantIndex] : undefined;
   const detailMessages = messages.filter((_, index) => index !== formalAssistantIndex);
+  const visibleDetailMessages = detailMessages.filter((message) => hasVisibleDetailContent(message, hiddenDelegatedToolCallIds));
   const hasFormalContent = Boolean(formalAssistantMessage) || Boolean(streamingContent);
-  const hasDetails = detailMessages.length > 0 || Boolean(currentReasoningContent);
+  const hasDelegatedWorkers = delegatedWorkers.length > 0;
+  const hasHeader = hasFormalContent || hasDelegatedWorkers;
+  const hasDetails = visibleDetailMessages.length > 0 || Boolean(currentReasoningContent);
   const copyableContent = streamingContent.trim() || formalAssistantMessage?.content?.trim() || '';
   const isFailedTurn = formalAssistantMessage?.status === 'error';
   const [isExpanded, setIsExpanded] = useState(isStreaming);
@@ -162,11 +211,15 @@ export const AssistantTurn = ({
     wasStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
-  const detailsLabel = getRoundDetailsLabel(detailMessages, Boolean(currentReasoningContent));
+  const detailsLabel = getRoundDetailsLabel(
+    detailMessages,
+    Boolean(currentReasoningContent),
+    hiddenDelegatedToolCallIds,
+  );
 
   return (
     <div className="w-full">
-      {hasFormalContent && (
+      {hasHeader && (
         <div className="mb-2 flex items-center justify-between">
           <span className="font-semibold text-xs text-gray-600 dark:text-gray-400">
             Assistant
@@ -209,8 +262,8 @@ export const AssistantTurn = ({
 
           {isExpanded && (
             <div className="mt-4 space-y-3 border-t border-gray-200/80 pt-4 dark:border-gray-700/80">
-              {detailMessages.map((message) => {
-                const content = renderDetailMessage(message);
+              {visibleDetailMessages.map((message) => {
+                const content = renderDetailMessage(message, hiddenDelegatedToolCallIds);
                 if (!content) {
                   return null;
                 }
@@ -259,6 +312,12 @@ export const AssistantTurn = ({
         </div>
       ) : null}
 
+      {hasDelegatedWorkers && (
+        <div className={(hasFormalContent || hasDetails) ? 'mt-3' : 'mt-2'}>
+          <DelegatedWorkerCards workers={delegatedWorkers} />
+        </div>
+      )}
+
       {isFailedTurn && (
         <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-red-200/80 bg-red-50/80 px-3 py-2 text-xs text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300">
           <div className="flex items-center gap-2">
@@ -283,7 +342,7 @@ export const AssistantTurn = ({
         </div>
       )}
 
-      {!hasFormalContent && assistantStatus && (
+      {!hasFormalContent && !hasDelegatedWorkers && assistantStatus && (
         <div className="space-y-2">
           {elapsedLabel && (
             <div className="text-xs text-gray-400 dark:text-gray-500">

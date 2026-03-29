@@ -13,6 +13,7 @@ from core.user import UserManager
 from llms.base import BaseLLM
 from skills.local_loader import LocalSkillLoader
 from tools.base import ToolRegistry
+from tools.delegate_task import DelegateTaskTool
 from tools.skill_loader import SkillLoaderTool
 
 
@@ -35,6 +36,21 @@ class RecordingLLM(BaseLLM):
 
     async def complete(self, messages, tools=None):
         return {}
+
+
+class FakeDelegatedTaskExecutor:
+    async def execute(self, *, task: str, expected_output: str = "text", context=None):
+        return {
+            "event": "delegated_task",
+            "summary": task,
+            "data": context,
+            "expected_output": expected_output,
+            "worker": {
+                "profile_name": "background",
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+            },
+        }
 
 
 class SkillRuntimeTests(unittest.IsolatedAsyncioTestCase):
@@ -141,6 +157,27 @@ class SkillRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "Prefer concise answers and mention risks first.",
             first_request_messages[0]["content"],
         )
+
+    async def test_agent_includes_delegation_guidance_when_delegate_task_tool_is_available(self) -> None:
+        session = await self.user_manager.create_session(self.temp_dir.name, "session-delegation-guidance")
+        await self.user_manager.bind_session_to_connection("session-delegation-guidance", "conn-1")
+
+        llm = RecordingLLM()
+        registry = ToolRegistry()
+        registry.register(DelegateTaskTool(FakeDelegatedTaskExecutor()))
+        agent = Agent(
+            llm,
+            registry,
+            self.user_manager,
+        )
+
+        await agent.run("hello", session)
+
+        first_request_messages = llm.captured_messages[0]
+        self.assertEqual("system", first_request_messages[0]["role"])
+        self.assertIn("Delegation guidance:", first_request_messages[0]["content"])
+        self.assertIn("`delegate_task` is for bounded, read-only background subtasks.", first_request_messages[0]["content"])
+        self.assertIn("minimal structured context needed", first_request_messages[0]["content"])
 
 
 if __name__ == "__main__":

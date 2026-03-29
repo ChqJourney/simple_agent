@@ -15,6 +15,7 @@ from runtime.contracts import (
     SessionMetadata,
 )
 from runtime.events import RunEvent
+from runtime.router import build_execution_spec
 
 
 class RuntimeContractTests(unittest.TestCase):
@@ -38,10 +39,13 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertIn("runtime", normalized)
         self.assertEqual(
             {
-                "context_length": 64000,
-                "max_output_tokens": 4000,
-                "max_tool_rounds": 20,
-                "max_retries": 3,
+                "shared": {
+                    "context_length": 64000,
+                    "max_output_tokens": 4000,
+                    "max_tool_rounds": 20,
+                    "max_retries": 3,
+                    "timeout_seconds": 120,
+                },
             },
             normalized["runtime"],
         )
@@ -147,6 +151,95 @@ class RuntimeContractTests(unittest.TestCase):
 
         self.assertEqual("Prefer concise answers.", normalized["system_prompt"])
 
+    def test_build_execution_spec_merges_shared_and_role_runtime(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_key": "test-key",
+                "runtime": {
+                    "shared": {
+                        "context_length": 64000,
+                        "max_output_tokens": 4000,
+                        "max_tool_rounds": 20,
+                        "max_retries": 3,
+                        "timeout_seconds": 120,
+                    },
+                    "background": {
+                        "max_output_tokens": 512,
+                    },
+                },
+                "profiles": {
+                    "primary": {
+                        "provider": "openai",
+                        "model": "gpt-4o-mini",
+                        "api_key": "test-key",
+                        "base_url": "https://api.openai.com/v1",
+                        "enable_reasoning": False,
+                    },
+                    "background": {
+                        "provider": "deepseek",
+                        "model": "deepseek-chat",
+                        "api_key": "test-key",
+                        "base_url": "https://api.deepseek.com",
+                        "enable_reasoning": False,
+                    },
+                },
+            }
+        )
+
+        execution_spec = build_execution_spec(normalized, "background")
+
+        self.assertEqual("background", execution_spec["role"])
+        self.assertEqual("deepseek", execution_spec["profile"]["provider"])
+        self.assertEqual(512, execution_spec["runtime"]["max_output_tokens"])
+        self.assertEqual(20, execution_spec["runtime"]["max_tool_rounds"])
+        self.assertEqual(120, execution_spec["runtime"]["timeout_seconds"])
+        self.assertEqual(["text"], execution_spec["capability_summary"]["supported_input_types"])
+        self.assertFalse(execution_spec["capability_summary"]["reasoning_supported"])
+
+    def test_build_execution_spec_clamps_runtime_when_it_exceeds_known_model_limits(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "api_key": "test-key",
+                "runtime": {
+                    "shared": {
+                        "context_length": 256000,
+                        "max_output_tokens": 200000,
+                        "max_tool_rounds": 20,
+                        "max_retries": 3,
+                        "timeout_seconds": 120,
+                    },
+                },
+                "profiles": {
+                    "primary": {
+                        "provider": "openai",
+                        "model": "gpt-4o",
+                        "api_key": "test-key",
+                        "base_url": "https://api.openai.com/v1",
+                        "enable_reasoning": False,
+                    },
+                },
+            }
+        )
+
+        execution_spec = build_execution_spec(normalized, "conversation")
+
+        self.assertEqual(128000, execution_spec["runtime"]["context_length"])
+        self.assertEqual(128000, execution_spec["runtime"]["max_output_tokens"])
+        self.assertEqual(256000, execution_spec["guardrails"]["requested_runtime"]["context_length"])
+        self.assertEqual(200000, execution_spec["guardrails"]["requested_runtime"]["max_output_tokens"])
+        self.assertEqual(128000, execution_spec["guardrails"]["model_context_limit"])
+        self.assertEqual(
+            [
+                "context_length 256000 exceeds known model window 128000",
+                "max_output_tokens 200000 exceeds effective context_length 128000",
+            ],
+            execution_spec["guardrails"]["warnings"],
+        )
+
     def test_run_event_serializes_stable_fields(self) -> None:
         event = RunEvent(
             event_type="run_started",
@@ -210,7 +303,7 @@ class RuntimeContractTests(unittest.TestCase):
             pre_tokens_estimate=9000,
             post_tokens_estimate=500,
             model={
-                "profile_name": "secondary",
+                "profile_name": "background",
                 "provider": "openai",
                 "model": "gpt-4o-mini",
             },
@@ -221,7 +314,7 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual("compact-1", serialized["compaction_id"])
         self.assertEqual("background", serialized["strategy"])
         self.assertEqual(15, serialized["source_end_index"])
-        self.assertEqual("secondary", serialized["model"]["profile_name"])
+        self.assertEqual("background", serialized["model"]["profile_name"])
         self.assertEqual("gpt-4o-mini", serialized["model"]["model"])
         self.assertIn("created_at", serialized)
 

@@ -4,23 +4,27 @@ import { ProviderConfigForm } from '../components/Settings/ProviderConfig';
 import { CustomSelect } from '../components/common';
 import { useConfigStore } from '../stores/configStore';
 import { useUIStore } from '../stores';
-import { ModelProfile, ProviderConfig, ProviderType } from '../types';
+import { ExecutionRole, ModelProfile, ProviderConfig, ProviderType, RuntimePolicy } from '../types';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import {
-  DEFAULT_RUNTIME_POLICY,
   normalizeBaseFontSize,
   normalizeBaseUrl,
   normalizeContextProviders,
   normalizeProviderMemory,
   normalizeProviderConfig,
+  normalizeRuntimeConfig,
+  resolveProfileForRole,
+  resolveRuntimePolicy,
 } from '../utils/config';
 import { buildBackendAuthHeaders, getBackendAuthToken } from '../utils/backendAuth';
 import { backendTestConfigUrl } from '../utils/backendEndpoint';
+import { getDefaultContextLength } from '../utils/modelCapabilities';
 import { listSystemSkills, SkillEntry } from '../utils/systemSkills';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
-type ProfileName = 'primary' | 'secondary';
+type ProfileName = 'primary' | 'background';
 type SettingsTab = 'model' | 'runtime' | 'skills' | 'ui';
+type RuntimeSectionKey = 'shared' | 'conversation' | 'background' | 'compaction' | 'delegated_task';
 
 interface ConnectionTestState {
   status: TestStatus;
@@ -28,7 +32,7 @@ interface ConnectionTestState {
 }
 
 const SETTINGS_TABS: Array<{ value: SettingsTab; label: string; description: string }> = [
-  { value: 'model', label: 'Model', description: 'Primary and secondary model profiles' },
+  { value: 'model', label: 'Model', description: 'Primary and background model profiles' },
   { value: 'runtime', label: 'Runtime', description: 'Context, output, retries, and tool limits' },
   { value: 'skills', label: 'Skill', description: 'System-level skills and local skill scanning' },
   { value: 'ui', label: 'UI', description: 'Theme, typography, and display preferences' },
@@ -43,6 +47,48 @@ const THEME_OPTIONS = [
 const APP_FONT_LABEL = 'Inter';
 const APP_FONT_STACK = "'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif";
 const CONNECTION_TEST_TIMEOUT_MS = 15000;
+const RUNTIME_FIELD_CONFIG: Array<{ key: keyof RuntimePolicy; label: string; min: number }> = [
+  { key: 'context_length', label: 'Context Length', min: 0 },
+  { key: 'max_output_tokens', label: 'Max Output Tokens', min: 1 },
+  { key: 'max_tool_rounds', label: 'Max Tool Rounds', min: 1 },
+  { key: 'max_retries', label: 'Max Retries', min: 1 },
+];
+const DELEGATED_TASK_RUNTIME_FIELD_CONFIG: Array<{ key: keyof RuntimePolicy; label: string; min: number }> = [
+  { key: 'timeout_seconds', label: 'Timeout Seconds', min: 1 },
+];
+const ROLE_RUNTIME_SECTIONS: Array<{
+  key: Exclude<RuntimeSectionKey, 'shared'>;
+  title: string;
+  description: string;
+  role: ExecutionRole;
+  fields?: Array<{ key: keyof RuntimePolicy; label: string; min: number }>;
+}> = [
+  {
+    key: 'conversation',
+    title: 'Conversation Overrides',
+    description: 'Use these values only for the primary conversation model. Leave fields blank to inherit from Shared Runtime.',
+    role: 'conversation',
+  },
+  {
+    key: 'background',
+    title: 'Background Overrides',
+    description: 'Use these values for title generation and other background model tasks. Leave fields blank to inherit from Shared Runtime.',
+    role: 'background',
+  },
+  {
+    key: 'compaction',
+    title: 'Compaction Overrides',
+    description: 'Use these values for session compaction. Leave fields blank to inherit from Shared Runtime.',
+    role: 'compaction',
+  },
+  {
+    key: 'delegated_task',
+    title: 'Delegated Task Overrides',
+    description: 'Use this timeout limit for delegated background subtasks. Leave the field blank to inherit from Shared Runtime.',
+    role: 'delegated_task',
+    fields: DELEGATED_TASK_RUNTIME_FIELD_CONFIG,
+  },
+];
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -56,7 +102,7 @@ export const SettingsPage: React.FC = () => {
   );
   const [connectionTests, setConnectionTests] = useState<Record<ProfileName, ConnectionTestState>>({
     primary: { status: 'idle', error: null },
-    secondary: { status: 'idle', error: null },
+    background: { status: 'idle', error: null },
   });
   const [systemSkills, setSystemSkills] = useState<SkillEntry[]>([]);
   const [skillsRootPaths, setSkillsRootPaths] = useState<string[]>([]);
@@ -101,7 +147,7 @@ export const SettingsPage: React.FC = () => {
   }, []);
 
   const primaryProfile: Partial<ModelProfile> = draftConfig.profiles?.primary || draftConfig;
-  const secondaryProfile: Partial<ModelProfile> = draftConfig.profiles?.secondary || {};
+  const backgroundProfile: Partial<ModelProfile> = draftConfig.profiles?.background || {};
   const providerMemory = normalizeProviderMemory(draftConfig.provider_memory);
   const contextProviders = normalizeContextProviders(draftConfig.context_providers);
   const configuredProviders = Object.entries(providerMemory).reduce((acc, [provider, entry]) => ({
@@ -112,15 +158,103 @@ export const SettingsPage: React.FC = () => {
   if (primaryProfile.provider) {
     configuredProviders[primaryProfile.provider] = Boolean(primaryProfile.api_key || primaryProfile.base_url);
   }
-  if (secondaryProfile.provider) {
-    configuredProviders[secondaryProfile.provider] = Boolean(secondaryProfile.api_key || secondaryProfile.base_url);
+  if (backgroundProfile.provider) {
+    configuredProviders[backgroundProfile.provider] = Boolean(backgroundProfile.api_key || backgroundProfile.base_url);
   }
 
-  const resolvedRuntime = {
-    context_length: draftConfig.runtime?.context_length ?? DEFAULT_RUNTIME_POLICY.context_length,
-    max_output_tokens: draftConfig.runtime?.max_output_tokens ?? DEFAULT_RUNTIME_POLICY.max_output_tokens,
-    max_tool_rounds: draftConfig.runtime?.max_tool_rounds ?? DEFAULT_RUNTIME_POLICY.max_tool_rounds,
-    max_retries: draftConfig.runtime?.max_retries ?? DEFAULT_RUNTIME_POLICY.max_retries,
+  const normalizedRuntime = normalizeRuntimeConfig(draftConfig.runtime);
+  const sharedRuntime = normalizedRuntime.shared;
+  const conversationRuntime = resolveRuntimePolicy(draftConfig.runtime, 'conversation');
+  const backgroundRuntime = resolveRuntimePolicy(draftConfig.runtime, 'background');
+  const compactionRuntime = resolveRuntimePolicy(draftConfig.runtime, 'compaction');
+  const delegatedTaskRuntime = resolveRuntimePolicy(draftConfig.runtime, 'delegated_task');
+
+  const getRuntimeSectionDraft = (sectionKey: RuntimeSectionKey): RuntimePolicy | undefined => {
+    if (sectionKey === 'shared') {
+      return draftConfig.runtime?.shared;
+    }
+    return draftConfig.runtime?.[sectionKey];
+  };
+
+  const getEffectiveRuntimeSection = (sectionKey: RuntimeSectionKey): Required<RuntimePolicy> => {
+    if (sectionKey === 'shared') {
+      return sharedRuntime;
+    }
+    if (sectionKey === 'conversation') {
+      return conversationRuntime;
+    }
+    if (sectionKey === 'background') {
+      return backgroundRuntime;
+    }
+    if (sectionKey === 'delegated_task') {
+      return delegatedTaskRuntime;
+    }
+    return compactionRuntime;
+  };
+
+  const getRuntimeWarnings = (sectionKey: RuntimeSectionKey): string[] => {
+    if (sectionKey === 'delegated_task') {
+      return [];
+    }
+
+    const effectiveRuntime = getEffectiveRuntimeSection(sectionKey);
+    const warnings: string[] = [];
+
+    if (effectiveRuntime.max_output_tokens > effectiveRuntime.context_length) {
+      warnings.push(
+        `Max output tokens (${effectiveRuntime.max_output_tokens}) exceeds the effective context length (${effectiveRuntime.context_length}). The backend will clamp it at run time.`
+      );
+    }
+
+    if (sectionKey === 'shared') {
+      return warnings;
+    }
+
+    const role = ROLE_RUNTIME_SECTIONS.find((section) => section.key === sectionKey)?.role;
+    const profile = role ? resolveProfileForRole(draftConfig as ProviderConfig, role) : undefined;
+    if (!profile?.provider || !profile.model) {
+      return warnings;
+    }
+
+    const knownContextLength = getDefaultContextLength(profile.provider, profile.model);
+    if (knownContextLength && effectiveRuntime.context_length > knownContextLength) {
+      warnings.push(
+        `Context length (${effectiveRuntime.context_length}) is higher than the known ${profile.provider}/${profile.model} window (${knownContextLength}). The backend will clamp it at run time.`
+      );
+    }
+
+    return warnings;
+  };
+
+  const updateRuntimeSectionValue = (
+    sectionKey: RuntimeSectionKey,
+    field: keyof RuntimePolicy,
+    rawValue: string
+  ) => {
+    const parsedValue = rawValue ? Number(rawValue) : undefined;
+    const nextRuntime = {
+      ...(draftConfig.runtime || {}),
+    };
+    const nextSection = {
+      ...(getRuntimeSectionDraft(sectionKey) || {}),
+    };
+
+    if (parsedValue === undefined) {
+      delete nextSection[field];
+    } else {
+      nextSection[field] = parsedValue;
+    }
+
+    if (Object.keys(nextSection).length === 0) {
+      delete nextRuntime[sectionKey];
+    } else {
+      nextRuntime[sectionKey] = nextSection;
+    }
+
+    setDraftConfig({
+      ...draftConfig,
+      runtime: Object.keys(nextRuntime).length > 0 ? nextRuntime : undefined,
+    });
   };
 
   const setConnectionTestState = (profileName: ProfileName, status: TestStatus, error: string | null = null) => {
@@ -131,7 +265,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   const getProfileForTest = (profileName: ProfileName): Partial<ModelProfile> => (
-    profileName === 'primary' ? primaryProfile : secondaryProfile
+    profileName === 'primary' ? primaryProfile : backgroundProfile
   );
 
   const isProfileTestable = (profile: Partial<ModelProfile>): boolean => {
@@ -141,10 +275,10 @@ export const SettingsPage: React.FC = () => {
     return profile.provider === 'ollama' || Boolean(profile.api_key);
   };
 
-  const updateProfile = (profileName: 'primary' | 'secondary', updates: Partial<ModelProfile>) => {
+  const updateProfile = (profileName: 'primary' | 'background', updates: Partial<ModelProfile>) => {
     const currentProfile = profileName === 'primary'
       ? (draftConfig.profiles?.primary || draftConfig)
-      : (draftConfig.profiles?.secondary || {});
+      : (draftConfig.profiles?.background || {});
     const currentProvider = currentProfile.provider;
     const nextProvider = updates.provider || currentProvider;
     const providerChanged = Boolean(updates.provider && updates.provider !== currentProvider);
@@ -185,10 +319,10 @@ export const SettingsPage: React.FC = () => {
       primary: profileName === 'primary'
         ? nextCurrentProfile
         : { ...(draftConfig.profiles?.primary || draftConfig) },
-      ...(profileName === 'secondary'
-        ? { secondary: nextCurrentProfile }
-        : draftConfig.profiles?.secondary
-          ? { secondary: { ...draftConfig.profiles.secondary } }
+      ...(profileName === 'background'
+        ? { background: nextCurrentProfile }
+        : draftConfig.profiles?.background
+          ? { background: { ...draftConfig.profiles.background } }
           : {}),
     };
 
@@ -288,8 +422,8 @@ export const SettingsPage: React.FC = () => {
       return;
     }
 
-    if (secondaryProfile.provider && !secondaryProfile.model) {
-      setSaveError('Secondary model is required when a secondary provider is selected');
+    if (backgroundProfile.provider && !backgroundProfile.model) {
+      setSaveError('Background model is required when a background provider is selected');
       return;
     }
 
@@ -310,16 +444,16 @@ export const SettingsPage: React.FC = () => {
           input_type: primaryProfile.input_type || 'text',
           profile_name: 'primary',
         },
-        ...(secondaryProfile.provider && secondaryProfile.model
+        ...(backgroundProfile.provider && backgroundProfile.model
           ? {
-              secondary: {
-                provider: secondaryProfile.provider,
-                model: secondaryProfile.model,
-                api_key: secondaryProfile.api_key || '',
-                base_url: secondaryProfile.base_url || '',
-                enable_reasoning: secondaryProfile.enable_reasoning ?? false,
-                input_type: secondaryProfile.input_type || 'text',
-                profile_name: 'secondary',
+              background: {
+                provider: backgroundProfile.provider,
+                model: backgroundProfile.model,
+                api_key: backgroundProfile.api_key || '',
+                base_url: backgroundProfile.base_url || '',
+                enable_reasoning: backgroundProfile.enable_reasoning ?? false,
+                input_type: backgroundProfile.input_type || 'text',
+                profile_name: 'background',
               },
             }
           : {}),
@@ -331,22 +465,17 @@ export const SettingsPage: React.FC = () => {
           api_key: primaryProfile.api_key || '',
           base_url: primaryProfile.base_url || '',
         },
-        ...(secondaryProfile.provider
+        ...(backgroundProfile.provider
           ? {
-              [secondaryProfile.provider]: {
-                model: secondaryProfile.model || '',
-                api_key: secondaryProfile.api_key || '',
-                base_url: secondaryProfile.base_url || '',
+              [backgroundProfile.provider]: {
+                model: backgroundProfile.model || '',
+                api_key: backgroundProfile.api_key || '',
+                base_url: backgroundProfile.base_url || '',
               },
             }
           : {}),
       },
-      runtime: {
-        context_length: resolvedRuntime.context_length,
-        max_output_tokens: resolvedRuntime.max_output_tokens,
-        max_tool_rounds: resolvedRuntime.max_tool_rounds,
-        max_retries: resolvedRuntime.max_retries,
-      },
+      runtime: draftConfig.runtime,
       system_prompt: draftConfig.system_prompt || '',
       appearance: {
         base_font_size: normalizeBaseFontSize(draftBaseFontSize),
@@ -368,7 +497,7 @@ export const SettingsPage: React.FC = () => {
             <div className="mb-4">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">Model Configuration</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Configure the main conversation model and the background helper model.
+                Configure the main conversation model and the background execution model.
               </p>
             </div>
 
@@ -382,13 +511,13 @@ export const SettingsPage: React.FC = () => {
 
               <div className="rounded-2xl border border-dashed border-gray-200 p-4 dark:border-gray-700">
                 <ProviderConfigForm
-                  title="Secondary Model"
-                  config={secondaryProfile}
+                  title="Background Model"
+                  config={backgroundProfile}
                   configuredProviders={configuredProviders}
-                  onChange={(nextConfig) => updateProfile('secondary', nextConfig)}
+                  onChange={(nextConfig) => updateProfile('background', nextConfig)}
                 />
                 <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                  Used for background helper tasks such as title generation. Falls back to the primary model when unset.
+                  Used for title generation, session compaction, and future delegated background tasks. Falls back to the primary model when unset.
                 </p>
               </div>
             </div>
@@ -423,18 +552,18 @@ export const SettingsPage: React.FC = () => {
 
               <div className="flex flex-wrap items-center gap-3">
                 <button
-                  onClick={() => handleTest('secondary')}
-                  disabled={connectionTests.secondary.status === 'testing' || !isProfileTestable(secondaryProfile)}
+                  onClick={() => handleTest('background')}
+                  disabled={connectionTests.background.status === 'testing' || !isProfileTestable(backgroundProfile)}
                   className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
                 >
-                  {connectionTests.secondary.status === 'testing' ? 'Testing Secondary...' : 'Test Secondary Connection'}
+                  {connectionTests.background.status === 'testing' ? 'Testing Background...' : 'Test Background Connection'}
                 </button>
-                {connectionTests.secondary.status === 'success' && (
-                  <span className="text-sm text-emerald-600 dark:text-emerald-400">Secondary connected</span>
+                {connectionTests.background.status === 'success' && (
+                  <span className="text-sm text-emerald-600 dark:text-emerald-400">Background connected</span>
                 )}
-                {connectionTests.secondary.status === 'error' && (
+                {connectionTests.background.status === 'error' && (
                   <span className="text-sm text-red-500">
-                    Secondary failed{connectionTests.secondary.error ? `: ${connectionTests.secondary.error}` : ''}
+                    Background failed{connectionTests.background.error ? `: ${connectionTests.background.error}` : ''}
                   </span>
                 )}
               </div>
@@ -445,106 +574,87 @@ export const SettingsPage: React.FC = () => {
     }
 
     if (activeTab === 'runtime') {
-      return (
-        <div className="space-y-6">
-          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      const renderRuntimeSection = (
+        sectionKey: RuntimeSectionKey,
+        title: string,
+        description: string,
+        fields: Array<{ key: keyof RuntimePolicy; label: string; min: number }> = RUNTIME_FIELD_CONFIG,
+      ) => {
+        const sectionDraft = getRuntimeSectionDraft(sectionKey);
+        const effectiveRuntime = getEffectiveRuntimeSection(sectionKey);
+        const runtimeWarnings = getRuntimeWarnings(sectionKey);
+        const sectionPrefix = title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+        return (
+          <section
+            key={sectionKey}
+            className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+          >
             <div className="mb-4">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Runtime Limits</h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Tune conversation context, output size, tool rounds, and retry behavior.
-              </p>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{description}</p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label htmlFor="context-length" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Context Length
-                </label>
-                <input
-                  id="context-length"
-                  type="number"
-                  min={0}
-                  value={resolvedRuntime.context_length}
-                  onChange={(e) =>
-                    setDraftConfig({
-                      ...draftConfig,
-                      runtime: {
-                        ...draftConfig.runtime,
-                        context_length: e.target.value ? Number(e.target.value) : undefined,
-                      },
-                    })
-                  }
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                />
-              </div>
+              {fields.map((field) => {
+                const explicitValue = sectionDraft?.[field.key];
+                const effectiveValue = effectiveRuntime[field.key];
+                const inputValue = sectionKey === 'shared'
+                  ? effectiveValue
+                  : explicitValue ?? '';
 
-              <div>
-                <label htmlFor="max-output-tokens" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Max Output Tokens
-                </label>
-                <input
-                  id="max-output-tokens"
-                  type="number"
-                  min={1}
-                  value={resolvedRuntime.max_output_tokens}
-                  onChange={(e) =>
-                    setDraftConfig({
-                      ...draftConfig,
-                      runtime: {
-                        ...draftConfig.runtime,
-                        max_output_tokens: e.target.value ? Number(e.target.value) : undefined,
-                      },
-                    })
-                  }
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="max-tool-rounds" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Max Tool Rounds
-                </label>
-                <input
-                  id="max-tool-rounds"
-                  type="number"
-                  min={1}
-                  value={resolvedRuntime.max_tool_rounds}
-                  onChange={(e) =>
-                    setDraftConfig({
-                      ...draftConfig,
-                      runtime: {
-                        ...draftConfig.runtime,
-                        max_tool_rounds: e.target.value ? Number(e.target.value) : undefined,
-                      },
-                    })
-                  }
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="max-retries" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Max Retries
-                </label>
-                <input
-                  id="max-retries"
-                  type="number"
-                  min={1}
-                  value={resolvedRuntime.max_retries}
-                  onChange={(e) =>
-                    setDraftConfig({
-                      ...draftConfig,
-                      runtime: {
-                        ...draftConfig.runtime,
-                        max_retries: e.target.value ? Number(e.target.value) : undefined,
-                      },
-                    })
-                  }
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                />
-              </div>
+                return (
+                  <div key={field.key}>
+                    <label
+                      htmlFor={`${sectionPrefix}-${field.key}`}
+                      className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {field.label}
+                    </label>
+                    <input
+                      id={`${sectionPrefix}-${field.key}`}
+                      aria-label={`${title} ${field.label}`}
+                      type="number"
+                      min={field.min}
+                      value={inputValue}
+                      onChange={(e) => updateRuntimeSectionValue(sectionKey, field.key, e.target.value)}
+                      placeholder={sectionKey === 'shared' ? undefined : String(sharedRuntime[field.key])}
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                    />
+                  </div>
+                );
+              })}
             </div>
+
+            {sectionKey !== 'shared' && (
+              <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                {sectionKey === 'delegated_task'
+                  ? `Effective value: timeout ${effectiveRuntime.timeout_seconds} seconds.`
+                  : `Effective values: context ${effectiveRuntime.context_length}, output ${effectiveRuntime.max_output_tokens}, tool rounds ${effectiveRuntime.max_tool_rounds}, retries ${effectiveRuntime.max_retries}.`}
+              </p>
+            )}
+
+            {runtimeWarnings.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-200">
+                {runtimeWarnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </div>
+            )}
           </section>
+        );
+      };
+
+      return (
+        <div className="space-y-6">
+          {renderRuntimeSection(
+            'shared',
+            'Shared Runtime',
+            'Set the default runtime values used by every execution role unless an override is provided.'
+          )}
+          {ROLE_RUNTIME_SECTIONS.map((section) =>
+            renderRuntimeSection(section.key, section.title, section.description, section.fields)
+          )}
 
           <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mb-4">

@@ -22,6 +22,7 @@ DEFAULT_RUNTIME_POLICY = {
     "max_output_tokens": 4000,
     "max_tool_rounds": 20,
     "max_retries": 3,
+    "timeout_seconds": 120,
 }
 
 DEFAULT_APPEARANCE = {
@@ -73,22 +74,48 @@ def _normalize_context_providers(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _normalize_runtime_policy(data: Dict[str, Any]) -> Dict[str, int]:
-    runtime_input = data.get("runtime") if isinstance(data.get("runtime"), dict) else {}
-
-    def normalize_runtime_value(key: str) -> int:
-        candidate = _to_int(runtime_input.get(key))
-        if candidate is None:
-            candidate = _to_int(data.get(key))
+def _normalize_runtime_policy(data: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_runtime_value(source: Dict[str, Any], key: str, fallback: Optional[int] = None) -> Optional[int]:
+        candidate = _to_int(source.get(key))
         if candidate is None or candidate <= 0:
-            return DEFAULT_RUNTIME_POLICY[key]
+            return fallback
         return candidate
 
+    runtime_input = data.get("runtime") if isinstance(data.get("runtime"), dict) else {}
+    shared_input = runtime_input.get("shared") if isinstance(runtime_input.get("shared"), dict) else {}
+
+    shared = {
+        "context_length": normalize_runtime_value(shared_input, "context_length", DEFAULT_RUNTIME_POLICY["context_length"]),
+        "max_output_tokens": normalize_runtime_value(shared_input, "max_output_tokens", DEFAULT_RUNTIME_POLICY["max_output_tokens"]),
+        "max_tool_rounds": normalize_runtime_value(shared_input, "max_tool_rounds", DEFAULT_RUNTIME_POLICY["max_tool_rounds"]),
+        "max_retries": normalize_runtime_value(shared_input, "max_retries", DEFAULT_RUNTIME_POLICY["max_retries"]),
+        "timeout_seconds": normalize_runtime_value(shared_input, "timeout_seconds", DEFAULT_RUNTIME_POLICY["timeout_seconds"]),
+    }
+
+    def normalize_override(role: str) -> Optional[Dict[str, int]]:
+        role_input = runtime_input.get(role) if isinstance(runtime_input.get(role), dict) else {}
+        normalized = {
+            key: normalize_runtime_value(role_input, key)
+            for key in DEFAULT_RUNTIME_POLICY.keys()
+        }
+        normalized = {
+            key: value
+            for key, value in normalized.items()
+            if isinstance(value, int) and value > 0
+        }
+        return normalized or None
+
+    conversation = normalize_override("conversation")
+    background = normalize_override("background")
+    compaction = normalize_override("compaction")
+    delegated_task = normalize_override("delegated_task")
+
     return {
-        "context_length": normalize_runtime_value("context_length"),
-        "max_output_tokens": normalize_runtime_value("max_output_tokens"),
-        "max_tool_rounds": normalize_runtime_value("max_tool_rounds"),
-        "max_retries": normalize_runtime_value("max_retries"),
+        "shared": shared,
+        **({"conversation": conversation} if conversation else {}),
+        **({"background": background} if background else {}),
+        **({"compaction": compaction} if compaction else {}),
+        **({"delegated_task": delegated_task} if delegated_task else {}),
     }
 
 
@@ -154,7 +181,7 @@ def _normalize_profile(
 def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
     raw_profiles = data.get("profiles") if isinstance(data.get("profiles"), dict) else {}
     primary_input = raw_profiles.get("primary") if isinstance(raw_profiles, dict) else None
-    secondary_input = raw_profiles.get("secondary") if isinstance(raw_profiles, dict) else None
+    background_input = raw_profiles.get("background") if isinstance(raw_profiles, dict) else None
 
     primary_profile = _normalize_profile(
         primary_input if isinstance(primary_input, dict) else data,
@@ -165,11 +192,11 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
     if primary_profile is None:
         raise ValueError("Primary model configuration requires both provider and model.")
 
-    secondary_profile = None
-    if isinstance(secondary_input, dict):
-        secondary_profile = _normalize_profile(
-            secondary_input,
-            role="secondary",
+    background_profile = None
+    if isinstance(background_input, dict):
+        background_profile = _normalize_profile(
+            background_input,
+            role="background",
             fallback_provider=primary_profile["provider"],
         )
 
@@ -180,7 +207,7 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
         **primary_profile,
         "profiles": {
             "primary": primary_profile,
-            **({"secondary": secondary_profile} if secondary_profile else {}),
+            **({"background": background_profile} if background_profile else {}),
         },
         "system_prompt": _normalize_system_prompt(data),
         "runtime": runtime,

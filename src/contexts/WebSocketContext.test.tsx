@@ -444,14 +444,14 @@ describe("WebSocketProvider", () => {
       type: "session_lock_updated",
       session_id: "session-a",
       locked_model: {
-        profile_name: "secondary",
+        profile_name: "background",
         provider: "openai",
         model: "gpt-4o-mini",
       },
     });
 
     await waitFor(() => {
-      expect(useSessionStore.getState().sessions[0]?.locked_model?.profile_name).toBe("secondary");
+      expect(useSessionStore.getState().sessions[0]?.locked_model?.profile_name).toBe("background");
       expect(useSessionStore.getState().sessions[0]?.locked_model?.model).toBe("gpt-4o-mini");
     });
   });

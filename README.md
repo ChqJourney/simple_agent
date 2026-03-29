@@ -11,6 +11,7 @@
 - 图片输入与工作区拖拽交互
 - 会话标题生成与会话元数据持久化
 - session memory / compaction 与长会话上下文治理
+- delegated background subtasks 与消息流内 worker 卡片
 
 ## 架构概览
 
@@ -72,8 +73,13 @@ Workspace
   - 独立 memory artifact 与 compaction 审计日志
   - `>=60%` 上一轮真实 prompt usage 时后台预压缩
   - `>75%` 上一轮真实 prompt usage 时发送前强制压缩
-  - `secondary` profile 优先，未配置时回退 `primary`
+  - `background` profile 优先，未配置时回退 `primary`
   - 原始 transcript 永远保留
+- delegated task：
+  - `delegate_task` 会调用 background model 执行只读子任务
+  - 同一轮 tool fan-out 内支持多个 delegated workers 并行
+  - 消息流中会以单行 worker 卡片展示任务名、状态与耗时
+  - 点击卡片可打开 detail modal 查看 summary、structured data、worker model 与错误信息
 - workspace 离开保护：
   - 主回复 `streaming` 或 session `compacting` 时离开 workspace 会弹确认
   - 确认后中断对应运行；取消则留在当前 workspace
@@ -85,18 +91,18 @@ Workspace
 ### 模型与配置
 
 - OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama provider
-- `primary` / `secondary` 多 profile 配置
+- `primary` / `background` 多 profile 配置
 - Settings 页面会按 provider 记住最近一次保存的 `model / api_key / base_url`
 - provider 下拉会对已保存配置的 provider 标记 `Saved`
 - session 级 locked model 元数据
-- runtime 配置结构已统一到 `runtime` 字段
+- runtime 配置结构已统一到 `runtime.shared + role overrides`
 - 当前实际生效情况：
-  - `context_length` 已进入配置结构，并在设置页提供输入框
+  - `conversation` role 使用 `primary` profile
+  - `background` / `compaction` / `delegated_task` role 优先使用 `background` profile；未配置时回退到 `primary`
+  - `context_length` / `max_output_tokens` / `max_tool_rounds` / `max_retries` 都支持 shared 与 role-specific override
+  - `delegated_task.timeout_seconds` 已支持在 Settings 页单独配置
   - `max_tool_rounds` / `max_retries` 已接入后端 `Agent` 的实际执行限制
   - `max_output_tokens` 已接入 OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama provider 的请求参数
-  - 普通用户消息始终使用 `primary` profile 作为 conversation model
-  - `secondary` profile 用于后台 helper task，例如 session title generation；未配置时回退到 `primary`
-  - `secondary` profile 也用于 session background compaction；未配置时回退到 `primary`
   - `locked model` 仍会持久化到 session metadata，但不再在 workspace chat UI 顶部单独展示
   - `provider_memory` 仅用于前端设置页恢复 provider 对应的已保存配置，后端运行时不会依赖该字段
 
@@ -151,9 +157,10 @@ Workspace
 - `node_execute`
 - `todo_task`
 - `ask_question`
+- `delegate_task`
 - `skill_loader`
 
-工具结果会被统一序列化，并映射到前端任务面板、工具摘要和待回答问题卡片。
+工具结果会被统一序列化，并映射到前端任务面板、工具摘要、delegated worker 卡片和待回答问题卡片。
 
 当前工具系统的设计原则：
 
@@ -231,7 +238,7 @@ Workspace
 
 ## 运行时配置结构
 
-前后端共享的配置结构已经统一为 profile-based 形态，旧的单模型配置会被兼容提升为 `primary` profile。
+前后端共享的配置结构已经统一为 profile-based + role-based runtime 形态。
 
 ```json
 {
@@ -249,8 +256,8 @@ Workspace
       "base_url": "https://api.openai.com/v1",
       "enable_reasoning": false
     },
-    "secondary": {
-      "profile_name": "secondary",
+    "background": {
+      "profile_name": "background",
       "provider": "openai",
       "model": "gpt-4.1-mini",
       "api_key": "YOUR_KEY",
@@ -271,10 +278,19 @@ Workspace
     }
   },
   "runtime": {
-    "context_length": 64000,
-    "max_output_tokens": 4000,
-    "max_tool_rounds": 20,
-    "max_retries": 3
+    "shared": {
+      "context_length": 64000,
+      "max_output_tokens": 4000,
+      "max_tool_rounds": 20,
+      "max_retries": 3,
+      "timeout_seconds": 120
+    },
+    "background": {
+      "max_output_tokens": 2048
+    },
+    "delegated_task": {
+      "timeout_seconds": 180
+    }
   },
   "appearance": {
     "base_font_size": 16
@@ -291,7 +307,8 @@ Workspace
 
 说明：
 
-- `profiles.primary/secondary` 决定当前真正参与运行的模型
+- `profiles.primary/background` 决定各 execution role 真正参与运行的模型
+- `runtime.shared` 是默认值，`runtime.conversation/background/compaction/delegated_task` 是按 role 的 override
 - `provider_memory` 只用于前端设置页在切换 provider 时恢复该 provider 最近一次保存的 `model / api_key / base_url`
 - 后端收到 `config` 时会忽略 `provider_memory`
 
@@ -313,8 +330,8 @@ Workspace
       "base_url": "https://api.deepseek.com",
       "enable_reasoning": false
     },
-    "secondary": {
-      "profile_name": "secondary",
+    "background": {
+      "profile_name": "background",
       "provider": "deepseek",
       "model": "deepseek-reasoner",
       "api_key": "YOUR_KEY",
@@ -323,10 +340,16 @@ Workspace
     }
   },
   "runtime": {
-    "context_length": 128000,
-    "max_output_tokens": 4000,
-    "max_tool_rounds": 20,
-    "max_retries": 3
+    "shared": {
+      "context_length": 128000,
+      "max_output_tokens": 4000,
+      "max_tool_rounds": 20,
+      "max_retries": 3,
+      "timeout_seconds": 120
+    },
+    "delegated_task": {
+      "timeout_seconds": 240
+    }
   },
   "appearance": {
     "base_font_size": 16
@@ -334,10 +357,17 @@ Workspace
 }
 ```
 
-## Settings Updates (2026-03-18)
+## Settings Updates (2026-03-29)
 
-- `Test Connection` is now split by profile: `Test Primary Connection` and `Test Secondary Connection`.
-- `Runtime Limits` now displays explicit defaults when users have not set custom values: `context_length=64000`, `max_output_tokens=4000`, `max_tool_rounds=20`, `max_retries=3`.
+- `Test Connection` is split by profile: `Test Primary Connection` and `Test Background Connection`.
+- `Runtime` 页面现在按 role 展示：
+  - `Shared Runtime`
+  - `Conversation Overrides`
+  - `Background Overrides`
+  - `Compaction Overrides`
+  - `Delegated Task Overrides`
+- `Delegated Task Overrides` 当前提供 `Timeout Seconds`，用于 background 子任务 `delegate_task`。
+- `Runtime` 默认值现在也包含 `timeout_seconds=120`，并会按 role 解析 effective runtime。
 - `Appearance` now includes `Base Font Size`, persisted via `appearance.base_font_size` and applied globally in the frontend runtime.
 
 ## Tool System Updates (2026-03-18)
@@ -361,11 +391,17 @@ Workspace
 
 ## Tool System Updates (2026-03-26)
 
-- 新增 4 个基础文档工具：
+- 文档工具主链路已统一为：
   - `list_directory_tree`
-  - `search_files`
-  - `read_file_excerpt`
-  - `get_document_outline`
+  - `search_documents`
+  - `read_document_segment`
+  - `get_document_structure`
+- PDF 专家工具保留为：
+  - `pdf_get_info`
+  - `pdf_get_outline`
+  - `pdf_read_pages`
+  - `pdf_read_lines`
+  - `pdf_search`
 - 工具元数据从基础 `name/description/parameters` 扩展为更适合 LLM 与前端消费的 descriptor：
   - `read_only`
   - `risk_level`
@@ -409,6 +445,8 @@ agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agen
 - `tool_call_requested`
 - `tool_execution_started`
 - `tool_execution_completed`
+- `delegated_task_started`
+- `delegated_task_completed`
 - `question_requested`
 - `question_answered`
 - `retry_scheduled`

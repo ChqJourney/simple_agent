@@ -13,6 +13,8 @@ const EVENT_LABELS: Record<string, string> = {
   tool_call_requested: 'Tool requested',
   tool_execution_started: 'Tool started',
   tool_execution_completed: 'Tool completed',
+  delegated_task_started: 'Delegated task started',
+  delegated_task_completed: 'Delegated task completed',
   skill_catalog_prepared: 'Skills indexed',
   skill_loaded: 'Skill loaded',
   session_compaction_started: 'Compaction started',
@@ -38,6 +40,9 @@ function formatEventDetails(event: RunEventRecord): string | null {
   const skillName = typeof event.payload.skill_name === 'string' ? event.payload.skill_name : null;
   const strategy = typeof event.payload.strategy === 'string' ? event.payload.strategy : null;
   const reason = typeof event.payload.reason === 'string' ? event.payload.reason : null;
+  const task = typeof event.payload.task === 'string' ? event.payload.task : null;
+  const workerModel = typeof event.payload.worker_model === 'string' ? event.payload.worker_model : null;
+  const workerProvider = typeof event.payload.worker_provider === 'string' ? event.payload.worker_provider : null;
   const postTokensEstimate = typeof event.payload.post_tokens_estimate === 'number'
     ? event.payload.post_tokens_estimate
     : null;
@@ -57,6 +62,17 @@ function formatEventDetails(event: RunEventRecord): string | null {
       details.push(reason);
     }
     return details.length > 0 ? details.join(' - ') : null;
+  }
+
+  if (event.event_type === 'delegated_task_started') {
+    return task;
+  }
+
+  if (event.event_type === 'delegated_task_completed') {
+    if (workerProvider && workerModel) {
+      return `${workerProvider}/${workerModel}`;
+    }
+    return workerModel;
   }
 
   if (toolName) {

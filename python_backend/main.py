@@ -17,7 +17,6 @@ from fastapi.responses import JSONResponse
 from core.agent import Agent
 from core.user import Session, UserManager
 from llms.base import BaseLLM
-from llms.capabilities import get_supported_input_types
 from llms.deepseek import DeepSeekLLM
 from llms.glm import GLMLLM
 from llms.kimi import KimiLLM
@@ -26,18 +25,18 @@ from llms.openai import OpenAILLM
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 from llms.qwen import QwenLLM
 from runtime.config import DEFAULT_RUNTIME_POLICY, get_primary_profile_config, normalize_runtime_config
+from runtime.delegation import DelegatedTaskRunner
 from runtime.provider_registry import ContextProviderBundle, ContextProviderRegistry
 from runtime.router import (
+    build_execution_spec,
     lock_ref_from_profile,
-    resolve_compaction_profile,
-    resolve_background_profile,
-    resolve_conversation_profile,
     session_lock_matches_profile,
 )
 from runtime.session_titles import run_session_title_task
 from skills.local_loader import LocalSkillLoader, default_skill_search_roots
 from tools.base import ToolRegistry
 from tools.ask_question import AskQuestionTool
+from tools.delegate_task import DelegateTaskTool
 from tools.file_read import FileReadTool
 from tools.file_write import FileWriteTool
 from tools.get_document_structure import GetDocumentStructureTool
@@ -116,6 +115,14 @@ tool_registry.register(PythonExecuteTool())
 tool_registry.register(NodeExecuteTool())
 tool_registry.register(TodoTaskTool())
 tool_registry.register(AskQuestionTool())
+tool_registry.register(
+    DelegateTaskTool(
+        DelegatedTaskRunner(
+            config_getter=lambda: runtime_state.current_config,
+            llm_factory=lambda execution_spec: create_llm_for_execution_spec(execution_spec),
+        )
+    )
+)
 skill_search_roots = default_skill_search_roots()
 tool_registry.register(SkillLoaderTool(LocalSkillLoader(search_roots=skill_search_roots)))
 
@@ -153,6 +160,20 @@ SESSION_TASK_RESERVED = object()
 TOOL_CONFIRM_DECISIONS: Set[str] = {"approve_once", "approve_always", "reject"}
 TOOL_CONFIRM_SCOPES: Set[str] = {"session", "workspace"}
 EXECUTION_MODES: Set[str] = {"regular", "free"}
+
+
+def _apply_runtime_tool_policies(config: Dict[str, Any]) -> None:
+    delegate_tool = tool_registry.get_tool("delegate_task")
+    if delegate_tool is None:
+        return
+
+    delegated_runtime = build_execution_spec(config, "delegated_task").get("runtime")
+    if not isinstance(delegated_runtime, dict):
+        return
+
+    timeout_seconds = delegated_runtime.get("timeout_seconds")
+    if isinstance(timeout_seconds, int) and timeout_seconds > 0:
+        delegate_tool.policy.timeout_seconds = timeout_seconds
 
 
 def _normalize_non_empty_string(value: Any) -> Optional[str]:
@@ -220,11 +241,29 @@ def create_llm_for_profile(profile: Dict[str, Any], runtime_policy: Optional[Dic
     raise ValueError(f"Unknown provider: {provider}")
 
 
+def create_llm_for_execution_spec(execution_spec: Dict[str, Any]) -> BaseLLM:
+    profile = execution_spec.get("profile") if isinstance(execution_spec.get("profile"), dict) else {}
+    runtime_policy = execution_spec.get("runtime") if isinstance(execution_spec.get("runtime"), dict) else {}
+    role = str(execution_spec.get("role") or "unknown")
+    guardrails = execution_spec.get("guardrails") if isinstance(execution_spec.get("guardrails"), dict) else {}
+    warnings = guardrails.get("warnings") if isinstance(guardrails.get("warnings"), list) else []
+
+    for warning in warnings:
+        logger.warning(
+            "Applied runtime guardrail for role=%s model=%s/%s: %s",
+            role,
+            profile.get("provider"),
+            profile.get("model"),
+            warning,
+        )
+
+    return create_llm_for_profile(profile, runtime_policy)
+
+
 def create_llm(config: Dict[str, Any]) -> BaseLLM:
     normalized_config = _normalize_provider_config(config)
-    active_profile = get_primary_profile_config(normalized_config)
-    runtime_policy = normalized_config.get("runtime") if isinstance(normalized_config.get("runtime"), dict) else {}
-    return create_llm_for_profile(active_profile, runtime_policy)
+    execution_spec = build_execution_spec(normalized_config, "conversation")
+    return create_llm_for_execution_spec(execution_spec)
 
 
 def _forget_task(task: asyncio.Task) -> None:
@@ -429,26 +468,24 @@ async def _schedule_background_compaction_task(
 
 async def get_or_create_agent(
     session_id: str,
-    profile_config: Dict[str, Any],
-    runtime_policy: Optional[Dict[str, Any]] = None,
+    execution_spec: Dict[str, Any],
 ) -> Optional[Agent]:
     async with state_lock:
         if not runtime_state.current_config:
             return None
 
         if session_id not in runtime_state.active_agents:
-            effective_runtime_policy = runtime_policy if isinstance(runtime_policy, dict) else {}
+            effective_runtime_policy = execution_spec.get("runtime") if isinstance(execution_spec.get("runtime"), dict) else {}
             agent = Agent(
-                llm=create_llm_for_profile(profile_config, effective_runtime_policy),
+                llm=create_llm_for_execution_spec(execution_spec),
                 tool_registry=tool_registry,
                 user_manager=user_manager,
                 skill_provider=runtime_state.current_context_bundle.skill_provider,
                 custom_system_prompt=str(runtime_state.current_config.get("system_prompt") or ""),
                 compaction_llm_factory=(
-                    lambda current_config=dict(runtime_state.current_config), runtime_policy=dict(effective_runtime_policy): (
-                        create_llm_for_profile(
-                            resolve_compaction_profile(current_config),
-                            runtime_policy,
+                    lambda current_config=dict(runtime_state.current_config): (
+                        create_llm_for_execution_spec(
+                            build_execution_spec(current_config, "compaction"),
                         )
                     )
                 ),
@@ -582,6 +619,7 @@ async def handle_message(
 async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> None:
     try:
         config = _normalize_provider_config(data)
+        _apply_runtime_tool_policies(config)
 
         await cleanup_all_tasks()
         await _close_runtime_llms()
@@ -597,14 +635,14 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
 
         await send_callback({
             "type": "config_updated",
-            "provider": runtime_state.current_config["provider"],
-            "model": runtime_state.current_config["model"]
+            "provider": get_primary_profile_config(runtime_state.current_config)["provider"],
+            "model": get_primary_profile_config(runtime_state.current_config)["model"]
         })
 
         logger.info(
             "Configuration updated: provider=%s, model=%s",
-            runtime_state.current_config["provider"],
-            runtime_state.current_config["model"],
+            get_primary_profile_config(runtime_state.current_config)["provider"],
+            get_primary_profile_config(runtime_state.current_config)["model"],
         )
 
     except Exception as e:
@@ -684,10 +722,10 @@ async def handle_user_message(
         if not session:
             session = await user_manager.create_session(workspace, session_id)
 
-        runtime_policy = current_config.get("runtime") if isinstance(current_config.get("runtime"), dict) else {}
+        conversation_spec = build_execution_spec(current_config, "conversation")
+        active_profile = conversation_spec["profile"]
 
         if current_config:
-            active_profile = resolve_conversation_profile(current_config)
             active_lock_ref = lock_ref_from_profile(active_profile) if active_profile else None
 
             if session.locked_model and (not active_profile or not session_lock_matches_profile(session.locked_model, active_profile)):
@@ -727,10 +765,14 @@ async def handle_user_message(
             for attachment in attachments
         )
         if has_image_attachments:
-            supported_input_types = get_supported_input_types(
-                str(active_profile.get("provider") or ""),
-                str(active_profile.get("model") or ""),
+            capability_summary = conversation_spec.get("capability_summary", {})
+            supported_input_types = (
+                capability_summary.get("supported_input_types")
+                if isinstance(capability_summary, dict)
+                else None
             )
+            if not isinstance(supported_input_types, list):
+                supported_input_types = []
             if "image" not in supported_input_types:
                 await _release_reserved_session(session_id)
                 await send_callback({
@@ -743,7 +785,7 @@ async def handle_user_message(
                 })
                 return
 
-        agent = await get_or_create_agent(session_id, active_profile, runtime_policy)
+        agent = await get_or_create_agent(session_id, conversation_spec)
         if not agent:
             await _release_reserved_session(session_id)
             await send_callback({
@@ -768,8 +810,8 @@ async def handle_user_message(
         )
         title_task = None
         if should_generate_title:
-            title_profile = resolve_background_profile(current_config)
-            title_llm = create_llm_for_profile(title_profile, runtime_policy)
+            background_spec = build_execution_spec(current_config, "background")
+            title_llm = create_llm_for_execution_spec(background_spec)
             if callable(getattr(title_llm, "complete", None)):
                 title_task = asyncio.create_task(
                     _run_title_task_with_cleanup(session, title_llm, normalized_content, send_callback)

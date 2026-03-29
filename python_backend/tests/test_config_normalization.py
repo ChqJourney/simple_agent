@@ -21,6 +21,8 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
         messages = []
         original_create_llm = backend_main.create_llm
         original_runtime_state = backend_main.runtime_state
+        delegate_tool = backend_main.tool_registry.get_tool("delegate_task")
+        original_delegate_timeout = delegate_tool.policy.timeout_seconds if delegate_tool is not None else None
 
         try:
             def fake_create_llm(config):
@@ -53,6 +55,7 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 'https://api.openai.com/v1',
                 backend_main.runtime_state.current_config['base_url'],
             )
+            self.assertEqual(120, delegate_tool.policy.timeout_seconds if delegate_tool is not None else None)
             self.assertIn(
                 {
                     'type': 'config_updated',
@@ -62,6 +65,47 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 messages,
             )
         finally:
+            if delegate_tool is not None and original_delegate_timeout is not None:
+                delegate_tool.policy.timeout_seconds = original_delegate_timeout
+            backend_main.create_llm = original_create_llm
+            backend_main.runtime_state = original_runtime_state
+
+    async def test_handle_config_applies_delegated_task_timeout_override_to_tool_policy(self) -> None:
+        original_create_llm = backend_main.create_llm
+        original_runtime_state = backend_main.runtime_state
+        delegate_tool = backend_main.tool_registry.get_tool("delegate_task")
+        original_delegate_timeout = delegate_tool.policy.timeout_seconds if delegate_tool is not None else None
+
+        try:
+            def fake_create_llm(_config):
+                return object()
+
+            async def send_callback(_message):
+                return None
+
+            backend_main.create_llm = fake_create_llm
+            backend_main.runtime_state = backend_main.BackendRuntimeState()
+
+            await backend_main.handle_config(
+                {
+                    'provider': 'openai',
+                    'model': 'gpt-4o-mini',
+                    'api_key': 'test-key',
+                    'base_url': 'https://api.openai.com/v1',
+                    'enable_reasoning': False,
+                    'runtime': {
+                        'delegated_task': {
+                            'timeout_seconds': 240,
+                        },
+                    },
+                },
+                send_callback,
+            )
+
+            self.assertEqual(240, delegate_tool.policy.timeout_seconds if delegate_tool is not None else None)
+        finally:
+            if delegate_tool is not None and original_delegate_timeout is not None:
+                delegate_tool.policy.timeout_seconds = original_delegate_timeout
             backend_main.create_llm = original_create_llm
             backend_main.runtime_state = original_runtime_state
 

@@ -11,8 +11,12 @@ import { Attachment, ExecutionMode, Message, PendingQuestion, ToolDecision, Tool
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { PendingQuestionCard, ToolConfirmModal } from '../Tools';
-import { hasConfiguredModelProfile, hasRunnableConversationProfile } from '../../utils/config';
-import { supportsImageInput } from '../../utils/modelCapabilities';
+import {
+  hasConfiguredModelProfile,
+  hasRunnableConversationProfile,
+  resolveProfileForRole,
+  supportsImageAttachmentsForRole,
+} from '../../utils/config';
 
 const emptySession = {
   messages: [] as never[],
@@ -33,13 +37,11 @@ export const ChatContainer = () => {
   const updateSession = useSessionStore((state) => state.updateSession);
   const [sessionExecutionModes, setSessionExecutionModes] = useState<Record<string, ExecutionMode>>({});
   const [draftExecutionMode, setDraftExecutionMode] = useState<ExecutionMode>('regular');
-  const primaryProfile = config?.profiles?.primary || config;
+  const primaryProfile = resolveProfileForRole(config, 'conversation');
   const hasConfiguredModel = hasConfiguredModelProfile(primaryProfile);
   const hasRunnableConfig = hasRunnableConversationProfile(config);
   const canSendMessage = isConnected && hasRunnableConfig && Boolean(currentWorkspace?.path);
-  const supportsImageAttachments = primaryProfile
-    ? supportsImageInput(primaryProfile.provider, primaryProfile.model)
-    : false;
+  const supportsImageAttachments = supportsImageAttachmentsForRole(config, 'conversation');
   const composerPlaceholder = !hasConfiguredModel
     ? 'Configure a primary model before sending messages...'
     : hasRunnableConfig

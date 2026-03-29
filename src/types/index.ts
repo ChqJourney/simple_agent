@@ -54,6 +54,8 @@ export interface ToolResultMessageMeta {
   toolName: string;
   success: boolean;
   details: string;
+  output?: unknown;
+  error?: string | null;
 }
 
 export type ToolMessageMeta = ToolDecisionMessageMeta | ToolResultMessageMeta;
@@ -96,6 +98,7 @@ export interface RunEventRecord {
 
 export type ProviderType = 'openai' | 'deepseek' | 'kimi' | 'glm' | 'minimax' | 'qwen' | 'ollama';
 export type InputType = 'text' | 'image';
+export type ExecutionRole = 'conversation' | 'background' | 'compaction' | 'delegated_task';
 
 export interface ModelProfile {
   provider: ProviderType;
@@ -112,6 +115,15 @@ export interface RuntimePolicy {
   max_output_tokens?: number;
   max_tool_rounds?: number;
   max_retries?: number;
+  timeout_seconds?: number;
+}
+
+export interface RuntimeConfig {
+  shared?: RuntimePolicy;
+  conversation?: RuntimePolicy;
+  background?: RuntimePolicy;
+  compaction?: RuntimePolicy;
+  delegated_task?: RuntimePolicy;
 }
 
 export interface ProviderMemoryEntry {
@@ -137,11 +149,11 @@ export interface ContextProviderConfig {
 export interface ProviderConfig extends ModelProfile {
   profiles?: {
     primary: ModelProfile;
-    secondary?: ModelProfile;
+    background?: ModelProfile;
   };
   system_prompt?: string;
   provider_memory?: Partial<Record<ProviderType, ProviderMemoryEntry>>;
-  runtime?: RuntimePolicy;
+  runtime?: RuntimeConfig;
   appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
 }
@@ -190,7 +202,7 @@ export interface ClientConfig {
   profiles?: ProviderConfig['profiles'];
   system_prompt?: string;
   provider_memory?: ProviderConfig['provider_memory'];
-  runtime?: RuntimePolicy;
+  runtime?: RuntimeConfig;
   appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
 }

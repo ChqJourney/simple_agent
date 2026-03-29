@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { hasRunnableConversationProfile, normalizeProviderConfig } from "./config";
+import {
+  hasRunnableConversationProfile,
+  normalizeProviderConfig,
+  resolveCapabilitySummaryForRole,
+  resolveProfileForRole,
+  supportsImageAttachmentsForRole,
+} from "./config";
 
 describe("normalizeProviderConfig", () => {
   it("promotes flat config into a primary profile while preserving runtime metadata", () => {
@@ -10,14 +16,16 @@ describe("normalizeProviderConfig", () => {
       base_url: "   ",
       enable_reasoning: false,
       runtime: {
-        context_length: 64000,
+        shared: {
+          context_length: 64000,
+        },
       },
     });
 
     expect(normalized.profiles?.primary.model).toBe("gpt-4o-mini");
     expect(normalized.profiles?.primary.profile_name).toBe("primary");
     expect(normalized.profiles?.primary.base_url).toBe("https://api.openai.com/v1");
-    expect(normalized.runtime?.context_length).toBe(64000);
+    expect(normalized.runtime?.shared?.context_length).toBe(64000);
     expect(normalized.context_providers?.skills?.local?.enabled).toBe(true);
   });
 
@@ -31,10 +39,13 @@ describe("normalizeProviderConfig", () => {
     });
 
     expect(normalized.runtime).toEqual({
-      context_length: 64000,
-      max_output_tokens: 4000,
-      max_tool_rounds: 20,
-      max_retries: 3,
+      shared: {
+        context_length: 64000,
+        max_output_tokens: 4000,
+        max_tool_rounds: 20,
+        max_retries: 3,
+        timeout_seconds: 120,
+      },
     });
   });
 
@@ -113,5 +124,70 @@ describe("normalizeProviderConfig", () => {
       base_url: "http://127.0.0.1:11434",
       enable_reasoning: false,
     })).toBe(true);
+  });
+
+  it("resolves background-family roles to the background profile when configured", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+      profiles: {
+        primary: {
+          provider: "openai",
+          model: "gpt-4o",
+          api_key: "test-key",
+          base_url: "https://api.openai.com/v1",
+          enable_reasoning: false,
+          profile_name: "primary",
+        },
+        background: {
+          provider: "deepseek",
+          model: "deepseek-chat",
+          api_key: "test-key",
+          base_url: "https://api.deepseek.com",
+          enable_reasoning: false,
+          profile_name: "background",
+        },
+      },
+    });
+
+    expect(resolveProfileForRole(normalized, "background")?.profile_name).toBe("background");
+    expect(resolveProfileForRole(normalized, "compaction")?.model).toBe("deepseek-chat");
+    expect(resolveProfileForRole(normalized, "delegated_task")?.provider).toBe("deepseek");
+  });
+
+  it("computes conversation image capability from the conversation role profile", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+      profiles: {
+        primary: {
+          provider: "openai",
+          model: "gpt-4o",
+          api_key: "test-key",
+          base_url: "https://api.openai.com/v1",
+          enable_reasoning: false,
+          profile_name: "primary",
+        },
+        background: {
+          provider: "deepseek",
+          model: "deepseek-chat",
+          api_key: "test-key",
+          base_url: "https://api.deepseek.com",
+          enable_reasoning: false,
+          profile_name: "background",
+        },
+      },
+    });
+
+    expect(resolveCapabilitySummaryForRole(normalized, "conversation").supportedInputTypes).toEqual(["text", "image"]);
+    expect(resolveCapabilitySummaryForRole(normalized, "background").supportedInputTypes).toEqual(["text"]);
+    expect(supportsImageAttachmentsForRole(normalized, "conversation")).toBe(true);
+    expect(supportsImageAttachmentsForRole(normalized, "background")).toBe(false);
   });
 });

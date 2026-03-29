@@ -16,6 +16,7 @@ from tools.shell_execute import ShellExecuteTool
 
 logger = logging.getLogger(__name__)
 MAX_TOOL_EXECUTION_TIMEOUT_SECONDS = 120
+MAX_DELEGATED_TASK_TIMEOUT_SECONDS = 600
 BACKGROUND_COMPACTION_USAGE_THRESHOLD = 0.60
 FORCED_COMPACTION_USAGE_THRESHOLD = 0.75
 RECENT_RAW_MESSAGE_COUNT = 8
@@ -361,6 +362,12 @@ class Agent:
             if key not in arguments:
                 return f"Missing required argument: {key}"
 
+        additional_properties = schema.get("additionalProperties")
+        if additional_properties is False:
+            unexpected_keys = sorted(key for key in arguments.keys() if key not in properties)
+            if unexpected_keys:
+                return f"Unexpected argument(s): {', '.join(unexpected_keys)}"
+
         type_checkers = {
             "string": lambda value: isinstance(value, str),
             "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
@@ -651,6 +658,50 @@ class Agent:
             },
         )
 
+    async def _emit_delegated_task_started(
+        self,
+        session: Session,
+        run_id: str,
+        tool_call_id: str,
+        arguments: Dict[str, Any],
+    ) -> None:
+        await self._emit_run_event(
+            session,
+            run_id,
+            "delegated_task_started",
+            {
+                "tool_call_id": tool_call_id,
+                "tool_name": "delegate_task",
+                "task": arguments.get("task"),
+                "expected_output": arguments.get("expected_output", "text"),
+            },
+        )
+
+    async def _emit_delegated_task_completed(
+        self,
+        session: Session,
+        run_id: str,
+        tool_call_id: str,
+        result: ToolResult,
+    ) -> None:
+        metadata = result.metadata if isinstance(result.metadata, dict) else {}
+        worker = metadata.get("worker") if isinstance(metadata.get("worker"), dict) else {}
+
+        await self._emit_run_event(
+            session,
+            run_id,
+            "delegated_task_completed",
+            {
+                "tool_call_id": tool_call_id,
+                "tool_name": result.tool_name,
+                "success": result.success,
+                "error": result.error,
+                "worker_profile_name": worker.get("profile_name"),
+                "worker_provider": worker.get("provider"),
+                "worker_model": worker.get("model"),
+            },
+        )
+
     @staticmethod
     def _clamp_tool_timeout_seconds(tool: BaseTool, arguments: Dict[str, Any]) -> int:
         policy_timeout = getattr(getattr(tool, "policy", None), "timeout_seconds", 30)
@@ -668,7 +719,12 @@ class Agent:
         if parsed_timeout < 1:
             parsed_timeout = default_timeout if default_timeout > 0 else 30
 
-        return min(parsed_timeout, MAX_TOOL_EXECUTION_TIMEOUT_SECONDS)
+        max_timeout = (
+            MAX_DELEGATED_TASK_TIMEOUT_SECONDS
+            if tool.name == "delegate_task"
+            else MAX_TOOL_EXECUTION_TIMEOUT_SECONDS
+        )
+        return min(parsed_timeout, max_timeout)
 
     async def _execute_tool_with_interrupt_timeout(
         self,
@@ -817,6 +873,9 @@ class Agent:
         arguments["timeout_seconds"] = effective_timeout_seconds
 
         try:
+            if tool.name == "delegate_task":
+                await self._emit_delegated_task_started(session, run_id, tool_call_id, arguments)
+
             result = await self._execute_tool_with_interrupt_timeout(
                 tool=tool,
                 tool_call_id=tool_call_id,
@@ -854,6 +913,8 @@ class Agent:
                     "error": result.error,
                 },
             )
+            if tool.name == "delegate_task":
+                await self._emit_delegated_task_completed(session, run_id, tool_call_id, result)
             if tool.name == "skill_loader" and result.success:
                 await self._emit_skill_loaded_event(session, run_id, result)
 
@@ -892,6 +953,8 @@ class Agent:
                     "error": error_message,
                 },
             )
+            if tool.name == "delegate_task":
+                await self._emit_delegated_task_completed(session, run_id, tool_call_id, timeout_result)
             return timeout_result
         except RunInterrupted:
             raise
@@ -926,6 +989,8 @@ class Agent:
                     "error": safe_error,
                 },
             )
+            if tool.name == "delegate_task":
+                await self._emit_delegated_task_completed(session, run_id, tool_call_id, error_result)
 
             return error_result
 
@@ -1029,6 +1094,8 @@ class Agent:
             prompt_sections.append(self._format_custom_system_prompt_section(self.custom_system_prompt))
 
         prompt_sections.append(self._format_runtime_environment_section(session))
+        if self.tool_registry.get_tool("delegate_task") is not None:
+            prompt_sections.append(self._format_delegation_guidance_section())
 
         if self.skill_provider:
             skills = self.skill_provider.list_skills(workspace_path=session.workspace_path)
@@ -1407,6 +1474,19 @@ class Agent:
             )
 
         return "\n".join(parts)
+
+    @staticmethod
+    def _format_delegation_guidance_section() -> str:
+        return "\n".join(
+            [
+                "Delegation guidance:",
+                "- `delegate_task` is for bounded, read-only background subtasks.",
+                "- Prefer direct reasoning when the task is short or does not benefit from a separate worker.",
+                "- When delegating, pass only the minimal structured context needed: `messages`, `tool_results`, `constraints`, and `notes`.",
+                "- Do not use `delegate_task` for user questions, file mutations, or image-dependent work unless that content is already reduced to text in context.",
+                "- Expect the delegated worker to return a concise `summary` plus structured `data`.",
+            ]
+        )
 
     @staticmethod
     def _format_skill_catalog_section(skills: List[SkillSummary]) -> str:

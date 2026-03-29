@@ -105,4 +105,32 @@ describe("RunTimeline", () => {
     expect(screen.getAllByText("Compaction completed").length).toBeGreaterThan(0);
     expect(screen.getByText("background - 420 tokens")).toBeTruthy();
   });
+
+  it("renders delegated task events with task and worker details", () => {
+    useRunStore.getState().addEvent("session-a", {
+      event_type: "delegated_task_started",
+      session_id: "session-a",
+      run_id: "run-1",
+      payload: {
+        task: "Summarize unresolved risks",
+      },
+      timestamp: "2026-03-13T09:00:00.000Z",
+    });
+    useRunStore.getState().addEvent("session-a", {
+      event_type: "delegated_task_completed",
+      session_id: "session-a",
+      run_id: "run-1",
+      payload: {
+        worker_provider: "openai",
+        worker_model: "gpt-4o-mini",
+      },
+      timestamp: "2026-03-13T09:00:01.000Z",
+    });
+
+    render(<RunTimeline sessionId="session-a" />);
+
+    expect(screen.getAllByText("Delegated task completed").length).toBeGreaterThan(0);
+    expect(screen.getByText("Summarize unresolved risks")).toBeTruthy();
+    expect(screen.getByText("openai/gpt-4o-mini")).toBeTruthy();
+  });
 });

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sys
 import unittest
@@ -54,6 +55,28 @@ class InvalidDelegatedLLM:
 
     async def aclose(self):
         return None
+
+
+class SlowCancelableDelegatedLLM:
+    def __init__(self) -> None:
+        self.started = False
+        self.closed = False
+        self._close_gate = asyncio.Event()
+
+    async def complete(self, messages, tools=None):
+        self.started = True
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            current_task = asyncio.current_task()
+            if current_task is not None:
+                current_task.uncancel()
+            await self._close_gate.wait()
+            raise
+
+    async def aclose(self):
+        self.closed = True
+        self._close_gate.set()
 
 
 class DelegatedTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
@@ -162,3 +185,37 @@ class DelegatedTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 task="Summarize unresolved risks",
                 expected_output="json",
             )
+
+    async def test_runner_closes_llm_when_cancelled_mid_request(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "api_key": "test-key",
+            }
+        )
+        fake_llm = SlowCancelableDelegatedLLM()
+        runner = DelegatedTaskRunner(
+            config_getter=lambda: normalized,
+            llm_factory=lambda execution_spec: fake_llm,
+        )
+
+        task = asyncio.create_task(
+            runner.execute(
+                task="Summarize unresolved risks",
+                expected_output="text",
+            )
+        )
+
+        while not fake_llm.started:
+            await asyncio.sleep(0.01)
+
+        task.cancel()
+        started = asyncio.get_running_loop().time()
+        while not task.done() and asyncio.get_running_loop().time() - started < 1:
+            await asyncio.sleep(0.01)
+
+        self.assertTrue(task.done())
+        self.assertTrue(fake_llm.closed)
+        with self.assertRaises(asyncio.CancelledError):
+            await task

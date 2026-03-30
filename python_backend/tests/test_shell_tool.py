@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import sys
 import unittest
@@ -14,16 +15,27 @@ from tools.shell_execute import ShellExecuteTool
 
 
 class FakeProcess:
-    def __init__(self, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0) -> None:
+    def __init__(self, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0, pid: int = 1234) -> None:
         self._stdout = stdout
         self._stderr = stderr
         self.returncode = returncode
+        self.pid = pid
 
     async def communicate(self):
         return self._stdout, self._stderr
 
     def kill(self) -> None:
         return None
+
+
+class HangingProcess(FakeProcess):
+    def __init__(self, pid: int = 1234) -> None:
+        super().__init__(stdout=b"", stderr=b"", returncode=None, pid=pid)
+        self._hang = asyncio.Event()
+
+    async def communicate(self):
+        await self._hang.wait()
+        return await super().communicate()
 
 
 class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
@@ -216,6 +228,45 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(path_value.index("tauri-agent-runtime-shims"), path_value.index(r"C:\runtime\python"))
         self.assertLess(path_value.index(r"C:\runtime\python"), path_value.index(r"C:\runtime\node"))
         self.assertEqual("1", called_mock.await_args.kwargs["env"]["PYTHONNOUSERSITE"])
+
+    async def test_shell_tool_terminates_process_tree_when_cancelled(self) -> None:
+        process = HangingProcess()
+
+        with (
+            patch(
+                "tools.shell_execute.asyncio.create_subprocess_shell",
+                AsyncMock(return_value=process),
+            ),
+            patch(
+                "tools.shell_execute.terminate_process_tree",
+                AsyncMock(side_effect=lambda proc: process._hang.set()),
+            ) as terminate_mock,
+        ):
+            task = asyncio.create_task(
+                ShellExecuteTool().execute(
+                    tool_call_id="shell-cancel",
+                    command="sleep 10",
+                )
+            )
+
+            await asyncio.sleep(0)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=1)
+
+        terminate_mock.assert_awaited_once_with(process)
+
+    async def test_shell_tool_creates_posix_process_group(self) -> None:
+        fake_shell_subprocess = AsyncMock(return_value=FakeProcess(stdout=b"ok", stderr=b"", returncode=0))
+
+        with patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_shell_subprocess):
+            result = await ShellExecuteTool().execute(
+                tool_call_id="shell-process-group",
+                command="echo ok",
+            )
+
+        self.assertTrue(result.success)
+        self.assertTrue(fake_shell_subprocess.await_args.kwargs["start_new_session"])
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ for package_name in [
     "numpy",
     "paddle",
     "paddleocr",
+    "paddlex",
     "pydantic",
     "PIL",
     "starlette",

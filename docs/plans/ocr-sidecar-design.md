@@ -349,6 +349,7 @@ ocr-sidecar\
 - `ocr_sidecar/server.py` 运行时优先使用 sidecar 根目录下的本地 `models\`
 - 只有本地模型缺失时，才回退到 PaddleOCR 默认的模型解析路径
 - `python_backend/ocr/manager.py` 会把 sidecar 的 stdout/stderr 落到 `ocr-sidecar\current\logs\stdout.log` 与 `stderr.log`
+- `ocr_sidecar` 打包时需要显式包含 `paddleocr`、`paddlepaddle` 以及 `paddlex`
 
 建议 `manifest.json` 结构如下：
 

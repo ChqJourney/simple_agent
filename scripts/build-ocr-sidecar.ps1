@@ -45,7 +45,7 @@ Write-Host "Using build interpreter: $buildPython"
 Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt", "pyinstaller") -WorkingDirectory $sidecarRoot
 
 Write-Host "Verifying OCR sidecar build dependencies..."
-$criticalModules = @("fastapi", "uvicorn", "pydantic", "numpy", "PIL", "paddle", "paddleocr")
+$criticalModules = @("fastapi", "uvicorn", "pydantic", "numpy", "PIL", "paddle", "paddleocr", "paddlex")
 foreach ($mod in $criticalModules) {
     Write-Host "  Checking $mod..."
     Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-c", "import $mod; print('OK: $mod')") -WorkingDirectory $sidecarRoot

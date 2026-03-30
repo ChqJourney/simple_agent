@@ -17,6 +17,7 @@ from tools.shell_execute import ShellExecuteTool
 logger = logging.getLogger(__name__)
 MAX_TOOL_EXECUTION_TIMEOUT_SECONDS = 120
 MAX_DELEGATED_TASK_TIMEOUT_SECONDS = 600
+TOOL_CANCEL_GRACE_SECONDS = 0.5
 BACKGROUND_COMPACTION_USAGE_THRESHOLD = 0.60
 FORCED_COMPACTION_USAGE_THRESHOLD = 0.75
 RECENT_RAW_MESSAGE_COUNT = 8
@@ -749,6 +750,7 @@ class Agent:
             )
         )
         interrupt_task = asyncio.create_task(self._interrupt_event.wait())
+        cancel_context = f"tool task {tool.name}:{tool_call_id}"
 
         try:
             done, _ = await asyncio.wait(
@@ -758,19 +760,39 @@ class Agent:
             )
 
             if interrupt_task in done and self._interrupt_event.is_set():
-                execution_task.cancel()
-                await asyncio.gather(execution_task, return_exceptions=True)
+                await self._cancel_task_with_grace(execution_task, cancel_context)
                 raise RunInterrupted()
 
             if execution_task in done:
                 return await execution_task
 
-            execution_task.cancel()
-            await asyncio.gather(execution_task, return_exceptions=True)
+            await self._cancel_task_with_grace(execution_task, cancel_context)
             raise asyncio.TimeoutError(f"{tool.name} timed out after {timeout_seconds} seconds")
+        except asyncio.CancelledError as exc:
+            await self._cancel_task_with_grace(execution_task, cancel_context)
+            raise RunInterrupted() from exc
         finally:
             interrupt_task.cancel()
             await asyncio.gather(interrupt_task, return_exceptions=True)
+
+    @staticmethod
+    async def _cancel_task_with_grace(task: asyncio.Task[Any], context: str) -> None:
+        if task.done():
+            await asyncio.gather(task, return_exceptions=True)
+            return
+
+        task.cancel()
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(task, return_exceptions=True),
+                timeout=TOOL_CANCEL_GRACE_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Timed out waiting %.2fs for %s to cancel cleanly",
+                TOOL_CANCEL_GRACE_SECONDS,
+                context,
+            )
 
     async def _execute_single_tool(
         self,

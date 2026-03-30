@@ -5,7 +5,13 @@ from typing import Any, Optional
 from runtime.embedded_runtime import build_runtime_environment, get_node_executable
 
 from .base import BaseTool, ToolResult
-from .execution_common import MAX_OUTPUT_BYTES, format_process_output, normalize_timeout
+from .execution_common import (
+    MAX_OUTPUT_BYTES,
+    build_subprocess_kwargs,
+    format_process_output,
+    normalize_timeout,
+    terminate_process_tree,
+)
 from .policies import ToolExecutionPolicy
 
 
@@ -69,13 +75,13 @@ class NodeExecuteTool(BaseTool):
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **build_subprocess_kwargs(),
         )
 
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=normalized_timeout)
         except asyncio.TimeoutError:
-            process.kill()
-            await process.communicate()
+            await terminate_process_tree(process)
             return ToolResult(
                 tool_call_id=tool_call_id,
                 tool_name=self.name,
@@ -84,8 +90,7 @@ class NodeExecuteTool(BaseTool):
                 error=f"Node execution timed out after {normalized_timeout} seconds",
             )
         except asyncio.CancelledError:
-            process.kill()
-            await process.communicate()
+            await terminate_process_tree(process)
             raise
 
         exit_code = process.returncode or 0

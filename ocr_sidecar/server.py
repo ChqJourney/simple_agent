@@ -82,7 +82,9 @@ class PaddleOcrEngineCache:
             from paddleocr import PaddleOCR  # type: ignore
         except Exception as exc:  # pragma: no cover - exercised in Windows runtime
             raise RuntimeError(
-                "PaddleOCR is not installed. Build the OCR sidecar with paddleocr and paddlepaddle included."
+                "Failed to import PaddleOCR runtime dependencies. "
+                "Build the OCR sidecar with paddleocr, paddlex, and paddlepaddle included. "
+                f"Root cause: {exc!r}"
             ) from exc
 
         os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", DEFAULT_MODEL_SOURCE)

@@ -1,9 +1,13 @@
 import inspect
 import json
+import logging
 from typing import Any, Callable, Dict, Optional
 
 from llms.base import BaseLLM
 from runtime.router import build_execution_spec
+
+logger = logging.getLogger(__name__)
+DELEGATED_ABORT_GRACE_SECONDS = 1.0
 
 DELEGATED_TASK_SYSTEM_PROMPT = (
     "You are the background execution model for delegated tasks. "
@@ -68,6 +72,30 @@ async def _close_llm(llm: Optional[BaseLLM]) -> None:
         result = close_fn()
         if inspect.isawaitable(result):
             await result
+
+
+async def _abort_llm_request(llm: Optional[BaseLLM], completion_task: "asyncio.Task[Any]") -> None:
+    import asyncio
+
+    if completion_task.done():
+        await asyncio.gather(completion_task, return_exceptions=True)
+        return
+
+    completion_task.cancel()
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(
+                _close_llm(llm),
+                completion_task,
+                return_exceptions=True,
+            ),
+            timeout=DELEGATED_ABORT_GRACE_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Timed out waiting %.2fs to abort delegated LLM request",
+            DELEGATED_ABORT_GRACE_SECONDS,
+        )
 
 
 def _normalize_context(context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -181,6 +209,8 @@ class DelegatedTaskRunner:
         expected_output: str = "text",
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        import asyncio
+
         config = self._config_getter()
         if not isinstance(config, dict):
             raise ValueError("Delegated task execution requires an active runtime config.")
@@ -191,23 +221,33 @@ class DelegatedTaskRunner:
 
         try:
             normalized_context = _normalize_context(context)
-            response = await llm.complete(
-                [
-                    {"role": "system", "content": DELEGATED_TASK_SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "task": task,
-                                "expected_output": expected_output,
-                                "allowed_context_keys": sorted(ALLOWED_CONTEXT_KEYS),
-                                "context": normalized_context,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    },
-                ]
+            completion_task = asyncio.create_task(
+                llm.complete(
+                    [
+                        {"role": "system", "content": DELEGATED_TASK_SYSTEM_PROMPT},
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "task": task,
+                                    "expected_output": expected_output,
+                                    "allowed_context_keys": sorted(ALLOWED_CONTEXT_KEYS),
+                                    "context": normalized_context,
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    ]
+                )
             )
+            try:
+                response = await asyncio.shield(completion_task)
+            except asyncio.CancelledError:
+                current_task = asyncio.current_task()
+                if current_task is not None:
+                    current_task.uncancel()
+                await _abort_llm_request(llm, completion_task)
+                raise asyncio.CancelledError
             raw_content = _extract_completion_content(response).strip()
             normalized_output = _normalize_delegated_response(raw_content, expected_output)
 

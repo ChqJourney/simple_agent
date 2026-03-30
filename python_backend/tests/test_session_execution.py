@@ -394,6 +394,24 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual({}, backend_main.runtime_state.active_session_compaction_tasks)
 
+    async def test_interrupt_cancels_active_run_task_for_session(self) -> None:
+        blocker = asyncio.Event()
+
+        async def pending_run() -> None:
+            await blocker.wait()
+
+        task = asyncio.create_task(pending_run())
+        backend_main.runtime_state.pending_tasks.add(task)
+        backend_main.runtime_state.active_session_tasks["session-a"] = task
+        backend_main.runtime_state.task_connections[task] = "conn-a"
+        backend_main.runtime_state.task_sessions[task] = "session-a"
+
+        await backend_main.handle_interrupt({"session_id": "session-a"})
+        await asyncio.sleep(0)
+
+        self.assertTrue(self.agent_a.interrupted)
+        self.assertTrue(task.cancelled())
+
     async def test_handle_message_routes_structured_question_responses(self) -> None:
         await backend_main.user_manager.bind_session_to_connection("session-a", "conn-a")
 

@@ -64,6 +64,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+INTERRUPT_TASK_CANCEL_GRACE_SECONDS = 0.5
 
 ALLOWED_BROWSER_ORIGINS = {
     "http://localhost:1420",
@@ -978,17 +979,34 @@ async def handle_interrupt(data: Dict[str, Any]) -> None:
 
     async with state_lock:
         agent = runtime_state.active_agents.get(session_id)
+        active_task = runtime_state.active_session_tasks.get(session_id)
         compaction_task = runtime_state.active_session_compaction_tasks.get(session_id)
 
     if agent:
         agent.interrupt()
 
+    if agent or compaction_task is not None or isinstance(active_task, asyncio.Task):
+        await user_manager.cancel_pending_for_session(session_id, reason="interrupted")
+
+    if isinstance(active_task, asyncio.Task) and not active_task.done():
+        active_task.cancel()
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(active_task, return_exceptions=True),
+                timeout=INTERRUPT_TASK_CANCEL_GRACE_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Timed out waiting %.2fs for session %s run task to cancel cleanly",
+                INTERRUPT_TASK_CANCEL_GRACE_SECONDS,
+                session_id,
+            )
+
     if compaction_task is not None and not compaction_task.done():
         compaction_task.cancel()
         await asyncio.gather(compaction_task, return_exceptions=True)
 
-    if agent or compaction_task is not None:
-        await user_manager.cancel_pending_for_session(session_id, reason="interrupted")
+    if agent or compaction_task is not None or isinstance(active_task, asyncio.Task):
         logger.info(f"Agent interrupted for session: {session_id}")
 
 

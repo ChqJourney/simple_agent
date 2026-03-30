@@ -1,8 +1,14 @@
+import asyncio
+import contextlib
+import os
+import signal
+import subprocess
 from typing import Any, Dict
 
 MIN_TIMEOUT_SECONDS = 1
 MAX_TIMEOUT_SECONDS = 120
 MAX_OUTPUT_BYTES = 64 * 1024
+PROCESS_TERMINATION_GRACE_SECONDS = 1.0
 
 
 def normalize_timeout(timeout_seconds: Any, default_timeout: int = 30) -> int:
@@ -49,3 +55,84 @@ def format_process_output(
         "captured_output": capture_output,
         "output_max_bytes": max_bytes,
     }
+
+
+def build_subprocess_kwargs() -> Dict[str, Any]:
+    if os.name == "nt":
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        return {"creationflags": creationflags} if creationflags else {}
+    return {"start_new_session": True}
+
+
+async def terminate_process_tree(process: Any) -> None:
+    if process is None:
+        return
+
+    returncode = getattr(process, "returncode", None)
+    if returncode not in (None,):
+        await _drain_process(process)
+        return
+
+    pid = getattr(process, "pid", None)
+
+    if os.name == "nt":
+        terminated = await _terminate_process_tree_windows(pid)
+        if not terminated and hasattr(process, "kill"):
+            with contextlib.suppress(ProcessLookupError, OSError):
+                process.kill()
+    else:
+        terminated = _terminate_process_tree_posix(pid)
+        if not terminated and hasattr(process, "kill"):
+            with contextlib.suppress(ProcessLookupError, OSError):
+                process.kill()
+
+    await _drain_process(process)
+
+
+def _terminate_process_tree_posix(pid: Any) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+
+    try:
+        pgid = os.getpgid(pid)
+    except (ProcessLookupError, OSError):
+        return False
+
+    with contextlib.suppress(ProcessLookupError, OSError):
+        os.killpg(pgid, signal.SIGKILL)
+        return True
+    return False
+
+
+async def _terminate_process_tree_windows(pid: Any) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+
+    try:
+        killer = await asyncio.create_subprocess_exec(
+            "taskkill",
+            "/PID",
+            str(pid),
+            "/T",
+            "/F",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except (FileNotFoundError, NotImplementedError):
+        return False
+
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(killer.communicate(), timeout=PROCESS_TERMINATION_GRACE_SECONDS)
+    return True
+
+
+async def _drain_process(process: Any) -> None:
+    communicate = getattr(process, "communicate", None)
+    if not callable(communicate):
+        return
+
+    with contextlib.suppress(asyncio.TimeoutError, ProcessLookupError, OSError):
+        await asyncio.wait_for(
+            asyncio.shield(communicate()),
+            timeout=PROCESS_TERMINATION_GRACE_SECONDS,
+        )

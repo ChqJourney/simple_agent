@@ -137,6 +137,8 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                 skill_provider=None,
                 custom_system_prompt="",
                 compaction_llm_factory=None,
+                background_compaction_scheduler=None,
+                tool_filter=None,
                 max_tool_rounds=10,
                 max_retries=3,
             ) -> None:
@@ -146,6 +148,8 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                 agent_self.skill_provider = skill_provider
                 agent_self.custom_system_prompt = custom_system_prompt
                 agent_self.compaction_llm_factory = compaction_llm_factory
+                agent_self.background_compaction_scheduler = background_compaction_scheduler
+                agent_self.tool_filter = tool_filter
                 agent_self.max_tool_rounds = max_tool_rounds
                 agent_self.max_retries = max_retries
                 self.created_agents.append(agent_self)

@@ -12,6 +12,7 @@
 - 会话标题生成与会话元数据持久化
 - session memory / compaction 与长会话上下文治理
 - delegated background subtasks 与消息流内 worker 卡片
+- 可选安装的 Paddle OCR sidecar、图片/PDF OCR 与前端 OCR 状态控制
 
 ## 架构概览
 
@@ -25,6 +26,7 @@ Python Backend (FastAPI / WebSocket)
   -> Runtime config + router
   -> Agent loop
   -> Tool registry
+  -> OCR manager + OCR tool
   -> Skill providers
   -> Run-event logging
 
@@ -56,6 +58,7 @@ Workspace
 - Tauri 2
 - Rust
 - Tauri Plugin FS / Dialog / Shell / Opener
+- 主应用由 Tauri 直接管理 `core` backend；OCR 作为安装目录下的可选 sidecar，由 Python backend 按需拉起
 
 ## 当前能力
 
@@ -87,6 +90,9 @@ Workspace
   - 当前 session 正在主回复时，切换到另一 session 会弹确认
   - 确认后中断当前回复再切换
   - `compacting` 不阻止 session 切换
+- OCR 状态展示：
+  - 当 `ocr.enabled = true` 时，workspace 顶栏会显示 `OCR: available / unavailable / starting`
+  - 当 `ocr.enabled = false` 时，顶栏不显示 OCR 状态，LLM 也看不到 OCR 工具
 
 ### 模型与配置
 
@@ -104,7 +110,10 @@ Workspace
   - `max_tool_rounds` / `max_retries` 已接入后端 `Agent` 的实际执行限制
   - `max_output_tokens` 已接入 OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama provider 的请求参数
   - `locked model` 仍会持久化到 session metadata，但不再在 workspace chat UI 顶部单独展示
-  - `provider_memory` 仅用于前端设置页恢复 provider 对应的已保存配置，后端运行时不会依赖该字段
+- `provider_memory` 仅用于前端设置页恢复 provider 对应的已保存配置，后端运行时不会依赖该字段
+- OCR 配置：
+  - 设置页支持安装 OCR 插件与启用/停用 OCR
+  - `ocr.enabled` 控制前端是否展示 OCR 状态，以及 Agent 是否向 LLM 暴露 `ocr_extract`
 
 ### Provider Notes
 
@@ -159,8 +168,18 @@ Workspace
 - `ask_question`
 - `delegate_task`
 - `skill_loader`
+- `ocr_extract`
 
 工具结果会被统一序列化，并映射到前端任务面板、工具摘要、delegated worker 卡片和待回答问题卡片。
+
+OCR 工具补充：
+
+- `ocr_extract`
+  - 支持图片 OCR
+  - 支持扫描版 PDF 指定页 OCR
+  - 结果支持 `text / lines / blocks`
+  - 工作区级缓存位于 `<workspace>/.agent/cache/ocr/`
+  - 仅当 `ocr.enabled = true` 且 OCR sidecar 可用时才会实际提供给 LLM
 
 当前工具系统的设计原则：
 
@@ -235,6 +254,26 @@ Workspace
 - 文件/文件夹从 file tree 拖到输入框时自动插入路径
 - 图片拖入附件区域时加入消息附件
 - `file_write` 产出的新建/修改文件会在 file tree 中高亮
+
+### OCR 模块
+
+- OCR 引擎采用 Paddle，并以独立 `ocr sidecar` 分发
+- sidecar 形态为“单独目录 + `ocr-server.exe`”，不依赖部署端 Python
+- 默认安装位置在 `work agent` 安装目录下：
+
+```text
+<work-agent-install-root>\
+  ocr-sidecar\
+    current\
+      ocr-server.exe
+      manifest.json
+      models\
+```
+
+- sidecar 由主 backend 在运行时发现和按需启动，Tauri 不直接管理其生命周期
+- 构建产物会预打包 `ch`、`en` 的 Paddle OCR 模型，部署端首次使用不依赖联网下载
+- 前端设置页可以安装 sidecar 目录，并启用/停用 OCR
+- 当 OCR 未安装或不可用时，不影响主聊天链路和其他工具
 
 ## 运行时配置结构
 

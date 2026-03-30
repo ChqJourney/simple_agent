@@ -344,13 +344,20 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({}, backend_main.runtime_state.active_agents)
         self.assertTrue(self.agent_a.interrupted)
         self.assertTrue(self.agent_b.interrupted)
-        self.assertIn(
+        config_updated = next(message for message in self.messages if message.get("type") == "config_updated")
+        self.assertEqual("openai", config_updated["provider"])
+        self.assertEqual("gpt-4o-mini", config_updated["model"])
+        self.assertEqual(
             {
-                "type": "config_updated",
-                "provider": "openai",
-                "model": "gpt-4o-mini",
+                "enabled": False,
+                "installed": False,
+                "status": "unavailable",
+                "version": None,
+                "engine": None,
+                "api_version": None,
+                "root_dir": None,
             },
-            self.messages,
+            config_updated["ocr"],
         )
 
     async def test_background_compaction_task_is_deduplicated_per_session(self) -> None:

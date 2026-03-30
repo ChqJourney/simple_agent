@@ -18,6 +18,7 @@
 - 工作区会话持久化、run timeline、token usage 展示
 - session memory / compaction 与长会话上下文治理
 - 图片输入与工作区文件联动
+- 可选安装的 Paddle OCR sidecar、图片/PDF OCR、前端 OCR 启停与状态展示
 
 ## 2. 系统总览
 
@@ -31,9 +32,11 @@ flowchart LR
 
     Backend --> Runtime["Runtime State<br/>config / provider bundle / active agents"]
     Backend --> Agent["Agent Loop"]
+    Backend --> OCR["OCR Manager<br/>discover / start / health / invoke"]
     Agent --> LLM["LLM Providers<br/>OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama"]
-    Agent --> Tools["Tool Registry<br/>directory/document/file/exec/task/question/skill"]
+    Agent --> Tools["Tool Registry<br/>directory/document/file/exec/task/question/skill/ocr"]
     Tools --> Readers["Document Readers<br/>pdf / word / excel / pptx"]
+    Tools --> OCR
     Agent --> Context["Context Providers<br/>Local Skills"]
     Agent --> Persist["Workspace Persistence<br/>.agent/sessions / .agent/logs"]
 
@@ -42,6 +45,7 @@ flowchart LR
     Persist --> Workspace
     Tauri --> Workspace
     UI --> Workspace
+    OCR --> OcrInstall["Installed OCR Sidecar<br/><app_dir>/ocr-sidecar/current"]
 ```
 
 ### 2.1 分层职责
@@ -49,8 +53,8 @@ flowchart LR
 | 层级 | 目录 | 核心职责 | 关键入口 |
 | --- | --- | --- | --- |
 | 前端展示层 | `src/` | 页面路由、聊天 UI、右侧文件树/任务面板、配置界面、状态恢复 | `src/App.tsx` |
-| 桌面宿主层 | `src-tauri/` | 工作区路径规范化、动态 FS 授权、发布态 Python sidecar 启停、app data 注入 | `src-tauri/src/lib.rs` |
-| Agent 运行时 | `python_backend/` | WebSocket 协议、配置标准化、Agent loop、工具执行、事件日志 | `python_backend/main.py` |
+| 桌面宿主层 | `src-tauri/` | 工作区路径规范化、动态 FS 授权、发布态 Python sidecar 启停、OCR sidecar 安装/检查命令、app data 注入 | `src-tauri/src/lib.rs` |
+| Agent 运行时 | `python_backend/` | WebSocket 协议、配置标准化、Agent loop、工具执行、OCR sidecar 管理、事件日志 | `python_backend/main.py` |
 | 工作区持久化层 | `<workspace>/.agent/` | 会话 transcript、metadata、memory snapshot、compaction 审计、run logs | 运行时按需生成 |
 
 ## 3. 仓库结构与模块地图
@@ -62,6 +66,7 @@ flowchart LR
 | `src/` | React 前端代码 |
 | `src-tauri/` | Tauri Rust 壳层与桌面权限 |
 | `python_backend/` | FastAPI/WebSocket 后端、Agent runtime、tools、providers |
+| `ocr_sidecar/` | 独立分发的 Paddle OCR sidecar 源码与构建配置 |
 | `docs/` | 设计文档与实现计划 |
 | `scripts/` | 辅助脚本与回归检查 |
 | `public/` | 静态资源 |
@@ -75,6 +80,7 @@ flowchart LR
 | 通信层 | `src/contexts/WebSocketContext.tsx` `src/services/websocket.ts` | 建立 WebSocket、发送协议消息、分发后端事件 | ProviderConfig、聊天输入、工具确认 | chat/session/run/task/workspace store 更新 |
 | 状态层 | `src/stores/*.ts` | Zustand 持有聊天、会话、工作区、配置、运行状态、UI 状态 | WebSocket 事件、用户操作 | 组件渲染数据 |
 | 工作区 UI | `src/components/Workspace/*` | TopBar、SessionList、FileTree、TaskList | workspace/session/chat store | 工作区侧栏、文件变化高亮 |
+| OCR UI | `src/components/common/OCRStatusIndicator.tsx` `src/utils/ocr.ts` | 顶栏 OCR 状态、OCR 插件安装状态查询、OCR 插件安装调用 | config、Tauri invoke、WebSocket OCR 状态 | OCR 状态展示、插件安装流程 |
 | 聊天 UI | `src/components/Chat/*` | 消息流渲染、输入框、流式输出、interrupt、Markdown/GFM 正文展示、delegated worker 单行卡片与 detail modal | chat store、WebSocket actions | 消息发送、reasoning/tool 展示、worker 状态感知 |
 | 工具交互 UI | `src/components/Tools/*` | ToolConfirmModal、PendingQuestionCard、ToolCallDisplay、ToolMessageDisplay | tool_confirm_request / question_request / tool_result | 审批、答复回传、业务化工具摘要 |
 | 运行观测 UI | `src/components/Run/RunTimeline.tsx` | 渲染 `run_event` 为时间线 | run store、chat store | run 过程可视化 |
@@ -86,6 +92,7 @@ flowchart LR
 | --- | --- | --- |
 | 应用入口 | `src-tauri/src/main.rs` | 启动 Tauri 主程序 |
 | 桌面壳层 | `src-tauri/src/lib.rs` | 注册命令、插件、发布态 sidecar 管理、关闭时回收 sidecar |
+| OCR 安装桥接 | `src-tauri/src/lib.rs` | 检查 OCR sidecar 安装状态、复制用户选择的 sidecar 到 `<app_dir>/ocr-sidecar/current` |
 | 工作区路径授权 | `src-tauri/src/workspace_paths.rs` | 规范化路径、去重判断、给 Tauri FS scope 动态放行 |
 | 会话磁盘桥接 | `src-tauri/src/session_storage.rs` | 在已授权 workspace 下扫描/读取/删除 `.agent/sessions` |
 | 能力配置 | `src-tauri/capabilities/default.json` | 声明默认 FS/Dialog/Shell/Opener 能力 |
@@ -99,12 +106,14 @@ flowchart LR
 | 用户与会话 | `python_backend/core/user.py` | session 管理、消息持久化、memory / compaction artifact、连接绑定、工具审批与问题响应等待 | session_id、workspace_path、frontend 回调 | `.agent/sessions/*`、前端消息派发 |
 | Runtime 配置 | `python_backend/runtime/config.py` | 标准化 provider/profile/runtime/context_providers 配置 | 前端发来的 config | 统一结构的 runtime config |
 | Profile 路由 | `python_backend/runtime/router.py` | 决定 conversation/background/compaction profile、session lock 检查 | config、session metadata | profile 选择结果 |
+| OCR 运行时 | `python_backend/ocr/contracts.py` `python_backend/ocr/client.py` `python_backend/ocr/manager.py` | OCR sidecar 路径发现、manifest 读取、按需启动、health check、HTTP 调用 | app_dir、runtime config、tool request | OCR sidecar 状态、结构化 OCR 响应 |
 | Context Provider 注册 | `python_backend/runtime/provider_registry.py` | 构建 skill provider bundle | normalized config | `ContextProviderBundle` |
 | 运行事件 | `python_backend/runtime/events.py` `python_backend/runtime/logs.py` | 定义并写入 run_event | Agent loop 阶段事件 | `.agent/logs/*.jsonl` |
 | LLM Provider | `python_backend/llms/*.py` | 对接 OpenAI 兼容 API、provider 特定 reasoning/usage 适配、Kimi 温度约束 | messages、tools、runtime policy | 流式 chunk / completion |
-| Tool 系统 | `python_backend/tools/*.py` | 统一文档工具、PDF 专家工具、文件写入、执行、任务、提问、skill 加载等工具 | tool call arguments | ToolResult + descriptor metadata |
+| Tool 系统 | `python_backend/tools/*.py` | 统一文档工具、PDF 专家工具、OCR、文件写入、执行、任务、提问、skill 加载等工具 | tool call arguments | ToolResult + descriptor metadata |
 | 文档 Reader | `python_backend/document_readers/*.py` | 按格式解析 `pdf/docx/xlsx/pptx`，向主工具提供结构、搜索和片段读取能力 | workspace 文件路径 | 结构化文档快照与定位结果 |
 | Context Providers | `python_backend/skills/*` | 扫描本地 skill metadata catalog，并按名称加载 skill 正文 | app data skill root、workspace path | 附加到 system prompt 的 metadata 与 `skill_loader` 运行时加载结果 |
+| OCR Sidecar | `ocr_sidecar/server.py` `ocr_sidecar/prepare_models.py` `ocr_sidecar/ocr_sidecar.spec` | Paddle OCR HTTP 服务、模型预下载、Windows 自包含打包 | 本地图片路径、Paddle 模型 | OCR 结果、`ocr-server.exe` artifact |
 
 ## 4. 关键功能视图
 
@@ -122,6 +131,7 @@ flowchart LR
 | 交互式提问 | `src/components/Tools/PendingQuestionCard.tsx` `python_backend/core/agent.py` | `ask_question` 工具通过 WebSocket 向用户发问并等待回答 |
 | Delegated Task | `python_backend/runtime/delegation.py` `python_backend/tools/delegate_task.py` `src/components/Chat/DelegatedWorkerCards.tsx` | `delegate_task` 使用 background model 执行只读子任务，并在消息流中展示 worker 卡片与 detail modal |
 | 工具业务化展示 | `src/components/Tools/ToolCallDisplay.tsx` `src/components/Tools/ToolMessageDisplay.tsx` `src/utils/toolMessages.ts` | 把工具调用与结果渲染成“正在做什么 / 风险类型 / 结果摘要 / 技术详情” |
+| OCR 能力 | `python_backend/tools/ocr_extract.py` `python_backend/ocr/manager.py` `src/components/common/OCRStatusIndicator.tsx` | 图片 OCR、扫描版 PDF 指定页 OCR、工作区缓存、顶栏 OCR 状态、设置页安装/启停 |
 | Run Timeline | `src/components/Run/RunTimeline.tsx` `python_backend/runtime/events.py` | run_event 同时写入前端和磁盘日志 |
 | 工作区文件联动 | `src/utils/storage.ts` `src/components/Workspace/FileTree.tsx` | 前端经 Tauri 读取工作区文件；`file_write` 成功后高亮变更文件 |
 | Session 历史恢复 | `src/utils/storage.ts` `src-tauri/src/session_storage.rs` | session list / transcript 通过 Tauri command 读取，不再直接走前端 `plugin-fs` |
@@ -215,6 +225,7 @@ sequenceDiagram
    - 工具列表通过 OpenAI-compatible function schema 暴露，并附带 `x-tool-meta`
    - 文档任务优先走 `get_document_structure`、`search_documents`、`read_document_segment`
    - 若是 PDF 精细读取任务，可进一步调用 `pdf_get_outline`、`pdf_read_lines` 等格式专属工具
+   - 若 `ocr.enabled = true`，运行时工具过滤后会向 LLM 暴露 `ocr_extract`
 4. 调用 provider 的 `stream()`
 
 #### D-1. Session Compaction
@@ -245,6 +256,19 @@ sequenceDiagram
    - 追加 tool message 到 session transcript
    - 追加 `tool_execution_completed` 到 run logs
 
+#### E-1. OCR 调用链路
+
+1. 用户在设置页安装 OCR sidecar 到 `<app_dir>/ocr-sidecar/current`
+2. 用户启用 OCR 后，前端顶栏开始展示 OCR 状态
+3. 后端在 `config_updated` 中回传 OCR 安装与可用状态
+4. 当模型调用 `ocr_extract` 时：
+   - `ocr_extract` 校验路径与输入类型
+   - 图片直接调用 OCR sidecar
+   - PDF 先渲染指定页为临时图片，再逐页调用 OCR sidecar
+   - 结果缓存到 `<workspace>/.agent/cache/ocr/`
+5. `ocr_manager` 负责发现 sidecar、按需启动 `ocr-server.exe`、调用 `/health` 与 `/ocr/image`
+6. sidecar 运行时优先使用自身 `models/` 目录里的预打包 Paddle 模型
+
 #### F. 结束、失败与中断
 
 1. 正常结束时回 `completed`，附带 latest usage
@@ -262,6 +286,7 @@ flowchart TD
 
     Settings["SettingsPage"] --> ConfigStore["configStore"]
     ConfigStore --> WSContext["WebSocketContext"]
+    Settings --> TauriOcr["Tauri OCR install/check commands"]
 
     Workspace["WorkspacePage"] --> TauriCmd["Tauri invoke"]
     Workspace --> SessionStore["sessionStore"]
@@ -281,6 +306,7 @@ flowchart TD
     WSContext --> WorkspaceStore
     WSContext --> ChatStore
     WSContext --> SessionStore
+    WSContext --> OcrState["OCR status in UI"]
 ```
 
 ### 6.1 Zustand stores 职责分工
@@ -290,7 +316,7 @@ flowchart TD
 | `chatStore` | 会话消息、流式 token、reasoning、tool 结果、pending question/confirm、latest usage | WebSocket 消息、用户输入 | Chat UI、TopBar TokenUsage |
 | `sessionStore` | 当前 session、session metadata、磁盘扫描结果 | `scanSessions()`、`session_title_updated`、`session_lock_updated` | Sidebar、ChatContainer |
 | `workspaceStore` | workspace 列表、当前 workspace、changedFiles | Welcome/Workspace 页面、`file_write` 结果 | Welcome、FileTree、TopBar |
-| `configStore` | provider/profile/runtime/context provider 配置 | SettingsPage | WebSocketContext、LeftPanel、ModelDisplay |
+| `configStore` | provider/profile/runtime/context provider 配置与 `ocr.enabled` | SettingsPage | WebSocketContext、LeftPanel、ModelDisplay、OCR 状态 UI |
 | `runStore` | 按 session 聚合的运行事件与生命周期状态 | `run_event` | RunTimeline |
 | `taskStore` | `todo_task` 派生出的任务树 | `tool_result` | TaskList |
 | `uiStore` | 左右栏折叠、theme、右栏 tab、loading | 用户操作 | 各页面与布局组件 |
@@ -308,6 +334,11 @@ flowchart TD
 - 前端加载历史时会重新派生 `reasoning` 消息、tool decision 文案、tool result 摘要与业务化工具展示
 
 也就是说，历史 UI 是“磁盘原始数据 + 前端派生逻辑”的组合，不是完整的 UI snapshot。
+
+补充：
+
+- OCR sidecar 的安装目录不放在浏览器持久化里，而是通过 Tauri command 按实际安装目录检查
+- OCR 顶栏状态属于运行态派生信息，来源于后端 `config_updated` 与 sidecar health 状态
 
 ## 7. 后端内部数据流
 
@@ -391,6 +422,7 @@ Tool 系统当前注册了以下内置工具：
 - `todo_task`
 - `ask_question`
 - `delegate_task`
+- `ocr_extract`
 - `skill_loader`
 
 它们统一通过 `ToolRegistry` 暴露为 OpenAI-compatible function schemas，供 LLM 生成 tool call。
@@ -420,6 +452,8 @@ Tool 系统当前注册了以下内置工具：
   - `todo_task`
   - `ask_question`
   - `delegate_task`
+- OCR 工具：
+  - `ocr_extract`
 
 当前不按任务场景裁剪工具集合，而是通过 descriptor 元数据来影响模型偏好与前端展示。
 
@@ -458,6 +492,7 @@ Tool 系统当前注册了以下内置工具：
 - `file_write`：标记文件树中的变更文件
 - `todo_task`：更新任务面板
 - `delegate_task`：在消息流中聚合 worker 状态卡，并通过 modal 展示 summary、structured data 与错误信息
+- `ocr_extract`：显示更友好的“正在识别图片/PDF”文案，并格式化 OCR 结果摘要
 
 而通用展示层会额外基于工具 metadata 和结果内容，生成：
 
@@ -476,12 +511,14 @@ Tool 系统当前注册了以下内置工具：
 | `scan_workspace_sessions` | `storage.ts` | `workspace_path` | session metadata 列表 | 扫描 `.agent/sessions` 恢复 sidebar session list |
 | `read_session_history` | `storage.ts` | `workspace_path` `session_id` | `content` | 读取单个 session transcript 用于消息恢复 |
 | `delete_session_history` | `storage.ts` | `workspace_path` `session_id` | `void` | 删除 session transcript 与 metadata |
+| `inspect_ocr_sidecar_installation` | SettingsPage | 无 | OCR 安装状态与路径信息 | 查询安装目录下是否已存在 OCR sidecar |
+| `install_ocr_sidecar` | SettingsPage | 选中的 OCR sidecar 目录信息 | 安装结果与目标路径 | 把用户选择的 OCR sidecar 复制到 `<app_dir>/ocr-sidecar/current` |
 
 ### 8.2 前端 -> Python Backend WebSocket 消息
 
 | type | 主要字段 | 后端处理函数 | 作用 |
 | --- | --- | --- | --- |
-| `config` | provider/model/profiles/provider_memory?/runtime/context_providers | `handle_config` | 注入运行时配置 |
+| `config` | provider/model/profiles/provider_memory?/runtime/context_providers/ocr | `handle_config` | 注入运行时配置 |
 | `message` | session_id/content/attachments?/workspace_path? | `handle_user_message` | 发起一次 agent 运行 |
 | `tool_confirm` | tool_call_id/decision/scope/approved | `handle_tool_confirm` | 工具审批结果 |
 | `question_response` | tool_call_id/answer/action | `handle_question_response` | 对 `ask_question` 的答复 |
@@ -511,6 +548,8 @@ Tool 系统当前注册了以下内置工具：
 | `session_title_updated` | `sessionStore.updateSession` | 更新 session 标题 |
 | `session_lock_updated` | `sessionStore.updateSession` | 更新锁模 metadata |
 | `run_event` | `chatStore.addRunEvent` + `runStore.addEvent` | 运行轨迹可视化 |
+
+`config_updated` 当前除配置更新确认外，也会带回 OCR 安装状态、可用状态和前端顶栏所需的 OCR 运行态摘要。
 
 ### 8.4 HTTP 接口
 
@@ -574,6 +613,9 @@ Tool 系统当前注册了以下内置工具：
     "skills": {
       "local": { "enabled": true }
     }
+  },
+  "ocr": {
+    "enabled": false
   }
 }
 ```
@@ -584,6 +626,7 @@ Tool 系统当前注册了以下内置工具：
 - `runtime.shared` 是默认值，`runtime.conversation/background/compaction/delegated_task` 是按 role 的 override
 - `provider_memory` 是前端设置页的辅助持久化字段，用于在切换 provider 时恢复该 provider 最近保存的 `model / api_key / base_url`
 - 后端标准化配置时不会依赖 `provider_memory`
+- `ocr.enabled` 控制前端是否展示 OCR 状态，以及 Agent 是否在运行时向 LLM 暴露 `ocr_extract`
 
 ### 8.6 会话与运行事件契约
 

@@ -234,6 +234,10 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
+                "tools.shell_execute.ShellExecuteTool._resolve_shell_runner",
+                return_value={"mode": "shell", "runner": "test-shell", "command": "sleep 10"},
+            ),
+            patch(
                 "tools.shell_execute.asyncio.create_subprocess_shell",
                 AsyncMock(return_value=process),
             ),
@@ -259,7 +263,14 @@ class ShellExecuteToolTests(unittest.IsolatedAsyncioTestCase):
     async def test_shell_tool_creates_posix_process_group(self) -> None:
         fake_shell_subprocess = AsyncMock(return_value=FakeProcess(stdout=b"ok", stderr=b"", returncode=0))
 
-        with patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_shell_subprocess):
+        with (
+            patch("tools.shell_execute.os.name", "posix"),
+            patch(
+                "tools.shell_execute.ShellExecuteTool._resolve_shell_runner",
+                return_value={"mode": "shell", "runner": "test-shell", "command": "echo ok"},
+            ),
+            patch("tools.shell_execute.asyncio.create_subprocess_shell", fake_shell_subprocess),
+        ):
             result = await ShellExecuteTool().execute(
                 tool_call_id="shell-process-group",
                 command="echo ok",

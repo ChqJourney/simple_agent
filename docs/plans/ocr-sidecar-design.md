@@ -45,6 +45,7 @@
 - `ocr_sidecar/` 最小 HTTP sidecar
 - `python_backend/ocr/` 与 `ocr_extract` 工具
 - 图片 OCR、扫描版 PDF OCR、工作区缓存
+- 构建期预下载 Paddle OCR 模型，并随 sidecar artifact 一起分发
 - 前端 OCR 设置页、顶栏 OCR 状态、OCR 工具卡片友好文案
 - Tauri OCR 安装检查与安装命令
 
@@ -339,6 +340,13 @@ ocr-sidecar\
   - Paddle OCR 模型
 - `logs\`
   - sidecar 自身日志
+
+当前实现补充：
+
+- `scripts/build-ocr-sidecar.ps1` 会先执行 `ocr_sidecar/prepare_models.py`
+- 当前默认预下载 `ch`、`en` 两套模型到 `models\ch\...` 与 `models\en\...`
+- `ocr_sidecar/server.py` 运行时优先使用 sidecar 根目录下的本地 `models\`
+- 只有本地模型缺失时，才回退到 PaddleOCR 默认的模型解析路径
 
 建议 `manifest.json` 结构如下：
 
@@ -637,7 +645,18 @@ OCR sidecar 采用目录式自包含分发：
 当前状态：
 
 - `scripts/build-ocr-sidecar.ps1` 已实现
+- `ocr_sidecar/prepare_models.py` 已实现
 - `scripts/package-ocr-sidecar.ps1` 尚未实现
+
+当前构建策略：
+
+1. 安装 OCR sidecar Python 依赖
+2. 预下载 `ch`、`en` Paddle OCR 模型到 `ocr_sidecar/models/`
+3. 执行 PyInstaller 生成 `ocr-server.exe`
+4. 把 `manifest.json` 与 `models/` 显式复制到产物根目录
+5. 同步到 `dist/ocr-sidecar/current/`
+
+这样生成的 GitHub Actions artifact 已经包含离线运行所需模型，不依赖部署端首次联网下载。
 
 ## 17.3 主应用打包关系
 
@@ -681,6 +700,8 @@ OCR sidecar 采用目录式自包含分发：
 - `python_backend/tests/test_ocr_manager.py`
 - `python_backend/tests/test_ocr_extract_tool.py`
 - `ocr_sidecar/server.py`
+- `ocr_sidecar/prepare_models.py`
+- `ocr_sidecar/tests/test_server.py`
 - `ocr_sidecar/requirements.txt`
 - `ocr_sidecar/manifest.json`
 - `ocr_sidecar/ocr_sidecar.spec`
@@ -862,6 +883,7 @@ OCR sidecar 采用目录式自包含分发：
 - 增加 `scripts/package-ocr-sidecar.ps1`
 - 明确发布产物如何携带 `ocr-sidecar/current`
 - 增加更多安装失败、替换失败、路径异常的回归测试
+- 评估是否需要把预下载模型版本写入 `manifest.json`
 
 ## 20. 测试计划
 
@@ -870,6 +892,7 @@ OCR sidecar 采用目录式自包含分发：
 当前已完成验证：
 
 - Python 语法检查已通过
+- `ocr_sidecar/tests/test_server.py` 已通过
 - 针对 OCR 相关 backend 单测已通过
 - 针对 OCR 相关前端单测已通过
 - `cargo test --manifest-path src-tauri/Cargo.toml --lib --quiet` 已通过
@@ -880,6 +903,7 @@ OCR sidecar 采用目录式自包含分发：
 - Windows 上真实 Paddle OCR 推理
 - Windows 上真实 sidecar 安装流程
 - Windows 上设置页安装 OCR 后的端到端热插拔验证
+- GitHub Actions 产物在离线部署端是否可直接使用本地模型完成首轮 OCR
 
 ### 20.1 单元测试
 
@@ -925,10 +949,10 @@ OCR sidecar 采用目录式自包含分发：
 建议明天优先处理以下事项：
 
 1. 在 Windows 环境执行 `scripts/build-ocr-sidecar.ps1`，验证 `ocr-server.exe` 与 Paddle 依赖完整性
-2. 手工验证设置页安装路径和热插拔流程
-3. 实现 `scripts/package-ocr-sidecar.ps1`
-4. 评估是否需要把 OCR 安装状态写入更明确的诊断日志
-5. 如果前面都稳定，再进入 `search_documents` / `read_document_segment` 的 OCR fallback 设计
+2. 用 GitHub Actions artifact 在离线 Windows 机器上验证本地 `models/` 首轮 OCR
+3. 手工验证设置页安装路径和热插拔流程
+4. 实现 `scripts/package-ocr-sidecar.ps1`
+5. 评估是否需要把 OCR 安装状态写入更明确的诊断日志
 
 ## 23. 当前结论
 

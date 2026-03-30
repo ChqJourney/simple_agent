@@ -18,6 +18,8 @@ $builtDir = Join-Path $sidecarRoot "dist/ocr-server"
 $builtExe = Join-Path $builtDir "ocr-server.exe"
 $manifestSource = Join-Path $sidecarRoot "manifest.json"
 $builtManifest = Join-Path $builtDir "manifest.json"
+$modelsSource = Join-Path $sidecarRoot "models"
+$builtModels = Join-Path $builtDir "models"
 
 if (-not $SkipRuntimePrepare -and -not (Test-Path -LiteralPath $stagedPython)) {
     $prepareArgs = @("-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "prepare-runtimes.ps1"))
@@ -50,6 +52,13 @@ foreach ($mod in $criticalModules) {
 }
 Write-Host "All OCR sidecar dependencies verified."
 
+Write-Host "Preparing bundled OCR models..."
+Invoke-CheckedCommand `
+    -FilePath $buildPython `
+    -Arguments @("prepare_models.py", "--output-dir", "models", "--languages", "ch", "en") `
+    -WorkingDirectory $sidecarRoot
+Write-Host "Bundled OCR models prepared under $modelsSource"
+
 if (Test-Path -LiteralPath (Join-Path $sidecarRoot "build")) {
     Remove-Item -LiteralPath (Join-Path $sidecarRoot "build") -Recurse -Force
 }
@@ -71,6 +80,16 @@ if (-not (Test-Path -LiteralPath $manifestSource)) {
 # PyInstaller 6 places collected data files under its internal content directory by
 # default, but our runtime contract expects manifest.json beside ocr-server.exe.
 Copy-Item -LiteralPath $manifestSource -Destination $builtManifest -Force
+
+if (-not (Test-Path -LiteralPath $modelsSource)) {
+    throw "Bundled OCR models source directory not found: $modelsSource"
+}
+
+if (Test-Path -LiteralPath $builtModels) {
+    Remove-Item -LiteralPath $builtModels -Recurse -Force
+}
+
+Copy-Item -LiteralPath $modelsSource -Destination $builtModels -Recurse -Force
 
 Ensure-Directory -Path $distRoot
 Sync-Directory -Source $builtDir -Destination $distCurrentRoot

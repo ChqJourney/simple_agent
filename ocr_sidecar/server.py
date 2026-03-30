@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sys
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
 DEFAULT_LANGUAGE = "ch"
 SUPPORTED_DETAIL_LEVELS = {"text", "lines", "blocks"}
+DEFAULT_MODEL_SOURCE = "BOS"
 
 
 class HealthResponse(BaseModel):
@@ -83,7 +85,30 @@ class PaddleOcrEngineCache:
                 "PaddleOCR is not installed. Build the OCR sidecar with paddleocr and paddlepaddle included."
             ) from exc
 
+        os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", DEFAULT_MODEL_SOURCE)
+
+        local_det_dir, local_rec_dir = _find_local_model_dirs(lang)
+
         candidate_kwargs: list[dict[str, Any]] = [
+            {
+                "lang": lang,
+                "text_detection_model_dir": str(local_det_dir),
+                "text_recognition_model_dir": str(local_rec_dir),
+                "use_doc_orientation_classify": False,
+                "use_doc_unwarping": False,
+                "use_textline_orientation": False,
+            }
+            if local_det_dir and local_rec_dir
+            else {},
+            {
+                "lang": lang,
+                "det_model_dir": str(local_det_dir),
+                "rec_model_dir": str(local_rec_dir),
+                "use_angle_cls": False,
+                "show_log": False,
+            }
+            if local_det_dir and local_rec_dir
+            else {},
             {
                 "lang": lang,
                 "use_doc_orientation_classify": False,
@@ -102,6 +127,8 @@ class PaddleOcrEngineCache:
 
         last_error: Exception | None = None
         for kwargs in candidate_kwargs:
+            if not kwargs:
+                continue
             try:
                 logger.info("Initializing PaddleOCR engine with kwargs=%s", kwargs)
                 return PaddleOCR(**kwargs)
@@ -112,6 +139,28 @@ class PaddleOcrEngineCache:
         if last_error is not None:
             raise RuntimeError(f"Failed to initialize PaddleOCR for lang={lang}: {last_error}") from last_error
         raise RuntimeError(f"Failed to initialize PaddleOCR for lang={lang}")
+
+
+def _runtime_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def _is_non_empty_dir(path: Path) -> bool:
+    return path.is_dir() and any(path.iterdir())
+
+
+def _find_local_model_dirs(lang: str) -> tuple[Path | None, Path | None]:
+    language_root = _runtime_root() / "models" / lang
+    det_dir = language_root / "text_detection"
+    rec_dir = language_root / "text_recognition"
+
+    if _is_non_empty_dir(det_dir) and _is_non_empty_dir(rec_dir):
+        logger.info("Using bundled OCR models for lang=%s from %s", lang, language_root)
+        return det_dir, rec_dir
+
+    return None, None
 
 
 def _coerce_sequence(value: Any) -> list[Any]:

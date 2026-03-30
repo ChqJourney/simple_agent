@@ -41,6 +41,8 @@ jobs:
 
       - name: Build OCR sidecar
         shell: pwsh
+        env:
+          PADDLE_PDX_MODEL_SOURCE: BOS
         run: |
           ./scripts/build-ocr-sidecar.ps1 -SkipRuntimePrepare
 
@@ -50,6 +52,8 @@ jobs:
           $distRoot = "dist/ocr-sidecar/current"
           $ocrExe = Join-Path $distRoot "ocr-server.exe"
           $manifestPath = Join-Path $distRoot "manifest.json"
+          $chModelRoot = Join-Path $distRoot "models/ch"
+          $enModelRoot = Join-Path $distRoot "models/en"
 
           if (-not (Test-Path -LiteralPath $ocrExe)) {
             throw "OCR sidecar executable not found: $ocrExe"
@@ -57,6 +61,14 @@ jobs:
 
           if (-not (Test-Path -LiteralPath $manifestPath)) {
             throw "OCR sidecar manifest not found: $manifestPath"
+          }
+
+          if (-not (Test-Path -LiteralPath $chModelRoot)) {
+            throw "Bundled Chinese OCR models not found: $chModelRoot"
+          }
+
+          if (-not (Test-Path -LiteralPath $enModelRoot)) {
+            throw "Bundled English OCR models not found: $enModelRoot"
           }
 
           & $ocrExe --help | Out-Null

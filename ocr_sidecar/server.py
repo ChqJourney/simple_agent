@@ -92,6 +92,7 @@ class PaddleOcrEngineCache:
         candidate_kwargs: list[dict[str, Any]] = [
             {
                 "lang": lang,
+                "use_doc_preprocessor": False,
                 "text_detection_model_dir": str(local_det_dir),
                 "text_recognition_model_dir": str(local_rec_dir),
                 "use_doc_orientation_classify": False,
@@ -111,6 +112,7 @@ class PaddleOcrEngineCache:
             else {},
             {
                 "lang": lang,
+                "use_doc_preprocessor": False,
                 "use_doc_orientation_classify": False,
                 "use_doc_unwarping": False,
                 "use_textline_orientation": False,

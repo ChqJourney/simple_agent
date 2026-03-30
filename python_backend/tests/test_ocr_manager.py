@@ -56,6 +56,23 @@ class OcrSidecarManagerTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertIn(str(expected), str(ctx.exception))
 
+    async def test_prepare_log_streams_creates_logs_directory_and_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = OcrSidecarManager()
+
+            stdout_handle, stderr_handle = manager._prepare_log_streams(root)
+            stdout_handle.close()
+            stderr_handle.close()
+
+            stdout_path = root / "logs" / "stdout.log"
+            stderr_path = root / "logs" / "stderr.log"
+
+            self.assertTrue(stdout_path.exists())
+            self.assertTrue(stderr_path.exists())
+            self.assertIn("OCR sidecar start", stdout_path.read_text(encoding="utf-8"))
+            self.assertIn("OCR sidecar start", stderr_path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

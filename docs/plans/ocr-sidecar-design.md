@@ -348,6 +348,7 @@ ocr-sidecar\
 - `prepare_models.py` 当前通过 Paddle 默认缓存下载模型，再复制到 sidecar 本地 `models\`
 - `ocr_sidecar/server.py` 运行时优先使用 sidecar 根目录下的本地 `models\`
 - 只有本地模型缺失时，才回退到 PaddleOCR 默认的模型解析路径
+- `python_backend/ocr/manager.py` 会把 sidecar 的 stdout/stderr 落到 `ocr-sidecar\current\logs\stdout.log` 与 `stderr.log`
 
 建议 `manifest.json` 结构如下：
 

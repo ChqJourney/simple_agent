@@ -14,6 +14,28 @@ from .contracts import (
 
 
 class OcrSidecarClient:
+    @staticmethod
+    def _raise_for_status_with_detail(response: httpx.Response) -> None:
+        try:
+            response.raise_for_status()
+            return
+        except httpx.HTTPStatusError as exc:
+            detail = ""
+            try:
+                payload = response.json()
+                if isinstance(payload, dict):
+                    detail = str(payload.get("detail") or payload)
+                else:
+                    detail = str(payload)
+            except Exception:
+                detail = response.text.strip()
+
+            if detail:
+                raise RuntimeError(
+                    f"OCR sidecar returned HTTP {response.status_code}: {detail}"
+                ) from exc
+            raise
+
     async def health(
         self,
         connection: OcrSidecarConnection,
@@ -25,7 +47,7 @@ class OcrSidecarClient:
                 f"{connection.base_url}/health",
                 headers={AUTH_HEADER_NAME: connection.auth_token},
             )
-            response.raise_for_status()
+            self._raise_for_status_with_detail(response)
             return OcrHealthResponse.model_validate(response.json())
 
     async def ocr_image(
@@ -47,5 +69,5 @@ class OcrSidecarClient:
                     "detail_level": detail_level,
                 },
             )
-            response.raise_for_status()
+            self._raise_for_status_with_detail(response)
             return OcrImageResponse.model_validate(response.json())

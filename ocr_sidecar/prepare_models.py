@@ -204,6 +204,7 @@ def _build_engine(lang: str) -> Any:
     candidate_kwargs: list[dict[str, object]] = [
         {
             "lang": lang,
+            "use_doc_preprocessor": False,
             "use_doc_orientation_classify": False,
             "use_doc_unwarping": False,
             "use_textline_orientation": False,

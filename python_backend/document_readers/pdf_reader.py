@@ -4,8 +4,8 @@ import contextlib
 import io
 import math
 import re
-from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from dataclasses import asdict, dataclass, replace
 from typing import TYPE_CHECKING, Any, Sequence
 
 try:
@@ -616,6 +616,58 @@ class PdfReader:
             "items": items[:top_k],
         }
 
+    def render_pages_to_images(
+        self,
+        pages: int | str | Sequence[int],
+        *,
+        output_dir: str | Path,
+        dpi: int = 144,
+        image_format: str = "png",
+    ) -> dict[str, Any]:
+        page_numbers = parse_page_spec(pages, page_count=self.page_count)
+        try:
+            normalized_dpi = int(dpi)
+        except (TypeError, ValueError):
+            raise ValueError("dpi must be an integer")
+        if normalized_dpi < 36:
+            raise ValueError("dpi must be >= 36")
+
+        normalized_format = str(image_format or "png").strip().lower()
+        if normalized_format != "png":
+            raise ValueError("Only png image output is currently supported")
+
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+        scale = normalized_dpi / 72.0
+        matrix = pymupdf.Matrix(scale, scale)
+
+        items: list[dict[str, Any]] = []
+        for page_number in page_numbers:
+            self._validate_page_number(page_number)
+            page = self.doc[page_number - 1]
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+            image_path = output_root / f"page-{page_number}.{normalized_format}"
+            pixmap.save(str(image_path))
+            items.append(
+                {
+                    "page_number": page_number,
+                    "image_path": str(image_path),
+                    "width": int(pixmap.width),
+                    "height": int(pixmap.height),
+                    "dpi": normalized_dpi,
+                    "image_format": normalized_format,
+                }
+            )
+
+        return {
+            "pdf_path": str(self.pdf_path),
+            "page_count": self.page_count,
+            "pages": page_numbers,
+            "dpi": normalized_dpi,
+            "image_format": normalized_format,
+            "items": items,
+        }
+
 
 def get_pdf_info(pdf_path: str | Path) -> dict[str, Any]:
     with PdfReader(pdf_path) as reader:
@@ -705,3 +757,20 @@ def search_pdf(
     )
     with PdfReader(pdf_path) as reader:
         return reader.search(query, top_k=top_k, search_mode=search_mode, options=options)
+
+
+def render_pdf_pages_to_images(
+    pdf_path: str | Path,
+    pages: int | str | Sequence[int],
+    *,
+    output_dir: str | Path,
+    dpi: int = 144,
+    image_format: str = "png",
+) -> dict[str, Any]:
+    with PdfReader(pdf_path) as reader:
+        return reader.render_pages_to_images(
+            pages,
+            output_dir=output_dir,
+            dpi=dpi,
+            image_format=image_format,
+        )

@@ -10,6 +10,7 @@ import {
   normalizeBaseFontSize,
   normalizeBaseUrl,
   normalizeContextProviders,
+  normalizeOcrConfig,
   normalizeProviderMemory,
   normalizeProviderConfig,
   normalizeRuntimeConfig,
@@ -19,11 +20,12 @@ import {
 import { buildBackendAuthHeaders, getBackendAuthToken } from '../utils/backendAuth';
 import { backendTestConfigUrl } from '../utils/backendEndpoint';
 import { getDefaultContextLength } from '../utils/modelCapabilities';
+import { inspectOcrSidecarInstallation, installOcrSidecar, OcrSidecarInstallInfo } from '../utils/ocr';
 import { listSystemSkills, SkillEntry } from '../utils/systemSkills';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 type ProfileName = 'primary' | 'background';
-type SettingsTab = 'model' | 'runtime' | 'skills' | 'ui';
+type SettingsTab = 'model' | 'runtime' | 'skills' | 'ocr' | 'ui';
 type RuntimeSectionKey = 'shared' | 'conversation' | 'background' | 'compaction' | 'delegated_task';
 
 interface ConnectionTestState {
@@ -31,10 +33,18 @@ interface ConnectionTestState {
   error: string | null;
 }
 
+interface OcrInstallState {
+  loading: boolean;
+  installing: boolean;
+  error: string | null;
+  info: OcrSidecarInstallInfo | null;
+}
+
 const SETTINGS_TABS: Array<{ value: SettingsTab; label: string; description: string }> = [
   { value: 'model', label: 'Model', description: 'Primary and background model profiles' },
   { value: 'runtime', label: 'Runtime', description: 'Context, output, retries, and tool limits' },
   { value: 'skills', label: 'Skill', description: 'System-level skills and local skill scanning' },
+  { value: 'ocr', label: 'OCR', description: 'Install the Paddle OCR sidecar and control its availability' },
   { value: 'ui', label: 'UI', description: 'Theme, typography, and display preferences' },
 ];
 
@@ -108,6 +118,12 @@ export const SettingsPage: React.FC = () => {
   const [skillsRootPaths, setSkillsRootPaths] = useState<string[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [ocrInstallState, setOcrInstallState] = useState<OcrInstallState>({
+    loading: true,
+    installing: false,
+    error: null,
+    info: null,
+  });
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -146,10 +162,49 @@ export const SettingsPage: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadOcrInstallInfo = async () => {
+      setOcrInstallState((current) => ({
+        ...current,
+        loading: true,
+        error: null,
+      }));
+
+      try {
+        const info = await inspectOcrSidecarInstallation();
+        if (!cancelled) {
+          setOcrInstallState({
+            loading: false,
+            installing: false,
+            error: null,
+            info,
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setOcrInstallState({
+            loading: false,
+            installing: false,
+            error: error instanceof Error ? error.message : 'Failed to inspect OCR installation.',
+            info: null,
+          });
+        }
+      }
+    };
+
+    void loadOcrInstallInfo();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const primaryProfile: Partial<ModelProfile> = draftConfig.profiles?.primary || draftConfig;
   const backgroundProfile: Partial<ModelProfile> = draftConfig.profiles?.background || {};
   const providerMemory = normalizeProviderMemory(draftConfig.provider_memory);
   const contextProviders = normalizeContextProviders(draftConfig.context_providers);
+  const ocrConfig = normalizeOcrConfig(draftConfig.ocr);
   const configuredProviders = Object.entries(providerMemory).reduce((acc, [provider, entry]) => ({
     ...acc,
     [provider]: Boolean(entry?.api_key || entry?.base_url),
@@ -481,12 +536,56 @@ export const SettingsPage: React.FC = () => {
         base_font_size: normalizeBaseFontSize(draftBaseFontSize),
       },
       context_providers: contextProviders,
+      ocr: ocrConfig,
     });
 
     setBaseFontSize(normalizeBaseFontSize(draftBaseFontSize));
     setConfig(normalizedConfig);
     sendConfig(normalizedConfig);
     navigate(-1);
+  };
+
+  const handleInstallOcr = async () => {
+    setOcrInstallState((current) => ({
+      ...current,
+      installing: true,
+      error: null,
+    }));
+
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select OCR sidecar folder',
+      });
+
+      if (!selected || Array.isArray(selected)) {
+        setOcrInstallState((current) => ({
+          ...current,
+          installing: false,
+        }));
+        return;
+      }
+
+      const info = await installOcrSidecar(selected);
+      setOcrInstallState({
+        loading: false,
+        installing: false,
+        error: null,
+        info,
+      });
+
+      if (config?.ocr?.enabled) {
+        sendConfig(config);
+      }
+    } catch (error) {
+      setOcrInstallState((current) => ({
+        ...current,
+        installing: false,
+        error: error instanceof Error ? error.message : 'Failed to install OCR sidecar.',
+      }));
+    }
   };
 
   const renderTabContent = () => {
@@ -803,6 +902,99 @@ export const SettingsPage: React.FC = () => {
                 </div>
               ))}
             </div>
+          </section>
+        </div>
+      );
+    }
+
+    if (activeTab === 'ocr') {
+      return (
+        <div className="space-y-6">
+          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">OCR Availability</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Control whether the agent can use the optional Paddle OCR sidecar for screenshots and scanned PDFs.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
+              <div>
+                <label htmlFor="enable-ocr" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Enable OCR Tooling
+                </label>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  When enabled, the top bar shows OCR status and the agent can call `ocr_extract`.
+                </p>
+              </div>
+              <input
+                id="enable-ocr"
+                type="checkbox"
+                checked={ocrConfig.enabled}
+                onChange={(e) =>
+                  setDraftConfig({
+                    ...draftConfig,
+                    ocr: {
+                      enabled: e.target.checked,
+                    },
+                  })
+                }
+                className="h-5 w-5 rounded border-gray-300 dark:border-gray-600"
+              />
+            </div>
+          </section>
+
+          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">OCR Sidecar Installation</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Install the packaged OCR sidecar into the app directory under `ocr-sidecar/current`.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleInstallOcr}
+                disabled={ocrInstallState.installing}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              >
+                {ocrInstallState.installing ? 'Installing OCR...' : 'Install OCR Plugin'}
+              </button>
+            </div>
+
+            <div className="space-y-3 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                  Install Status
+                </div>
+                <div className="mt-2 text-sm text-gray-900 dark:text-gray-100">
+                  {ocrInstallState.loading
+                    ? 'Checking OCR installation...'
+                    : ocrInstallState.info?.installed
+                      ? `Installed${ocrInstallState.info.version ? ` (v${ocrInstallState.info.version})` : ''}`
+                      : 'Not installed'}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                  Target Directory
+                </div>
+                <div className="mt-2 break-all font-mono text-sm text-gray-900 dark:text-gray-100">
+                  {ocrInstallState.info?.installDir || 'Unavailable'}
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                Choose a folder that contains `manifest.json` and `ocr-server.exe`, or a parent folder that contains `current/`.
+              </div>
+            </div>
+
+            {ocrInstallState.error && (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                {ocrInstallState.error}
+              </div>
+            )}
           </section>
         </div>
       );

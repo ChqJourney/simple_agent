@@ -124,6 +124,26 @@ function isSkillLoaderOutput(value: unknown): value is {
   );
 }
 
+function isOcrExtractOutput(value: unknown): value is {
+  event: 'ocr_extract';
+  input_type?: string;
+  content?: string;
+  summary?: {
+    char_count?: number;
+    line_count?: number;
+    page_count?: number;
+    detail_level?: string;
+    lang?: string;
+    engine?: string;
+  };
+  metadata?: {
+    cache_hit?: boolean;
+    sidecar_version?: string;
+  };
+} {
+  return isRecord(value) && value.event === 'ocr_extract';
+}
+
 function truncateLines(text: string, maxLines: number): string {
   const lines = text.split('\n');
   if (lines.length <= maxLines) {
@@ -169,6 +189,10 @@ export function formatToolTechnicalValue(value: unknown): string {
 }
 
 export function getToolCategoryLabel(toolName: string): string {
+  if (toolName === 'ocr_extract') {
+    return 'OCR';
+  }
+
   if (toolName === 'list_directory_tree') {
     return '目录浏览';
   }
@@ -230,6 +254,14 @@ export function getToolImpactLabel(toolName: string): string {
 
 export function createToolCallSummary(toolCall: Pick<ToolCall, 'name' | 'arguments'>): string {
   const args = toolCall.arguments || {};
+
+  if (toolCall.name === 'ocr_extract') {
+    const path = typeof args.path === 'string' ? args.path : '文件';
+    const hintedType = typeof args.input_type === 'string' ? args.input_type : 'auto';
+    const normalizedPath = path.toLowerCase();
+    const looksLikePdf = hintedType === 'pdf' || normalizedPath.endsWith('.pdf');
+    return looksLikePdf ? `正在识别 PDF ${path}` : `正在识别图片 ${path}`;
+  }
 
   if (toolCall.name === 'skill_loader') {
     const skillName = typeof args.skill_name === 'string' ? args.skill_name : 'unknown';
@@ -379,6 +411,30 @@ export function createToolDecisionSummary(toolName: string, decision: ToolDecisi
 
 export function renderToolResultDetails(success: boolean, output: unknown, error?: string): string {
   if (success) {
+    if (isOcrExtractOutput(output)) {
+      const scope = output.input_type === 'pdf' ? 'PDF OCR 完成' : '图片 OCR 完成';
+      const summary = output.summary || {};
+      const lines = [
+        scope,
+        `字符数: ${summary.char_count ?? 0}`,
+        `行数: ${summary.line_count ?? 0}`,
+      ];
+      if (typeof summary.page_count === 'number') {
+        lines.push(`页数: ${summary.page_count}`);
+      }
+      if (summary.lang) {
+        lines.push(`语言: ${summary.lang}`);
+      }
+      if (output.metadata?.cache_hit) {
+        lines.push('缓存: 命中');
+      }
+      if (typeof output.content === 'string' && output.content) {
+        lines.push('');
+        lines.push(truncateLines(output.content, 8));
+      }
+      return lines.join('\n');
+    }
+
     if (isDirectoryTreeOutput(output)) {
       return [
         `目录扫描完成`,
@@ -523,6 +579,7 @@ export function renderToolResultDetails(success: boolean, output: unknown, error
 export function createToolResultSummary(toolName: string, success: boolean): string {
   const resolvedToolName = toolName || 'tool';
   const successMessages: Record<string, string> = {
+    ocr_extract: 'OCR 识别完成',
     list_directory_tree: '目录扫描完成',
     search_documents: '文档搜索完成',
     read_document_segment: '文档片段读取完成',
@@ -531,6 +588,7 @@ export function createToolResultSummary(toolName: string, success: boolean): str
     file_write: '文件写入完成',
   };
   const failureMessages: Record<string, string> = {
+    ocr_extract: 'OCR 识别失败',
     list_directory_tree: '目录扫描失败',
     search_documents: '文档搜索失败',
     read_document_segment: '文档片段读取失败',

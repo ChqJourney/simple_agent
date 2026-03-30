@@ -24,7 +24,13 @@ from llms.minimax import MiniMaxLLM
 from llms.openai import OpenAILLM
 from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 from llms.qwen import QwenLLM
-from runtime.config import DEFAULT_RUNTIME_POLICY, get_primary_profile_config, normalize_runtime_config
+from ocr.manager import OcrSidecarManager
+from runtime.config import (
+    DEFAULT_RUNTIME_POLICY,
+    get_primary_profile_config,
+    is_ocr_enabled,
+    normalize_runtime_config,
+)
 from runtime.delegation import DelegatedTaskRunner
 from runtime.provider_registry import ContextProviderBundle, ContextProviderRegistry
 from runtime.router import (
@@ -42,6 +48,7 @@ from tools.file_write import FileWriteTool
 from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
 from tools.node_execute import NodeExecuteTool
+from tools.ocr_extract import OcrExtractTool
 from tools.pdf_tools import PdfGetInfoTool, PdfGetOutlineTool, PdfReadLinesTool, PdfReadPagesTool, PdfSearchTool
 from tools.python_execute import PythonExecuteTool
 from tools.read_document_segment import ReadDocumentSegmentTool
@@ -67,6 +74,7 @@ ALLOWED_BROWSER_ORIGINS = {
 }
 AUTH_TOKEN_ENV_VAR = "TAURI_AGENT_AUTH_TOKEN"
 HTTP_AUTH_HEADER = "x-tauri-agent-auth"
+ocr_manager = OcrSidecarManager()
 
 
 def _load_auth_token() -> tuple[str, bool]:
@@ -87,6 +95,7 @@ async def lifespan(app: FastAPI):
             pass
     await cleanup_all_tasks()
     await _close_runtime_llms()
+    await ocr_manager.stop()
 
 app = FastAPI(title="AI Agent Backend", lifespan=lifespan)
 
@@ -113,6 +122,7 @@ tool_registry.register(FileWriteTool())
 tool_registry.register(ShellExecuteTool())
 tool_registry.register(PythonExecuteTool())
 tool_registry.register(NodeExecuteTool())
+tool_registry.register(OcrExtractTool(manager=ocr_manager))
 tool_registry.register(TodoTaskTool())
 tool_registry.register(AskQuestionTool())
 tool_registry.register(
@@ -160,6 +170,28 @@ SESSION_TASK_RESERVED = object()
 TOOL_CONFIRM_DECISIONS: Set[str] = {"approve_once", "approve_always", "reject"}
 TOOL_CONFIRM_SCOPES: Set[str] = {"session", "workspace"}
 EXECUTION_MODES: Set[str] = {"regular", "free"}
+
+
+def _build_ocr_status_payload(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    enabled = is_ocr_enabled(config)
+    installation = ocr_manager.inspect_installation()
+    installed = bool(installation.get("installed"))
+
+    return {
+        "enabled": enabled,
+        "installed": installed,
+        "status": "available" if enabled and installed else "unavailable",
+        "version": installation.get("version"),
+        "engine": installation.get("engine"),
+        "api_version": installation.get("api_version"),
+        "root_dir": installation.get("root_dir"),
+    }
+
+
+def _is_tool_enabled_for_config(tool_name: str, config: Optional[Dict[str, Any]]) -> bool:
+    if tool_name == "ocr_extract":
+        return is_ocr_enabled(config)
+    return True
 
 
 def _apply_runtime_tool_policies(config: Dict[str, Any]) -> None:
@@ -482,6 +514,11 @@ async def get_or_create_agent(
                 user_manager=user_manager,
                 skill_provider=runtime_state.current_context_bundle.skill_provider,
                 custom_system_prompt=str(runtime_state.current_config.get("system_prompt") or ""),
+                tool_filter=(
+                    lambda tool, current_config=dict(runtime_state.current_config): (
+                        _is_tool_enabled_for_config(tool.name, current_config)
+                    )
+                ),
                 compaction_llm_factory=(
                     lambda current_config=dict(runtime_state.current_config): (
                         create_llm_for_execution_spec(
@@ -636,7 +673,8 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
         await send_callback({
             "type": "config_updated",
             "provider": get_primary_profile_config(runtime_state.current_config)["provider"],
-            "model": get_primary_profile_config(runtime_state.current_config)["model"]
+            "model": get_primary_profile_config(runtime_state.current_config)["model"],
+            "ocr": _build_ocr_status_payload(runtime_state.current_config),
         })
 
         logger.info(

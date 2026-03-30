@@ -29,6 +29,10 @@ DEFAULT_APPEARANCE = {
     "base_font_size": 16,
 }
 
+DEFAULT_OCR_CONFIG = {
+    "enabled": False,
+}
+
 MIN_BASE_FONT_SIZE = 12
 MAX_BASE_FONT_SIZE = 20
 
@@ -71,6 +75,13 @@ def _normalize_context_providers(data: Dict[str, Any]) -> Dict[str, Any]:
                 "enabled": _to_bool(raw_local_skills.get("enabled"), True),
             }
         },
+    }
+
+
+def _normalize_ocr_config(data: Dict[str, Any]) -> Dict[str, bool]:
+    raw_ocr = data.get("ocr") if isinstance(data.get("ocr"), dict) else {}
+    return {
+        "enabled": _to_bool(raw_ocr.get("enabled"), DEFAULT_OCR_CONFIG["enabled"]),
     }
 
 
@@ -213,6 +224,7 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
         "runtime": runtime,
         "appearance": appearance,
         "context_providers": _normalize_context_providers(data),
+        "ocr": _normalize_ocr_config(data),
     }
 
     return normalized
@@ -225,3 +237,11 @@ def get_primary_profile_config(config: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(primary, dict):
             return primary
     return config
+
+
+def is_ocr_enabled(config: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(config, dict):
+        return False
+
+    ocr_config = config.get("ocr") if isinstance(config.get("ocr"), dict) else {}
+    return bool(ocr_config.get("enabled", DEFAULT_OCR_CONFIG["enabled"]))

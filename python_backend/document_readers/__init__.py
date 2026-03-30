@@ -6,6 +6,7 @@ from .pdf_reader import (
     get_pdf_outline,
     read_pdf_lines,
     read_pdf_pages,
+    render_pdf_pages_to_images,
     search_pdf,
 )
 from .pptx_reader import get_pptx_structure, read_pptx_slides, search_pptx_document
@@ -21,6 +22,7 @@ __all__ = [
     "get_pdf_outline",
     "read_pdf_lines",
     "read_pdf_pages",
+    "render_pdf_pages_to_images",
     "get_pptx_structure",
     "read_pptx_slides",
     "search_pptx_document",

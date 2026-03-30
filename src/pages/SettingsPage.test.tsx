@@ -7,6 +7,9 @@ const navigateMock = vi.hoisted(() => vi.fn());
 const sendConfigMock = vi.hoisted(() => vi.fn());
 const setConfigMock = vi.hoisted(() => vi.fn());
 const listSystemSkillsMock = vi.hoisted(() => vi.fn());
+const inspectOcrSidecarInstallationMock = vi.hoisted(() => vi.fn());
+const installOcrSidecarMock = vi.hoisted(() => vi.fn());
+const openDialogMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../contexts/WebSocketContext", () => ({
   useWebSocket: () => ({
@@ -26,7 +29,16 @@ vi.mock("../utils/systemSkills", () => ({
   listSystemSkills: listSystemSkillsMock,
 }));
 
-function openTab(name: "Runtime" | "Skill" | "UI") {
+vi.mock("../utils/ocr", () => ({
+  inspectOcrSidecarInstallation: inspectOcrSidecarInstallationMock,
+  installOcrSidecar: installOcrSidecarMock,
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: openDialogMock,
+}));
+
+function openTab(name: "Runtime" | "Skill" | "OCR" | "UI") {
   fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}`) }));
 }
 
@@ -52,6 +64,9 @@ describe("SettingsPage", () => {
     sendConfigMock.mockReset();
     setConfigMock.mockReset();
     listSystemSkillsMock.mockReset();
+    inspectOcrSidecarInstallationMock.mockReset();
+    installOcrSidecarMock.mockReset();
+    openDialogMock.mockReset();
     globalThis.fetch = vi.fn();
     listSystemSkillsMock.mockResolvedValue({
       rootPath: "/system-skills",
@@ -64,6 +79,13 @@ describe("SettingsPage", () => {
         },
       ],
     });
+    inspectOcrSidecarInstallationMock.mockResolvedValue({
+      appDir: "C:/work-agent",
+      installDir: "C:/work-agent/ocr-sidecar/current",
+      installed: false,
+      version: null,
+    });
+    openDialogMock.mockResolvedValue(null);
     useConfigStore.setState({
       config: {
         provider: "openai",
@@ -105,6 +127,9 @@ describe("SettingsPage", () => {
             },
           },
         },
+        ocr: {
+          enabled: false,
+        },
       },
       setConfig: setConfigMock,
     });
@@ -138,6 +163,10 @@ describe("SettingsPage", () => {
 
     openTab("Skill");
     expect(screen.getByLabelText("Enable Local Skills")).toBeTruthy();
+
+    openTab("OCR");
+    expect(screen.getByLabelText("Enable OCR Tooling")).toBeTruthy();
+    expect(screen.getByText("Install OCR Plugin")).toBeTruthy();
 
     openTab("UI");
     expect(screen.getByLabelText("Base Font Size")).toBeTruthy();
@@ -428,6 +457,49 @@ describe("SettingsPage", () => {
         }),
       })
     );
+  });
+
+  it("saves OCR enablement through normalized config", () => {
+    render(<SettingsPage />);
+
+    openTab("OCR");
+    fireEvent.click(screen.getByLabelText("Enable OCR Tooling"));
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(setConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ocr: {
+          enabled: true,
+        },
+      })
+    );
+    expect(sendConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ocr: {
+          enabled: true,
+        },
+      })
+    );
+  });
+
+  it("installs the OCR sidecar from a selected folder", async () => {
+    openDialogMock.mockResolvedValue("C:/Downloads/ocr-sidecar");
+    installOcrSidecarMock.mockResolvedValue({
+      appDir: "C:/work-agent",
+      installDir: "C:/work-agent/ocr-sidecar/current",
+      installed: true,
+      version: "0.1.0",
+    });
+
+    render(<SettingsPage />);
+
+    openTab("OCR");
+    fireEvent.click(screen.getByText("Install OCR Plugin"));
+
+    await waitFor(() => {
+      expect(installOcrSidecarMock).toHaveBeenCalledWith("C:/Downloads/ocr-sidecar");
+    });
+    expect(screen.getByText("Installed (v0.1.0)")).toBeTruthy();
   });
 
   it("saves role-specific runtime overrides alongside shared runtime defaults", () => {

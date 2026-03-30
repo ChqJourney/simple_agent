@@ -71,6 +71,34 @@ describe("toolMessages", () => {
     expect(details).toContain("结构类型: pdf_outline");
   });
 
+  it("creates OCR-friendly call summaries and result details", () => {
+    expect(createToolCallSummary({
+      name: "ocr_extract",
+      arguments: { path: "scan.pdf", input_type: "pdf" },
+    } as never)).toBe("正在识别 PDF scan.pdf");
+
+    const details = renderToolResultDetails(true, {
+      event: "ocr_extract",
+      input_type: "pdf",
+      content: "[Page 1]\nDetected text",
+      summary: {
+        char_count: 13,
+        line_count: 1,
+        page_count: 1,
+        lang: "ch",
+      },
+      metadata: {
+        cache_hit: true,
+      },
+    });
+
+    expect(details).toContain("PDF OCR 完成");
+    expect(details).toContain("字符数: 13");
+    expect(details).toContain("页数: 1");
+    expect(details).toContain("缓存: 命中");
+    expect(details).toContain("Detected text");
+  });
+
   it("formats document search results in a readable way", () => {
     const details = renderToolResultDetails(true, {
       event: "document_search_results",

@@ -1,0 +1,11 @@
+{
+  "name": "work-agent-ocr-sidecar",
+  "version": "0.1.0",
+  "engine": "paddle",
+  "api_version": 1,
+  "entry": "ocr-server.exe",
+  "languages": [
+    "ch",
+    "en"
+  ]
+}

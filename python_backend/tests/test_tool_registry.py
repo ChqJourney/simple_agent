@@ -10,6 +10,7 @@ from tools.ask_question import AskQuestionTool
 from tools.delegate_task import DelegateTaskTool
 from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
+from tools.ocr_extract import OcrExtractTool
 from tools.pdf_tools import PdfGetInfoTool, PdfSearchTool
 from tools.read_document_segment import ReadDocumentSegmentTool
 from tools.search_documents import SearchDocumentsTool
@@ -43,6 +44,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         registry.register(GetDocumentStructureTool())
         registry.register(PdfGetInfoTool())
         registry.register(PdfSearchTool())
+        registry.register(OcrExtractTool())
         registry.register(TodoTaskTool())
         registry.register(AskQuestionTool())
         registry.register(DelegateTaskTool(FakeDelegatedTaskExecutor()))
@@ -56,6 +58,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
                 "delegate_task",
                 "get_document_structure",
                 "list_directory_tree",
+                "ocr_extract",
                 "pdf_get_info",
                 "pdf_search",
                 "read_document_segment",
@@ -82,6 +85,10 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
 
         pdf_search_descriptor = next(d for d in descriptors if d.name == "pdf_search")
         self.assertIn("search_mode='page'", pdf_search_descriptor.description)
+
+        ocr_descriptor = next(d for d in descriptors if d.name == "ocr_extract")
+        self.assertTrue(ocr_descriptor.read_only)
+        self.assertIn("ocr", ocr_descriptor.tags)
 
     async def test_todo_and_question_tools_return_frontend_friendly_event_shapes(self) -> None:
         todo_result = await TodoTaskTool().execute(

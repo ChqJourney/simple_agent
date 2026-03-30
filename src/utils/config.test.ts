@@ -27,6 +27,24 @@ describe("normalizeProviderConfig", () => {
     expect(normalized.profiles?.primary.base_url).toBe("https://api.openai.com/v1");
     expect(normalized.runtime?.shared?.context_length).toBe(64000);
     expect(normalized.context_providers?.skills?.local?.enabled).toBe(true);
+    expect(normalized.ocr?.enabled).toBe(false);
+  });
+
+  it("preserves explicit OCR enablement", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+      ocr: {
+        enabled: true,
+      },
+    });
+
+    expect(normalized.ocr).toEqual({
+      enabled: true,
+    });
   });
 
   it("fills runtime defaults when runtime values are omitted", () => {

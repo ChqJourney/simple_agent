@@ -16,6 +16,7 @@ vi.mock("react-router-dom", async () => {
 
 vi.mock("../common", () => ({
   WSStatusIndicator: () => <div>WS</div>,
+  OCRStatusIndicator: () => <div>OCR</div>,
   ModelDisplay: () => <div>Model</div>,
   TokenUsageWidget: (props: unknown) => tokenUsageWidgetMock(props),
 }));

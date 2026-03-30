@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useChatStore, useRunStore, useSessionStore, useUIStore, useWorkspaceStore } from '../../stores';
-import { WSStatusIndicator, ModelDisplay, TokenUsageWidget } from '../common';
+import { WSStatusIndicator, OCRStatusIndicator, ModelDisplay, TokenUsageWidget } from '../common';
 import { RunEventRecord, TokenUsage } from '../../types';
 
 interface TopBarProps {
@@ -153,6 +153,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) =>
           </span>
         )}
         <TokenUsageWidget usage={usageDisplay.usage} mode={usageDisplay.mode} />
+        <OCRStatusIndicator />
         <WSStatusIndicator />
         <ModelDisplay />
         <button

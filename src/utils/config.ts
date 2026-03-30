@@ -4,6 +4,7 @@ import {
   ExecutionRole,
   InputType,
   ModelProfile,
+  OcrConfig,
   ProviderConfig,
   ProviderMemoryEntry,
   ProviderType,
@@ -41,6 +42,10 @@ export const DEFAULT_APPEARANCE_CONFIG: Required<AppearanceConfig> = {
   base_font_size: 16,
 };
 
+export const DEFAULT_OCR_CONFIG: Required<OcrConfig> = {
+  enabled: false,
+};
+
 export function getDefaultBaseUrl(provider: ProviderType): string {
   return DEFAULT_BASE_URLS[provider];
 }
@@ -57,6 +62,12 @@ export function normalizeContextProviders(contextProviders?: ContextProviderConf
         enabled: contextProviders?.skills?.local?.enabled ?? true,
       },
     },
+  };
+}
+
+export function normalizeOcrConfig(ocr?: OcrConfig): Required<OcrConfig> {
+  return {
+    enabled: ocr?.enabled ?? DEFAULT_OCR_CONFIG.enabled,
   };
 }
 
@@ -272,5 +283,6 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
     runtime: normalizeRuntimeConfig(config.runtime),
     appearance: normalizeAppearanceConfig(config.appearance),
     context_providers: normalizeContextProviders(config.context_providers),
+    ocr: normalizeOcrConfig(config.ocr),
   };
 }

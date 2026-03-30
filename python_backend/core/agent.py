@@ -43,6 +43,7 @@ class Agent:
         custom_system_prompt: str = "",
         compaction_llm_factory: Optional[Callable[[], BaseLLM]] = None,
         background_compaction_scheduler: Optional[Callable[[Session, str], Awaitable[None]]] = None,
+        tool_filter: Optional[Callable[[BaseTool], bool]] = None,
         max_tool_rounds: int = 10,
         max_retries: int = 3,
     ):
@@ -53,6 +54,7 @@ class Agent:
         self.custom_system_prompt = custom_system_prompt.strip()
         self.compaction_llm_factory = compaction_llm_factory
         self.background_compaction_scheduler = background_compaction_scheduler
+        self.tool_filter = tool_filter
         self.max_tool_rounds = max_tool_rounds
         self.max_retries = max_retries
         self._interrupt_event = asyncio.Event()
@@ -115,6 +117,8 @@ class Agent:
                 tools = list(self.tool_registry.tools.values())
                 if not self.skill_provider:
                     tools = [tool for tool in tools if tool.name != "skill_loader"]
+                if self.tool_filter:
+                    tools = [tool for tool in tools if self.tool_filter(tool)]
 
                 assistant_message = await self._stream_llm_with_retry(messages, tools, session, run_id)
 

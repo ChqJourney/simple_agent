@@ -16,6 +16,26 @@ from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 
 
 class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
+    def test_ocr_tool_visibility_follows_runtime_config(self) -> None:
+        self.assertFalse(
+            backend_main._is_tool_enabled_for_config(
+                "ocr_extract",
+                {"ocr": {"enabled": False}},
+            )
+        )
+        self.assertTrue(
+            backend_main._is_tool_enabled_for_config(
+                "ocr_extract",
+                {"ocr": {"enabled": True}},
+            )
+        )
+        self.assertTrue(
+            backend_main._is_tool_enabled_for_config(
+                "file_read",
+                {"ocr": {"enabled": False}},
+            )
+        )
+
     async def test_handle_config_falls_back_to_provider_default_base_url_when_blank(self) -> None:
         captured_configs = []
         messages = []
@@ -56,13 +76,20 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 backend_main.runtime_state.current_config['base_url'],
             )
             self.assertEqual(120, delegate_tool.policy.timeout_seconds if delegate_tool is not None else None)
-            self.assertIn(
+            config_updated = next(message for message in messages if message.get('type') == 'config_updated')
+            self.assertEqual('openai', config_updated['provider'])
+            self.assertEqual('gpt-4o-mini', config_updated['model'])
+            self.assertEqual(
                 {
-                    'type': 'config_updated',
-                    'provider': 'openai',
-                    'model': 'gpt-4o-mini',
+                    'enabled': False,
+                    'installed': False,
+                    'status': 'unavailable',
+                    'version': None,
+                    'engine': None,
+                    'api_version': None,
+                    'root_dir': None,
                 },
-                messages,
+                config_updated['ocr'],
             )
         finally:
             if delegate_tool is not None and original_delegate_timeout is not None:

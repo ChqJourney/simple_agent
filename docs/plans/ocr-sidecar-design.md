@@ -345,6 +345,7 @@ ocr-sidecar\
 
 - `scripts/build-ocr-sidecar.ps1` 会先执行 `ocr_sidecar/prepare_models.py`
 - 当前默认预下载 `ch`、`en` 两套模型到 `models\ch\...` 与 `models\en\...`
+- `prepare_models.py` 当前通过 Paddle 默认缓存下载模型，再复制到 sidecar 本地 `models\`
 - `ocr_sidecar/server.py` 运行时优先使用 sidecar 根目录下的本地 `models\`
 - 只有本地模型缺失时，才回退到 PaddleOCR 默认的模型解析路径
 

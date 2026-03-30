@@ -16,6 +16,8 @@ $distRoot = Join-Path $projectRoot "dist/ocr-sidecar"
 $distCurrentRoot = Join-Path $distRoot "current"
 $builtDir = Join-Path $sidecarRoot "dist/ocr-server"
 $builtExe = Join-Path $builtDir "ocr-server.exe"
+$manifestSource = Join-Path $sidecarRoot "manifest.json"
+$builtManifest = Join-Path $builtDir "manifest.json"
 
 if (-not $SkipRuntimePrepare -and -not (Test-Path -LiteralPath $stagedPython)) {
     $prepareArgs = @("-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "prepare-runtimes.ps1"))
@@ -61,6 +63,14 @@ Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "PyInstaller", "
 if (-not (Test-Path -LiteralPath $builtExe)) {
     throw "PyInstaller did not produce the expected OCR sidecar executable: $builtExe"
 }
+
+if (-not (Test-Path -LiteralPath $manifestSource)) {
+    throw "OCR sidecar manifest source file not found: $manifestSource"
+}
+
+# PyInstaller 6 places collected data files under its internal content directory by
+# default, but our runtime contract expects manifest.json beside ocr-server.exe.
+Copy-Item -LiteralPath $manifestSource -Destination $builtManifest -Force
 
 Ensure-Directory -Path $distRoot
 Sync-Directory -Source $builtDir -Destination $distCurrentRoot

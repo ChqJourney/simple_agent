@@ -5,7 +5,10 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 
-project_root = Path(__file__).resolve().parent
+if "__file__" in globals():
+    project_root = Path(__file__).resolve().parent
+else:
+    project_root = Path.cwd().resolve()
 
 binaries = []
 datas = [(str(project_root / "manifest.json"), ".")]

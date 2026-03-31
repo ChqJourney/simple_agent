@@ -9,6 +9,7 @@
 - 可扩展工具系统，含统一文档工具、PDF 专家工具与高级 fallback 执行工具
 - 本地 skill metadata catalog 注入与 `skill_loader` 按需加载
 - 图片输入与工作区拖拽交互
+- settings 中的 tools / system skills 真实开关控制
 - 会话标题生成与会话元数据持久化
 - session memory / compaction 与长会话上下文治理
 - delegated background subtasks 与消息流内 worker 卡片
@@ -90,6 +91,13 @@ Workspace
   - 当前 session 正在主回复时，切换到另一 session 会弹确认
   - 确认后中断当前回复再切换
   - `compacting` 不阻止 session 切换
+- workspace 侧栏：
+  - session list 默认只显示最近 5 个，并提供跟在列表下方的 `Show more / Show less` 文字入口
+  - 左侧面板会显示当前启用工具数，并可打开 tools modal 查看 `tool name + description`
+  - `Open workspace folder` 按钮已移动到 file tree tab header
+- user message 展示：
+  - workspace message list 中的用户消息按左对齐气泡展示
+  - light / dark mode 下都带柔和底色与圆角
 - OCR 状态展示：
   - 当 `ocr.enabled = true` 时，workspace 顶栏会显示 `OCR: available / unavailable / starting`
   - 当 `ocr.enabled = false` 时，顶栏不显示 OCR 状态，LLM 也看不到 OCR 工具
@@ -109,11 +117,17 @@ Workspace
   - `delegated_task.timeout_seconds` 已支持在 Settings 页单独配置
   - `max_tool_rounds` / `max_retries` 已接入后端 `Agent` 的实际执行限制
   - `max_output_tokens` 已接入 OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama provider 的请求参数
-  - `locked model` 仍会持久化到 session metadata，但不再在 workspace chat UI 顶部单独展示
+- `locked model` 仍会持久化到 session metadata，但不再在 workspace chat UI 顶部单独展示
 - `provider_memory` 仅用于前端设置页恢复 provider 对应的已保存配置，后端运行时不会依赖该字段
+- context provider 配置：
+  - Settings `Tools` tab 会列出后端当前可用工具，并允许逐项 enable / disable
+  - Settings `Skill` tab 会列出 system-level skills，并允许逐项 enable / disable
+  - workspace skills 默认启用，不在 settings 中单独 toggle
+  - `context_providers.tools.disabled` 和 `context_providers.skills.system.disabled` 都是后端真实禁用，不只是前端隐藏
 - OCR 配置：
   - 设置页支持安装 OCR 插件与启用/停用 OCR
-  - `ocr.enabled` 控制前端是否展示 OCR 状态，以及 Agent 是否向 LLM 暴露 `ocr_extract`
+  - `ocr.enabled` 控制前端是否展示 OCR 状态，以及 Agent 是否可能向 LLM 暴露 `ocr_extract`
+  - `ocr_extract` 只有在 `ocr.enabled = true` 且 OCR sidecar 实际已安装时才会出现在 tools 列表里，并暴露给 LLM
 
 ### Provider Notes
 
@@ -171,6 +185,12 @@ Workspace
 - `ocr_extract`
 
 工具结果会被统一序列化，并映射到前端任务面板、工具摘要、delegated worker 卡片和待回答问题卡片。
+
+Settings / 运行时过滤补充：
+
+- Settings 页通过后端 `/tools` 目录接口拉取当前可见工具清单
+- `context_providers.tools.disabled` 中出现的工具，不会暴露给 LLM
+- `ocr_extract` 额外受 OCR sidecar 安装状态约束；未安装时既不会显示在 settings tools 中，也不会暴露给 LLM
 
 OCR 工具补充：
 
@@ -233,6 +253,8 @@ OCR 工具补充：
     - `<workspace>/.agent/skills`
   - system prompt 注入的是每个 skill 的 YAML frontmatter catalog
   - 完整 skill 正文通过 `skill_loader` 工具按需加载
+  - settings 只管理 system-level skills 的 disable 列表；workspace skills 默认保持启用
+  - `context_providers.skills.system.disabled` 中的 skill 不会进入 system prompt catalog，也不能再由 `skill_loader` 加载
 
 ### Session Persistence
 
@@ -251,8 +273,10 @@ OCR 工具补充：
 
 - 文本消息
 - 图片附件消息
+- 应用内 file tree 的图片如果拖到输入框光标处，会按路径引用插入，和普通文件拖拽一致
 - 文件/文件夹从 file tree 拖到输入框时自动插入路径
 - 图片拖入附件区域时加入消息附件
+- 输入框中的路径 token 使用更明显的柔和底色、圆角和高亮边框
 - `file_write` 产出的新建/修改文件会在 file tree 中高亮
 
 ### OCR 模块
@@ -335,11 +359,20 @@ OCR 工具补充：
     "base_font_size": 16
   },
   "context_providers": {
+    "tools": {
+      "disabled": []
+    },
     "skills": {
       "local": {
         "enabled": true
+      },
+      "system": {
+        "disabled": []
       }
     }
+  },
+  "ocr": {
+    "enabled": false
   }
 }
 ```
@@ -350,6 +383,8 @@ OCR 工具补充：
 - `runtime.shared` 是默认值，`runtime.conversation/background/compaction/delegated_task` 是按 role 的 override
 - `provider_memory` 只用于前端设置页在切换 provider 时恢复该 provider 最近一次保存的 `model / api_key / base_url`
 - 后端收到 `config` 时会忽略 `provider_memory`
+- `context_providers.tools.disabled` 是后端真实工具禁用列表
+- `context_providers.skills.system.disabled` 是 system-level skill 的真实禁用列表
 
 ### DeepSeek 配置示例
 
@@ -395,6 +430,17 @@ OCR 工具补充：
   }
 }
 ```
+
+## Settings And Workspace Updates (2026-03-31)
+
+- Settings 页面新增 `Tools` tab，列出后端当前可用工具并支持逐项启停。
+- Settings `Skill` tab 现在区分：
+  - `Enable Local Skills` 控制本地 skill catalog 注入与 `skill_loader`
+  - `System Skills` 列表支持逐项 enable / disable
+- `ocr_extract` 只有在 OCR sidecar 已安装时才会出现在 settings 的 tools 列表里。
+- workspace 左侧面板新增 tools 入口，点击可查看当前启用工具的名称和说明。
+- session list 默认只展示最近 5 个，并在列表下方提供轻量的 `Show more / Show less` 入口。
+- workspace 中的用户消息现在使用左对齐气泡样式。
 
 ## Settings Updates (2026-03-29)
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
+from runtime.config import get_disabled_system_skill_names
 from skills.base import SkillProvider
 from skills.local_loader import LocalSkillLoader
 
@@ -22,10 +23,14 @@ class ContextProviderRegistry:
         skills_config = context_config.get("skills") if isinstance(context_config.get("skills"), dict) else {}
 
         local_skill_config = skills_config.get("local") if isinstance(skills_config.get("local"), dict) else {}
+        disabled_system_skills = get_disabled_system_skill_names(config)
 
         skill_provider: Optional[SkillProvider] = None
         if local_skill_config.get("enabled", True):
-            skill_provider = LocalSkillLoader(search_roots=self.skill_search_roots)
+            skill_provider = LocalSkillLoader(
+                search_roots=self.skill_search_roots,
+                disabled_app_skills=sorted(disabled_system_skills),
+            )
 
         return ContextProviderBundle(
             skill_provider=skill_provider,

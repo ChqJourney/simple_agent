@@ -56,11 +56,25 @@ export function normalizeBaseUrl(provider: ProviderType, baseUrl?: string): stri
 }
 
 export function normalizeContextProviders(contextProviders?: ContextProviderConfig): ContextProviderConfig {
+  const normalizeDisabledList = (values?: string[]): string[] => Array.from(
+    new Set(
+      (values || [])
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+
   return {
     skills: {
       local: {
         enabled: contextProviders?.skills?.local?.enabled ?? true,
       },
+      system: {
+        disabled: normalizeDisabledList(contextProviders?.skills?.system?.disabled),
+      },
+    },
+    tools: {
+      disabled: normalizeDisabledList(contextProviders?.tools?.disabled),
     },
   };
 }

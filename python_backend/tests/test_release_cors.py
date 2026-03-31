@@ -59,6 +59,27 @@ class ReleaseCorsTests(unittest.TestCase):
         finally:
             backend_main.runtime_state.auth_token_host_managed = original_host_managed
 
+    def test_tools_endpoint_requires_backend_auth_header(self) -> None:
+        client = TestClient(backend_main.app)
+        original_token = backend_main.runtime_state.auth_token
+        backend_main.runtime_state.auth_token = "release-token"
+
+        try:
+            unauthorized = client.get("/tools")
+            self.assertEqual(401, unauthorized.status_code)
+            self.assertEqual({"ok": False, "error": "Unauthorized"}, unauthorized.json())
+
+            authorized = client.get(
+                "/tools",
+                headers={"x-tauri-agent-auth": "release-token"},
+            )
+            self.assertEqual(200, authorized.status_code)
+            payload = authorized.json()
+            self.assertIn("tools", payload)
+            self.assertTrue(any(tool.get("name") == "file_read" for tool in payload["tools"]))
+        finally:
+            backend_main.runtime_state.auth_token = original_token
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { copyFile, exists, readDir } from '@tauri-apps/plugin-fs';
 import { useWorkspaceStore } from '../../stores';
@@ -142,6 +143,7 @@ export const FileTree: React.FC = () => {
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const [importError, setImportError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isOpeningWorkspace, setIsOpeningWorkspace] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const treeGenerationRef = useRef(0);
 
@@ -299,6 +301,21 @@ export const FileTree: React.FC = () => {
     }
   };
 
+  const handleOpenWorkspace = async () => {
+    if (!currentWorkspace?.path || isOpeningWorkspace) {
+      return;
+    }
+
+    setIsOpeningWorkspace(true);
+    try {
+      await invoke('open_workspace_folder', { selectedPath: currentWorkspace.path });
+    } catch (error) {
+      console.error('Failed to open workspace folder:', error);
+    } finally {
+      setIsOpeningWorkspace(false);
+    }
+  };
+
   const renderNode = (node: FileNode, depth: number = 0) => {
     const isExpanded = expandedPaths.has(node.path);
     const isLoadingChildren = loadingPaths.has(node.path);
@@ -393,14 +410,24 @@ export const FileTree: React.FC = () => {
           <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
             Files
           </div>
-          <button
-            type="button"
-            onClick={() => void handleImportFiles()}
-            disabled={!currentWorkspace?.path || isImporting}
-            className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-          >
-            {isImporting ? 'Importing...' : 'Import files'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleOpenWorkspace()}
+              disabled={!currentWorkspace?.path || isOpeningWorkspace}
+              className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              {isOpeningWorkspace ? 'Opening...' : 'Open folder'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleImportFiles()}
+              disabled={!currentWorkspace?.path || isImporting}
+              className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              {isImporting ? 'Importing...' : 'Import files'}
+            </button>
+          </div>
         </div>
         {importError && (
           <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100">

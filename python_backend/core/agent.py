@@ -1113,6 +1113,14 @@ class Agent:
             return reserved_output_tokens
         return min(2048, max(256, context_length // 8))
 
+    def _is_tool_available_to_model(self, tool_name: str) -> bool:
+        tool = self.tool_registry.get_tool(tool_name)
+        if tool is None:
+            return False
+        if self.tool_filter is None:
+            return True
+        return self.tool_filter(tool)
+
     async def _build_system_message(self, session: Session, run_id: str) -> Optional[Dict[str, Any]]:
         prompt_sections: List[str] = []
 
@@ -1120,10 +1128,10 @@ class Agent:
             prompt_sections.append(self._format_custom_system_prompt_section(self.custom_system_prompt))
 
         prompt_sections.append(self._format_runtime_environment_section(session))
-        if self.tool_registry.get_tool("delegate_task") is not None:
+        if self._is_tool_available_to_model("delegate_task"):
             prompt_sections.append(self._format_delegation_guidance_section())
 
-        if self.skill_provider:
+        if self.skill_provider and self._is_tool_available_to_model("skill_loader"):
             skills = self.skill_provider.list_skills(workspace_path=session.workspace_path)
             await self._emit_run_event(
                 session,

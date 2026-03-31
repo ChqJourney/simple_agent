@@ -22,10 +22,11 @@ import { backendTestConfigUrl } from '../utils/backendEndpoint';
 import { getDefaultContextLength } from '../utils/modelCapabilities';
 import { inspectOcrSidecarInstallation, installOcrSidecar, OcrSidecarInstallInfo } from '../utils/ocr';
 import { listSystemSkills, SkillEntry } from '../utils/systemSkills';
+import { listTools, ToolCatalogEntry } from '../utils/toolCatalog';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 type ProfileName = 'primary' | 'background';
-type SettingsTab = 'model' | 'runtime' | 'skills' | 'ocr' | 'ui';
+type SettingsTab = 'model' | 'runtime' | 'tools' | 'skills' | 'ocr' | 'ui';
 type RuntimeSectionKey = 'shared' | 'conversation' | 'background' | 'compaction' | 'delegated_task';
 
 interface ConnectionTestState {
@@ -43,6 +44,7 @@ interface OcrInstallState {
 const SETTINGS_TABS: Array<{ value: SettingsTab; label: string; description: string }> = [
   { value: 'model', label: 'Model', description: 'Primary and background model profiles' },
   { value: 'runtime', label: 'Runtime', description: 'Context, output, retries, and tool limits' },
+  { value: 'tools', label: 'Tools', description: 'Review available tools and control runtime availability' },
   { value: 'skills', label: 'Skill', description: 'System-level skills and local skill scanning' },
   { value: 'ocr', label: 'OCR', description: 'Install the Paddle OCR sidecar and control its availability' },
   { value: 'ui', label: 'UI', description: 'Theme, typography, and display preferences' },
@@ -118,6 +120,9 @@ export const SettingsPage: React.FC = () => {
   const [skillsRootPaths, setSkillsRootPaths] = useState<string[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
+  const [toolsLoading, setToolsLoading] = useState(true);
+  const [toolsError, setToolsError] = useState<string | null>(null);
   const [ocrInstallState, setOcrInstallState] = useState<OcrInstallState>({
     loading: true,
     installing: false,
@@ -157,6 +162,35 @@ export const SettingsPage: React.FC = () => {
     };
 
     void loadSkills();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTools = async () => {
+      setToolsLoading(true);
+      setToolsError(null);
+      try {
+        const toolCatalog = await listTools();
+        if (!cancelled) {
+          setTools(toolCatalog);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setToolsError(error instanceof Error ? error.message : 'Failed to load tools.');
+          setTools([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setToolsLoading(false);
+        }
+      }
+    };
+
+    void loadTools();
     return () => {
       cancelled = true;
     };
@@ -205,6 +239,8 @@ export const SettingsPage: React.FC = () => {
   const providerMemory = normalizeProviderMemory(draftConfig.provider_memory);
   const contextProviders = normalizeContextProviders(draftConfig.context_providers);
   const ocrConfig = normalizeOcrConfig(draftConfig.ocr);
+  const disabledToolNames = new Set(contextProviders.tools?.disabled ?? []);
+  const disabledSystemSkillNames = new Set(contextProviders.skills?.system?.disabled ?? []);
   const configuredProviders = Object.entries(providerMemory).reduce((acc, [provider, entry]) => ({
     ...acc,
     [provider]: Boolean(entry?.api_key || entry?.base_url),
@@ -309,6 +345,41 @@ export const SettingsPage: React.FC = () => {
     setDraftConfig({
       ...draftConfig,
       runtime: Object.keys(nextRuntime).length > 0 ? nextRuntime : undefined,
+    });
+  };
+
+  const toggleDisabledTool = (toolName: string, disabled: boolean) => {
+    const nextDisabledTools = disabled
+      ? Array.from(new Set([...(contextProviders.tools?.disabled ?? []), toolName])).sort((left, right) => left.localeCompare(right))
+      : (contextProviders.tools?.disabled ?? []).filter((name) => name !== toolName);
+
+    setDraftConfig({
+      ...draftConfig,
+      context_providers: {
+        ...contextProviders,
+        tools: {
+          disabled: nextDisabledTools,
+        },
+      },
+    });
+  };
+
+  const toggleDisabledSystemSkill = (skillName: string, disabled: boolean) => {
+    const nextDisabledSystemSkills = disabled
+      ? Array.from(new Set([...(contextProviders.skills?.system?.disabled ?? []), skillName])).sort((left, right) => left.localeCompare(right))
+      : (contextProviders.skills?.system?.disabled ?? []).filter((name) => name !== skillName);
+
+    setDraftConfig({
+      ...draftConfig,
+      context_providers: {
+        ...contextProviders,
+        skills: {
+          ...contextProviders.skills,
+          system: {
+            disabled: nextDisabledSystemSkills,
+          },
+        },
+      },
     });
   };
 
@@ -606,6 +677,15 @@ export const SettingsPage: React.FC = () => {
                 config={primaryProfile}
                 configuredProviders={configuredProviders}
                 onChange={(nextConfig) => updateProfile('primary', nextConfig)}
+                onTestConnection={() => void handleTest('primary')}
+                canTestConnection={isProfileTestable(primaryProfile)}
+                testConnectionStatus={connectionTests.primary.status}
+                testConnectionError={connectionTests.primary.error}
+                testConnectionLabel="Test Primary Connection"
+                testConnectionBusyLabel="Testing Primary..."
+                testConnectionSuccessLabel="Primary connected"
+                testConnectionFailureLabel="Primary failed"
+                testButtonVariant="primary"
               />
 
               <div className="rounded-2xl border border-dashed border-gray-200 p-4 dark:border-gray-700">
@@ -614,57 +694,19 @@ export const SettingsPage: React.FC = () => {
                   config={backgroundProfile}
                   configuredProviders={configuredProviders}
                   onChange={(nextConfig) => updateProfile('background', nextConfig)}
+                  onTestConnection={() => void handleTest('background')}
+                  canTestConnection={isProfileTestable(backgroundProfile)}
+                  testConnectionStatus={connectionTests.background.status}
+                  testConnectionError={connectionTests.background.error}
+                  testConnectionLabel="Test Background Connection"
+                  testConnectionBusyLabel="Testing Background..."
+                  testConnectionSuccessLabel="Background connected"
+                  testConnectionFailureLabel="Background failed"
+                  testButtonVariant="secondary"
                 />
                 <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
                   Used for title generation, session compaction, and future delegated background tasks. Falls back to the primary model when unset.
                 </p>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <div className="mb-4">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Connection Tests</h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Verify that the configured providers can be reached before saving.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  onClick={() => handleTest('primary')}
-                  disabled={connectionTests.primary.status === 'testing' || !isProfileTestable(primaryProfile)}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-                >
-                  {connectionTests.primary.status === 'testing' ? 'Testing Primary...' : 'Test Primary Connection'}
-                </button>
-                {connectionTests.primary.status === 'success' && (
-                  <span className="text-sm text-emerald-600 dark:text-emerald-400">Primary connected</span>
-                )}
-                {connectionTests.primary.status === 'error' && (
-                  <span className="text-sm text-red-500">
-                    Primary failed{connectionTests.primary.error ? `: ${connectionTests.primary.error}` : ''}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  onClick={() => handleTest('background')}
-                  disabled={connectionTests.background.status === 'testing' || !isProfileTestable(backgroundProfile)}
-                  className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
-                >
-                  {connectionTests.background.status === 'testing' ? 'Testing Background...' : 'Test Background Connection'}
-                </button>
-                {connectionTests.background.status === 'success' && (
-                  <span className="text-sm text-emerald-600 dark:text-emerald-400">Background connected</span>
-                )}
-                {connectionTests.background.status === 'error' && (
-                  <span className="text-sm text-red-500">
-                    Background failed{connectionTests.background.error ? `: ${connectionTests.background.error}` : ''}
-                  </span>
-                )}
               </div>
             </div>
           </section>
@@ -786,6 +828,73 @@ export const SettingsPage: React.FC = () => {
       );
     }
 
+    if (activeTab === 'tools') {
+      return (
+        <div className="space-y-6">
+          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">Tools</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Control which tools are exposed to the model at runtime. Disabled tools are truly unavailable, not just hidden.
+                </p>
+              </div>
+              {tools.length > 0 && (
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {tools.length} total
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {toolsLoading && (
+                <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  Loading tools...
+                </div>
+              )}
+
+              {!toolsLoading && toolsError && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                  {toolsError}
+                </div>
+              )}
+
+              {!toolsLoading && !toolsError && tools.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  No tools were returned by the backend.
+                </div>
+              )}
+
+              {!toolsLoading && !toolsError && tools.map((tool) => {
+                const enabled = !disabledToolNames.has(tool.name);
+
+                return (
+                  <div
+                    key={tool.name}
+                    className="flex items-center justify-between gap-4 rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-800"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 dark:text-white">{tool.name}</div>
+                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{tool.description}</p>
+                    </div>
+                    <label className="flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                      <span>{enabled ? 'Enabled' : 'Disabled'}</span>
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        onChange={(event) => toggleDisabledTool(tool.name, !event.target.checked)}
+                        className="h-5 w-5 rounded border-gray-300 dark:border-gray-600"
+                      />
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      );
+    }
+
     if (activeTab === 'skills') {
       return (
         <div className="space-y-6">
@@ -793,7 +902,7 @@ export const SettingsPage: React.FC = () => {
             <div className="mb-4">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">Skill Runtime</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Control whether local skills participate in the system prompt and inspect the app-level skill catalog.
+                Control whether local skills participate in the system prompt and which app-level system skills remain available.
               </p>
             </div>
 
@@ -834,7 +943,7 @@ export const SettingsPage: React.FC = () => {
               <div>
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">System Skills</h2>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  App-level skills discovered outside the current workspace, including the deployed app directory and app data directory.
+                  App-level skills discovered outside the current workspace, including the deployed app directory and app data directory. Workspace skills stay enabled by default and are not managed here.
                 </p>
               </div>
               {skillsRootPaths.length > 0 && (
@@ -887,15 +996,23 @@ export const SettingsPage: React.FC = () => {
                   key={skill.path}
                   className="rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-800"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm font-semibold text-gray-900 dark:text-white">{skill.name}</div>
-                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 dark:bg-sky-950/50 dark:text-sky-200">
-                      system
-                    </span>
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 dark:text-white">{skill.name}</div>
+                      <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                        {skill.description || 'No description found in frontmatter.'}
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                      <span>{disabledSystemSkillNames.has(skill.name) ? 'Disabled' : 'Enabled'}</span>
+                      <input
+                        type="checkbox"
+                        checked={!disabledSystemSkillNames.has(skill.name)}
+                        onChange={(event) => toggleDisabledSystemSkill(skill.name, !event.target.checked)}
+                        className="h-5 w-5 rounded border-gray-300 dark:border-gray-600"
+                      />
+                    </label>
                   </div>
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                    {skill.description || 'No description found in frontmatter.'}
-                  </p>
                   <div className="mt-3 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
                     {skill.path}
                   </div>

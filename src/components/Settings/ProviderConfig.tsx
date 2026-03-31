@@ -8,6 +8,15 @@ interface ProviderConfigProps {
   onChange: (config: Partial<ProviderConfig>) => void;
   configuredProviders?: Partial<Record<ProviderType, boolean>>;
   title?: string;
+  onTestConnection?: () => void;
+  canTestConnection?: boolean;
+  testConnectionStatus?: "idle" | "testing" | "success" | "error";
+  testConnectionError?: string | null;
+  testConnectionLabel?: string;
+  testConnectionBusyLabel?: string;
+  testConnectionSuccessLabel?: string;
+  testConnectionFailureLabel?: string;
+  testButtonVariant?: "primary" | "secondary";
 }
 
 const PROVIDERS: { value: ProviderType; label: string }[] = [
@@ -61,6 +70,15 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   onChange,
   configuredProviders = {},
   title,
+  onTestConnection,
+  canTestConnection = false,
+  testConnectionStatus = "idle",
+  testConnectionError = null,
+  testConnectionLabel = "Test Connection",
+  testConnectionBusyLabel = "Testing...",
+  testConnectionSuccessLabel = "Connected",
+  testConnectionFailureLabel = "Failed",
+  testButtonVariant = "primary",
 }) => {
   const idPrefix = fieldIdPrefix(title);
   const provider = config.provider;
@@ -92,6 +110,9 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   const selectedImageSupport = provider && config.model
     ? getImageSupportStatus(provider, config.model)
     : 'unknown';
+  const testButtonClassName = testButtonVariant === "secondary"
+    ? "rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
+    : "rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white";
 
   return (
     <div className="space-y-4">
@@ -194,6 +215,29 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
               <label htmlFor={`${idPrefix}-enable-reasoning`} className="text-sm text-gray-700 dark:text-gray-300">
                 Enable reasoning
               </label>
+            </div>
+          )}
+
+          {onTestConnection && (
+            <div className="rounded-2xl border border-dashed border-gray-200 p-4 dark:border-gray-700">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onTestConnection}
+                  disabled={testConnectionStatus === "testing" || !canTestConnection}
+                  className={testButtonClassName}
+                >
+                  {testConnectionStatus === "testing" ? testConnectionBusyLabel : testConnectionLabel}
+                </button>
+                {testConnectionStatus === "success" && (
+                  <span className="text-sm text-emerald-600 dark:text-emerald-400">{testConnectionSuccessLabel}</span>
+                )}
+                {testConnectionStatus === "error" && (
+                  <span className="text-sm text-red-500">
+                    {testConnectionFailureLabel}{testConnectionError ? `: ${testConnectionError}` : ""}
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </>

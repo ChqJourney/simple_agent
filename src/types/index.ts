@@ -140,10 +140,20 @@ export interface LocalSkillContextProviderConfig {
   enabled: boolean;
 }
 
+export interface SystemSkillContextProviderConfig {
+  disabled?: string[];
+}
+
+export interface ToolAvailabilityContextProviderConfig {
+  disabled?: string[];
+}
+
 export interface ContextProviderConfig {
   skills?: {
     local?: LocalSkillContextProviderConfig;
+    system?: SystemSkillContextProviderConfig;
   };
+  tools?: ToolAvailabilityContextProviderConfig;
 }
 
 export interface OcrConfig {

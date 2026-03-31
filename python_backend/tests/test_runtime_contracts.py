@@ -52,7 +52,11 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual({"base_font_size": 16}, normalized["appearance"])
         self.assertEqual(
             {
-                "skills": {"local": {"enabled": True}},
+                "skills": {
+                    "local": {"enabled": True},
+                    "system": {"disabled": []},
+                },
+                "tools": {"disabled": []},
             },
             normalized["context_providers"],
         )

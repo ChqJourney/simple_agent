@@ -114,6 +114,25 @@ function getAttachmentPreviewSrc(attachment: Attachment): string | null {
   return getInlineAttachmentPreviewSrc(attachment);
 }
 
+function getInternalDraggedDescriptors(dataTransfer: DataTransfer): DraggedFileDescriptor[] {
+  const descriptors = parseDraggedDescriptors(dataTransfer.getData(FILE_TREE_DRAG_MIME));
+  if (descriptors.length > 0) {
+    return descriptors;
+  }
+
+  return getActiveDraggedFileDescriptors();
+}
+
+function hasInternalFileTreePayload(dataTransfer: DataTransfer): boolean {
+  const descriptors = getInternalDraggedDescriptors(dataTransfer);
+  if (descriptors.length > 0) {
+    return true;
+  }
+
+  const dragTypes = Array.from(dataTransfer.types || []);
+  return dragTypes.includes(FILE_TREE_DRAG_MIME);
+}
+
 function hasImagePayload(dataTransfer: DataTransfer): boolean {
   const activeDescriptors = getActiveDraggedFileDescriptors();
   if (activeDescriptors.some((descriptor) => descriptor.isImage || isImagePath(descriptor.path))) {
@@ -128,6 +147,27 @@ function hasImagePayload(dataTransfer: DataTransfer): boolean {
   const descriptors = parseDraggedDescriptors(dataTransfer.getData(FILE_TREE_DRAG_MIME));
   if (descriptors.some((descriptor) => descriptor.isImage || isImagePath(descriptor.path))) {
     return true;
+  }
+
+  if (Array.from(dataTransfer.items || []).some((item) => {
+    if (item.kind !== 'file') {
+      return false;
+    }
+    if (item.type.startsWith('image/')) {
+      return true;
+    }
+    const file = item.getAsFile?.();
+    return Boolean(file && isImageFile(file));
+  })) {
+    return true;
+  }
+
+  return Array.from(dataTransfer.files || []).some((file) => isImageFile(file));
+}
+
+function hasExternalImagePayload(dataTransfer: DataTransfer): boolean {
+  if (hasInternalFileTreePayload(dataTransfer)) {
+    return false;
   }
 
   if (Array.from(dataTransfer.items || []).some((item) => {
@@ -256,7 +296,7 @@ function renderHighlightedContent(text: string, references: PromptPathReference[
     nodes.push(
       <span
         key={reference.id}
-        className="rounded-[3px] bg-amber-100/95 text-inherit dark:bg-amber-900/35"
+        className="rounded-md bg-cyan-100/95 text-inherit ring-1 ring-cyan-200/90 dark:bg-cyan-900/35 dark:ring-cyan-700/70"
       >
         {reference.displayName}
       </span>
@@ -515,8 +555,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   const appendDroppedImageAttachments = async (dataTransfer: DataTransfer) => {
-    const descriptors = parseDraggedDescriptors(dataTransfer.getData(FILE_TREE_DRAG_MIME));
-    const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
+    const effectiveDescriptors = getInternalDraggedDescriptors(dataTransfer);
     const descriptorAttachments = await descriptorsToImageAttachments(effectiveDescriptors);
     const fileAttachments = (await Promise.all(
       Array.from(dataTransfer.files || []).map((file) => fileToAttachment(file))
@@ -548,7 +587,15 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     e.stopPropagation();
     syncSelectionRef();
 
-    if (canAttachImages && hasImagePayload(e.dataTransfer)) {
+    const internalDescriptors = getInternalDraggedDescriptors(e.dataTransfer);
+    if (internalDescriptors.length > 0) {
+      resetImageDragState();
+      insertPromptPathsAtSelection(internalDescriptors);
+      clearActiveDraggedFileDescriptors();
+      return;
+    }
+
+    if (canAttachImages && hasExternalImagePayload(e.dataTransfer)) {
       resetImageDragState();
       await appendDroppedImageAttachments(e.dataTransfer);
       clearActiveDraggedFileDescriptors();
@@ -587,8 +634,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       return;
     }
 
-    const descriptors = parseDraggedDescriptors(e.dataTransfer.getData(FILE_TREE_DRAG_MIME));
-    const effectiveDescriptors = descriptors.length > 0 ? descriptors : getActiveDraggedFileDescriptors();
+    const effectiveDescriptors = getInternalDraggedDescriptors(e.dataTransfer);
     insertPromptPathsAtSelection(effectiveDescriptors);
     clearActiveDraggedFileDescriptors();
   };

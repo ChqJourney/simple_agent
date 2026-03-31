@@ -51,9 +51,18 @@ def default_skill_search_roots() -> List[Path]:
 
 
 class LocalSkillLoader(SkillProvider):
-    def __init__(self, search_roots: Sequence[Path | str] | None = None) -> None:
+    def __init__(
+        self,
+        search_roots: Sequence[Path | str] | None = None,
+        disabled_app_skills: Sequence[str] | None = None,
+    ) -> None:
         roots = default_skill_search_roots() if search_roots is None else search_roots
         self.search_roots = [Path(root) for root in roots]
+        self.disabled_app_skills = {
+            str(name).strip().casefold()
+            for name in (disabled_app_skills or [])
+            if str(name).strip()
+        }
 
     def list_skills(self, workspace_path: str = "") -> List[SkillSummary]:
         resolved_by_name: dict[str, SkillSummary] = {}
@@ -61,6 +70,8 @@ class LocalSkillLoader(SkillProvider):
         for skill_file, source in self._iter_skill_files(workspace_path):
             parsed = self._parse_skill_file(skill_file, source)
             if not parsed:
+                continue
+            if self._is_disabled(parsed):
                 continue
 
             key = parsed.name.casefold()
@@ -84,6 +95,8 @@ class LocalSkillLoader(SkillProvider):
         for skill_file, skill_source in self._iter_skill_files(workspace_path):
             parsed = self._parse_skill_file(skill_file, skill_source)
             if not parsed or parsed.name.casefold() != normalized_skill_name:
+                continue
+            if self._is_disabled(parsed):
                 continue
             if source and parsed.source != source:
                 continue
@@ -162,3 +175,6 @@ class LocalSkillLoader(SkillProvider):
     @staticmethod
     def _source_priority(source: SkillSource) -> int:
         return 1 if source == "workspace" else 0
+
+    def _is_disabled(self, skill: SkillSummary) -> bool:
+        return skill.source == "app" and skill.name.casefold() in self.disabled_app_skills

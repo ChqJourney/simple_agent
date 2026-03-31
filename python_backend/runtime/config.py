@@ -66,14 +66,33 @@ def _to_bool(value: Any, default: bool) -> bool:
 def _normalize_context_providers(data: Dict[str, Any]) -> Dict[str, Any]:
     raw_context = data.get("context_providers") if isinstance(data.get("context_providers"), dict) else {}
     raw_skills = raw_context.get("skills") if isinstance(raw_context.get("skills"), dict) else {}
+    raw_tools = raw_context.get("tools") if isinstance(raw_context.get("tools"), dict) else {}
 
     raw_local_skills = raw_skills.get("local") if isinstance(raw_skills.get("local"), dict) else {}
+    raw_system_skills = raw_skills.get("system") if isinstance(raw_skills.get("system"), dict) else {}
+
+    def normalize_disabled_list(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+
+        normalized = {
+            str(item).strip()
+            for item in value
+            if str(item).strip()
+        }
+        return sorted(normalized)
 
     return {
         "skills": {
             "local": {
                 "enabled": _to_bool(raw_local_skills.get("enabled"), True),
-            }
+            },
+            "system": {
+                "disabled": normalize_disabled_list(raw_system_skills.get("disabled")),
+            },
+        },
+        "tools": {
+            "disabled": normalize_disabled_list(raw_tools.get("disabled")),
         },
     }
 
@@ -245,3 +264,38 @@ def is_ocr_enabled(config: Optional[Dict[str, Any]]) -> bool:
 
     ocr_config = config.get("ocr") if isinstance(config.get("ocr"), dict) else {}
     return bool(ocr_config.get("enabled", DEFAULT_OCR_CONFIG["enabled"]))
+
+
+def get_disabled_tool_names(config: Optional[Dict[str, Any]]) -> set[str]:
+    if not isinstance(config, dict):
+        return set()
+
+    context_providers = config.get("context_providers") if isinstance(config.get("context_providers"), dict) else {}
+    tools_config = context_providers.get("tools") if isinstance(context_providers.get("tools"), dict) else {}
+    disabled = tools_config.get("disabled")
+    if not isinstance(disabled, list):
+        return set()
+
+    return {
+        str(name).strip().lower()
+        for name in disabled
+        if str(name).strip()
+    }
+
+
+def get_disabled_system_skill_names(config: Optional[Dict[str, Any]]) -> set[str]:
+    if not isinstance(config, dict):
+        return set()
+
+    context_providers = config.get("context_providers") if isinstance(config.get("context_providers"), dict) else {}
+    skills_config = context_providers.get("skills") if isinstance(context_providers.get("skills"), dict) else {}
+    system_config = skills_config.get("system") if isinstance(skills_config.get("system"), dict) else {}
+    disabled = system_config.get("disabled")
+    if not isinstance(disabled, list):
+        return set()
+
+    return {
+        str(name).strip().casefold()
+        for name in disabled
+        if str(name).strip()
+    }

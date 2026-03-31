@@ -366,10 +366,10 @@ describe("MessageInput", () => {
     });
   });
 
-  it("treats an image dropped from the workspace file tree onto the textarea as an attachment", async () => {
+  it("treats an image dropped from the workspace file tree onto the textarea as a path token", async () => {
     render(<MessageInput onSend={vi.fn()} supportsImageAttachments={true} />);
 
-    const textarea = screen.getByPlaceholderText("Type your message...");
+    const textarea = screen.getByPlaceholderText("Type your message...") as HTMLTextAreaElement;
     const dataTransfer = createDataTransfer({
       "application/x-tauri-agent-file": JSON.stringify({
         path: "/workspace/assets/diagram.png",
@@ -384,13 +384,11 @@ describe("MessageInput", () => {
     fireEvent.drop(textarea, { dataTransfer });
 
     await waitFor(() => {
-      expect(screen.getByText("diagram.png")).toBeTruthy();
+      expect(screen.getAllByText("diagram.png").length).toBeGreaterThan(0);
     });
-    expect(readFileMock).toHaveBeenCalledWith("/workspace/assets/diagram.png");
-    expect(
-      screen.getByAltText("Attachment preview: diagram.png").getAttribute("src")
-    ).toMatch(/^data:image\/png;base64,/);
-    expect((textarea as HTMLTextAreaElement).value).toBe("");
+    expect(readFileMock).not.toHaveBeenCalled();
+    expect(screen.queryByAltText("Attachment preview: diagram.png")).toBeNull();
+    expect(textarea.value).toBe("diagram.png");
   });
 
   it("adds pasted images as attachments and shows a thumbnail preview", async () => {

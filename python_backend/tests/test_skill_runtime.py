@@ -80,9 +80,11 @@ class SkillRuntimeTests(unittest.IsolatedAsyncioTestCase):
         await self.user_manager.bind_session_to_connection("session-1", "conn-1")
 
         llm = RecordingLLM()
+        registry = ToolRegistry()
+        registry.register(SkillLoaderTool(LocalSkillLoader(search_roots=[skill_root])))
         agent = Agent(
             llm,
-            ToolRegistry(),
+            registry,
             self.user_manager,
             skill_provider=LocalSkillLoader(search_roots=[skill_root]),
         )
@@ -178,6 +180,35 @@ class SkillRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Delegation guidance:", first_request_messages[0]["content"])
         self.assertIn("`delegate_task` is for bounded, read-only background subtasks.", first_request_messages[0]["content"])
         self.assertIn("minimal structured context needed", first_request_messages[0]["content"])
+
+    async def test_agent_hides_skill_catalog_when_skill_loader_is_filtered_out(self) -> None:
+        skill_root = Path(self.temp_dir.name) / "skills"
+        skill_dir = skill_root / "deploy-checks"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: deploy-checks\ndescription: Deployment checklist\n---\nAlways verify traffic before deploy.\n",
+            encoding="utf-8",
+        )
+
+        session = await self.user_manager.create_session(self.temp_dir.name, "session-skill-filtered")
+        await self.user_manager.bind_session_to_connection("session-skill-filtered", "conn-1")
+
+        llm = RecordingLLM()
+        registry = ToolRegistry()
+        registry.register(SkillLoaderTool(LocalSkillLoader(search_roots=[skill_root])))
+        agent = Agent(
+            llm,
+            registry,
+            self.user_manager,
+            skill_provider=LocalSkillLoader(search_roots=[skill_root]),
+            tool_filter=lambda tool: tool.name != "skill_loader",
+        )
+
+        await agent.run("Please use $deploy-checks before shipping", session)
+
+        first_request_messages = llm.captured_messages[0]
+        self.assertNotIn("Local skill catalog:", first_request_messages[0]["content"])
+        self.assertNotIn("deploy-checks", first_request_messages[0]["content"])
 
 
 if __name__ == "__main__":

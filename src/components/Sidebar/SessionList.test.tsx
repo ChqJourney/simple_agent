@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionList } from "./SessionList";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -45,6 +45,27 @@ describe("SessionList", () => {
           updated_at: "2026-03-12T08:00:00.000Z",
           title: "",
         },
+        {
+          session_id: "session-e",
+          workspace_path: "/workspace-a",
+          created_at: "2026-03-12T07:00:00.000Z",
+          updated_at: "2026-03-12T07:00:00.000Z",
+          title: "Older workspace session",
+        },
+        {
+          session_id: "session-f",
+          workspace_path: "/workspace-a",
+          created_at: "2026-03-12T06:00:00.000Z",
+          updated_at: "2026-03-12T06:00:00.000Z",
+          title: "Oldest workspace session",
+        },
+        {
+          session_id: "session-g",
+          workspace_path: "/workspace-a",
+          created_at: "2026-03-12T05:00:00.000Z",
+          updated_at: "2026-03-12T05:00:00.000Z",
+          title: "Very oldest workspace session",
+        },
       ],
       currentSessionId: "session-a",
     }));
@@ -61,7 +82,7 @@ describe("SessionList", () => {
 
     expect(screen.queryByText("Other workspace session")).toBeNull();
     expect(screen.getByTestId("session-list-scroll")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("6")).toBeTruthy();
   });
 
   it("sorts workspace sessions by the most recent update first", () => {
@@ -79,5 +100,18 @@ describe("SessionList", () => {
     render(<SessionList workspacePath="/workspace-a" />);
 
     expect(screen.getByText("new session")).toBeTruthy();
+  });
+
+  it("shows a lightweight show more control directly under the visible session list", () => {
+    render(<SessionList workspacePath="/workspace-a" />);
+
+    expect(screen.queryByText("Very oldest workspace session")).toBeNull();
+
+    const showMore = screen.getByRole("button", { name: "Show more (1 more)" });
+    expect(showMore.className).toContain("text-gray-500");
+
+    fireEvent.click(showMore);
+
+    expect(screen.getByText("Very oldest workspace session")).toBeTruthy();
   });
 });

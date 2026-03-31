@@ -15,6 +15,7 @@
 - Tool calling、用户审批、交互式提问
 - 基础文档工具优先、高级执行工具兜底的工具体系
 - Local skills metadata catalog 注入与按需加载
+- settings tools / system skills 真实运行时开关
 - 工作区会话持久化、run timeline、token usage 展示
 - session memory / compaction 与长会话上下文治理
 - 图片输入与工作区文件联动
@@ -79,7 +80,7 @@ flowchart LR
 | 页面层 | `src/pages/*.tsx` | Welcome / Workspace / Settings 三大页面 | store、Tauri invoke、HTTP/WebSocket | 页面状态与用户操作 |
 | 通信层 | `src/contexts/WebSocketContext.tsx` `src/services/websocket.ts` | 建立 WebSocket、发送协议消息、分发后端事件 | ProviderConfig、聊天输入、工具确认 | chat/session/run/task/workspace store 更新 |
 | 状态层 | `src/stores/*.ts` | Zustand 持有聊天、会话、工作区、配置、运行状态、UI 状态 | WebSocket 事件、用户操作 | 组件渲染数据 |
-| 工作区 UI | `src/components/Workspace/*` | TopBar、SessionList、FileTree、TaskList | workspace/session/chat store | 工作区侧栏、文件变化高亮 |
+| 工作区 UI | `src/components/Workspace/*` | TopBar、SessionList、FileTree、TaskList、skills/tools modal | workspace/session/chat store | 工作区侧栏、文件变化高亮、工具/skill 概览 |
 | OCR UI | `src/components/common/OCRStatusIndicator.tsx` `src/utils/ocr.ts` | 顶栏 OCR 状态、OCR 插件安装状态查询、OCR 插件安装调用 | config、Tauri invoke、WebSocket OCR 状态 | OCR 状态展示、插件安装流程 |
 | 聊天 UI | `src/components/Chat/*` | 消息流渲染、输入框、流式输出、interrupt、Markdown/GFM 正文展示、delegated worker 单行卡片与 detail modal | chat store、WebSocket actions | 消息发送、reasoning/tool 展示、worker 状态感知 |
 | 工具交互 UI | `src/components/Tools/*` | ToolConfirmModal、PendingQuestionCard、ToolCallDisplay、ToolMessageDisplay | tool_confirm_request / question_request / tool_result | 审批、答复回传、业务化工具摘要 |
@@ -125,6 +126,7 @@ flowchart LR
 | 会话锁模 | `src/components/Chat/ChatContainer.tsx` `python_backend/main.py` | 首次发送消息时锁定 session 的 provider/model，后续必须匹配 |
 | 流式文本与 reasoning | `src/contexts/WebSocketContext.tsx` `python_backend/core/agent.py` | 分别消费 `token` 与 `reasoning_token`，最后由 `reasoning_complete` 收束 |
 | Tool Calling | `python_backend/core/agent.py` `python_backend/tools/base.py` | LLM 输出 tool calls，后端并发执行工具并回传结果，schema 中附带 `x-tool-meta` descriptor 扩展信息 |
+| Tools / Skills Runtime Filters | `src/pages/SettingsPage.tsx` `src/utils/toolCatalog.ts` `python_backend/main.py` `python_backend/runtime/provider_registry.py` | Settings 可逐项禁用工具与 system skills；后端按配置真实过滤可见工具与 skill catalog |
 | 文档工具主链路 | `python_backend/tools/get_document_structure.py` `python_backend/tools/search_documents.py` `python_backend/tools/read_document_segment.py` | 统一覆盖“看结构 -> 搜命中 -> 读片段”，对外收口到稳定工具面 |
 | 文档格式解析 | `python_backend/document_readers/pdf_reader.py` `python_backend/document_readers/word_reader.py` `python_backend/document_readers/excel_reader.py` `python_backend/document_readers/pptx_reader.py` | 底层按格式拆分，分别处理 PDF 视觉行、Word 段落/表格、Excel sheet/单元格、PPTX slide 文本 |
 | Tool 审批 | `src/components/Tools/ToolConfirmModal.tsx` `python_backend/core/user.py` | 对需要确认的工具建立 pending future，前端按只读/写入/高级执行风险展示审批文案 |
@@ -134,6 +136,7 @@ flowchart LR
 | OCR 能力 | `python_backend/tools/ocr_extract.py` `python_backend/ocr/manager.py` `src/components/common/OCRStatusIndicator.tsx` | 图片 OCR、扫描版 PDF 指定页 OCR、工作区缓存、顶栏 OCR 状态、设置页安装/启停 |
 | Run Timeline | `src/components/Run/RunTimeline.tsx` `python_backend/runtime/events.py` | run_event 同时写入前端和磁盘日志 |
 | 工作区文件联动 | `src/utils/storage.ts` `src/components/Workspace/FileTree.tsx` | 前端经 Tauri 读取工作区文件；`file_write` 成功后高亮变更文件 |
+| 拖拽输入分流 | `src/components/Chat/MessageInput.tsx` `src/components/Workspace/FileTree.tsx` | 应用内 file tree 图片拖到光标处按路径引用插入；拖到附件区域仍按图片附件处理 |
 | Session 历史恢复 | `src/utils/storage.ts` `src-tauri/src/session_storage.rs` | session list / transcript 通过 Tauri command 读取，不再直接走前端 `plugin-fs` |
 | 任务面板 | `src/stores/taskStore.ts` `python_backend/tools/todo_task.py` | `todo_task` 结果转成前端任务树 |
 | 会话标题生成 | `python_backend/runtime/session_titles.py` `src/stores/sessionStore.ts` | 首条文本消息触发后台标题任务，结果以 `session_title_updated` 回传 |
@@ -220,12 +223,13 @@ sequenceDiagram
    - 若存在 `.memory.json`，则按 `memory + recent raw turns` 形式回放，而不是永远全量 raw history
    - replay plan 会读取最近一次 assistant usage 的 `prompt_tokens / context_length`，据此决定是否触发 compaction
    - 若启用 local skills，则扫描 app data 与 workspace 两处 skill root
-   - 把每个 skill 的 YAML frontmatter catalog 拼入 system prompt
-   - 需要完整 skill 指令时，由模型调用 `skill_loader`
+   - system-level skills 会先应用 `context_providers.skills.system.disabled` 过滤，再把保留下来的 skill YAML frontmatter catalog 拼入 system prompt
+   - 需要完整 skill 指令时，由模型调用 `skill_loader`；被禁用的 system skill 不会再被加载
    - 工具列表通过 OpenAI-compatible function schema 暴露，并附带 `x-tool-meta`
+   - `context_providers.tools.disabled` 中的工具会在运行时被真实过滤
    - 文档任务优先走 `get_document_structure`、`search_documents`、`read_document_segment`
    - 若是 PDF 精细读取任务，可进一步调用 `pdf_get_outline`、`pdf_read_lines` 等格式专属工具
-   - 若 `ocr.enabled = true`，运行时工具过滤后会向 LLM 暴露 `ocr_extract`
+   - `ocr_extract` 只有在 `ocr.enabled = true` 且 OCR sidecar 已安装时，才会在运行时工具过滤后暴露给 LLM
 4. 调用 provider 的 `stream()`
 
 #### D-1. Session Compaction
@@ -455,7 +459,10 @@ Tool 系统当前注册了以下内置工具：
 - OCR 工具：
   - `ocr_extract`
 
-当前不按任务场景裁剪工具集合，而是通过 descriptor 元数据来影响模型偏好与前端展示。
+当前工具集合会先经过两层运行时过滤，再通过 descriptor 元数据影响模型偏好与前端展示：
+
+- `context_providers.tools.disabled`：按名称真实禁用工具
+- `ocr_extract`：额外要求 OCR sidecar 已安装且 `ocr.enabled = true`
 
 `ToolDescriptor` 除基础字段外，还包含：
 
@@ -557,6 +564,7 @@ Tool 系统当前注册了以下内置工具：
 | --- | --- | --- |
 | `/health` | `GET` | 开发态检测 Python backend 是否已启动 |
 | `/test-config` | `POST` | 在 Settings 页面测试 provider 连通性 |
+| `/tools` | `GET` | 返回当前后端可见工具目录，供 Settings 与 workspace 左侧 tools modal 使用 |
 | `/` | `GET` | 返回当前 backend 运行信息 |
 
 ### 8.5 配置契约
@@ -610,8 +618,12 @@ Tool 系统当前注册了以下内置工具：
     }
   },
   "context_providers": {
+    "tools": {
+      "disabled": []
+    },
     "skills": {
-      "local": { "enabled": true }
+      "local": { "enabled": true },
+      "system": { "disabled": [] }
     }
   },
   "ocr": {
@@ -626,7 +638,9 @@ Tool 系统当前注册了以下内置工具：
 - `runtime.shared` 是默认值，`runtime.conversation/background/compaction/delegated_task` 是按 role 的 override
 - `provider_memory` 是前端设置页的辅助持久化字段，用于在切换 provider 时恢复该 provider 最近保存的 `model / api_key / base_url`
 - 后端标准化配置时不会依赖 `provider_memory`
-- `ocr.enabled` 控制前端是否展示 OCR 状态，以及 Agent 是否在运行时向 LLM 暴露 `ocr_extract`
+- `context_providers.tools.disabled` 是后端真实工具禁用列表
+- `context_providers.skills.system.disabled` 是 system-level skill 的真实禁用列表
+- `ocr.enabled` 控制前端是否展示 OCR 状态；只有 sidecar 已安装时，`ocr_extract` 才会继续出现在可用工具集合里
 
 ### 8.6 会话与运行事件契约
 

@@ -5,21 +5,21 @@ import { useConfigStore } from "../../stores/configStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 
-const invokeMock = vi.hoisted(() => vi.fn());
 const listSystemSkillsMock = vi.hoisted(() => vi.fn());
 const listWorkspaceSkillsMock = vi.hoisted(() => vi.fn());
+const listToolsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../Sidebar/SessionList", () => ({
   SessionList: () => <div>SessionList</div>,
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: invokeMock,
-}));
-
 vi.mock("../../utils/systemSkills", () => ({
   listSystemSkills: listSystemSkillsMock,
   listWorkspaceSkills: listWorkspaceSkillsMock,
+}));
+
+vi.mock("../../utils/toolCatalog", () => ({
+  listTools: listToolsMock,
 }));
 
 describe("LeftPanel", () => {
@@ -39,6 +39,10 @@ describe("LeftPanel", () => {
         { name: "repo-helper", description: "Workspace skill", path: "C:/Users/patri/source/repos/tauri_agent/.agent/skills/repo-helper/SKILL.md" },
       ],
     });
+    listToolsMock.mockResolvedValue([
+      { name: "file_read", description: "Read files" },
+      { name: "search_documents", description: "Search files" },
+    ]);
 
     useWorkspaceStore.setState((state) => ({
       ...state,
@@ -107,15 +111,17 @@ describe("LeftPanel", () => {
     expect(screen.getByText("repo-helper")).toBeTruthy();
   });
 
-  it("opens the current workspace folder from the left panel action", async () => {
+  it("shows tool counts and opens a modal with enabled tools", async () => {
     render(<LeftPanel />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Open workspace folder" }));
-
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith("open_workspace_folder", {
-        selectedPath: "C:/Users/patri/source/repos/tauri_agent",
-      });
+      expect(screen.getByText("2 enabled")).toBeTruthy();
     });
+
+    fireEvent.click(screen.getByRole("button", { name: /Tools/i }));
+
+    expect(screen.getByRole("dialog", { name: "Workspace tools" })).toBeTruthy();
+    expect(screen.getByText("file_read")).toBeTruthy();
+    expect(screen.getByText("search_documents")).toBeTruthy();
   });
 });

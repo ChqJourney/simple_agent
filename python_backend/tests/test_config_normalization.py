@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -25,16 +26,38 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(
             backend_main._is_tool_enabled_for_config(
-                "ocr_extract",
-                {"ocr": {"enabled": True}},
-            )
-        )
-        self.assertTrue(
-            backend_main._is_tool_enabled_for_config(
                 "file_read",
                 {"ocr": {"enabled": False}},
             )
         )
+        self.assertFalse(
+            backend_main._is_tool_enabled_for_config(
+                "file_read",
+                {"context_providers": {"tools": {"disabled": ["file_read"]}}},
+            )
+        )
+        with patch.object(backend_main.ocr_manager, "inspect_installation", return_value={"installed": True}):
+            self.assertTrue(
+                backend_main._is_tool_enabled_for_config(
+                    "ocr_extract",
+                    {"ocr": {"enabled": True}},
+                )
+            )
+            self.assertFalse(
+                backend_main._is_tool_enabled_for_config(
+                    "ocr_extract",
+                    {
+                        "ocr": {"enabled": True},
+                        "context_providers": {"tools": {"disabled": ["ocr_extract"]}},
+                    },
+                )
+            )
+
+    def test_tool_catalog_hides_ocr_extract_when_sidecar_is_not_installed(self) -> None:
+        with patch.object(backend_main.ocr_manager, "inspect_installation", return_value={"installed": False}):
+            tool_names = [tool["name"] for tool in backend_main._build_tool_catalog_payload()]
+
+        self.assertNotIn("ocr_extract", tool_names)
 
     async def test_handle_config_falls_back_to_provider_default_base_url_when_blank(self) -> None:
         captured_configs = []

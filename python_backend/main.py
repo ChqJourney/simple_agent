@@ -27,6 +27,7 @@ from llms.qwen import QwenLLM
 from ocr.manager import OcrSidecarManager
 from runtime.config import (
     DEFAULT_RUNTIME_POLICY,
+    get_disabled_tool_names,
     get_primary_profile_config,
     is_ocr_enabled,
     normalize_runtime_config,
@@ -39,7 +40,7 @@ from runtime.router import (
     session_lock_matches_profile,
 )
 from runtime.session_titles import run_session_title_task
-from skills.local_loader import LocalSkillLoader, default_skill_search_roots
+from skills.local_loader import default_skill_search_roots
 from tools.base import ToolRegistry
 from tools.ask_question import AskQuestionTool
 from tools.delegate_task import DelegateTaskTool
@@ -135,7 +136,11 @@ tool_registry.register(
     )
 )
 skill_search_roots = default_skill_search_roots()
-tool_registry.register(SkillLoaderTool(LocalSkillLoader(search_roots=skill_search_roots)))
+tool_registry.register(
+    SkillLoaderTool(
+        skill_provider_getter=lambda: runtime_state.current_context_bundle.skill_provider,
+    )
+)
 
 user_manager = UserManager()
 context_provider_registry = ContextProviderRegistry(
@@ -189,10 +194,31 @@ def _build_ocr_status_payload(config: Optional[Dict[str, Any]]) -> Dict[str, Any
     }
 
 
+def _is_ocr_tool_installed() -> bool:
+    installation = ocr_manager.inspect_installation()
+    return bool(installation.get("installed"))
+
+
 def _is_tool_enabled_for_config(tool_name: str, config: Optional[Dict[str, Any]]) -> bool:
+    normalized_tool_name = str(tool_name).strip().lower()
+    if normalized_tool_name in get_disabled_tool_names(config):
+        return False
+
     if tool_name == "ocr_extract":
-        return is_ocr_enabled(config)
+        return _is_ocr_tool_installed() and is_ocr_enabled(config)
     return True
+
+
+def _build_tool_catalog_payload() -> List[Dict[str, str]]:
+    descriptors = tool_registry.get_descriptors()
+    return [
+        {
+            "name": descriptor.name,
+            "description": descriptor.description,
+        }
+        for descriptor in sorted(descriptors, key=lambda descriptor: descriptor.name)
+        if descriptor.name != "ocr_extract" or _is_ocr_tool_installed()
+    ]
 
 
 def _apply_runtime_tool_policies(config: Dict[str, Any]) -> None:
@@ -1111,6 +1137,15 @@ async def auth_token():
             return JSONResponse(status_code=404, content={"error": "Not found"})
         token = runtime_state.auth_token
     return {"auth_token": token}
+
+
+@app.get("/tools")
+async def list_tools(request: Request):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
+    return {"tools": _build_tool_catalog_payload()}
 
 
 @app.post("/test-config")

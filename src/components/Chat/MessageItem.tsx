@@ -59,17 +59,20 @@ export const MessageItem = memo<MessageItemProps>(({
   const hasReasoning = Boolean(reasoningContent);
   const copyableContent = (isAssistant && isStreaming ? streamingContent : message.content)?.trim() || '';
   const hasCopyableContent = copyableContent.length > 0;
+  const bodyClassName = isUser
+    ? `prose prose-sm max-w-none rounded-[1.35rem] border border-slate-200 bg-slate-100/90 px-4 py-3 text-gray-900 shadow-sm dark:border-slate-700 dark:bg-slate-800/85 dark:text-gray-100 dark:prose-invert ${hasReasoning ? 'mt-3' : ''}`
+    : `prose prose-sm max-w-none text-gray-900 leading-relaxed dark:prose-invert dark:text-gray-100 ${hasReasoning ? 'mt-3' : ''}`;
 
   return (
     <div
       className={`${
         isUser
-          ? 'ml-auto max-w-[80%] text-right'
+          ? 'w-full max-w-[80%]'
           : 'w-full max-w-none'
       }`}
     >
       {!hideHeader && (
-        <div className={`mb-2 flex items-center ${isUser ? 'justify-end gap-2' : 'justify-between'}`}>
+        <div className="mb-2 flex items-center justify-between gap-2">
           <span className="font-semibold text-xs text-gray-600 dark:text-gray-400">
             {isUser ? 'You' : 'Assistant'}
           </span>
@@ -87,7 +90,7 @@ export const MessageItem = memo<MessageItemProps>(({
       {hasReasoning && <ReasoningBlock content={reasoningContent} />}
 
       {hasBodyContent && (
-        <div className={`prose prose-sm max-w-none text-gray-900 leading-relaxed dark:prose-invert dark:text-gray-100 ${hasReasoning ? 'mt-3' : ''}`}>
+        <div className={bodyClassName}>
           {isAssistant && isStreaming ? (
             streamingContent ? (
               <StreamingMessage content={streamingContent} isStreaming={true} />
@@ -99,7 +102,7 @@ export const MessageItem = memo<MessageItemProps>(({
           )}
 
           {message.attachments && message.attachments.length > 0 && (
-            <ImageAttachmentGallery attachments={message.attachments} align={isUser ? 'end' : 'start'} />
+            <ImageAttachmentGallery attachments={message.attachments} align="start" />
           )}
 
           {message.tool_calls && message.tool_calls.length > 0 && (

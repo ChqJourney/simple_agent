@@ -47,6 +47,43 @@ describe("normalizeProviderConfig", () => {
     });
   });
 
+  it("normalizes disabled tool and system skill lists", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+      context_providers: {
+        skills: {
+          local: {
+            enabled: true,
+          },
+          system: {
+            disabled: ["deploy-checks", "deploy-checks", " docs-helper "],
+          },
+        },
+        tools: {
+          disabled: ["file_read", "file_read", " shell_execute "],
+        },
+      },
+    });
+
+    expect(normalized.context_providers).toEqual({
+      skills: {
+        local: {
+          enabled: true,
+        },
+        system: {
+          disabled: ["deploy-checks", "docs-helper"],
+        },
+      },
+      tools: {
+        disabled: ["file_read", "shell_execute"],
+      },
+    });
+  });
+
   it("fills runtime defaults when runtime values are omitted", () => {
     const normalized = normalizeProviderConfig({
       provider: "openai",

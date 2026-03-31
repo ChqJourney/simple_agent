@@ -1,21 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useWorkspaceStore } from '../../stores';
+import { useConfigStore } from '../../stores/configStore';
 import { SessionList } from '../Sidebar/SessionList';
 import { listSystemSkills, listWorkspaceSkills, SkillEntry } from '../../utils/systemSkills';
+import { listTools, ToolCatalogEntry } from '../../utils/toolCatalog';
+import { normalizeContextProviders } from '../../utils/config';
 
 export const LeftPanel: React.FC = () => {
   const { currentWorkspace } = useWorkspaceStore();
-  const [isOpeningWorkspace, setIsOpeningWorkspace] = useState(false);
+  const config = useConfigStore((state) => state.config);
   const [systemSkills, setSystemSkills] = useState<SkillEntry[]>([]);
   const [workspaceSkills, setWorkspaceSkills] = useState<SkillEntry[]>([]);
   const [isSkillsModalOpen, setIsSkillsModalOpen] = useState(false);
+  const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
+  const [isToolsModalOpen, setIsToolsModalOpen] = useState(false);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [isLoadingTools, setIsLoadingTools] = useState(false);
+  const [toolsError, setToolsError] = useState<string | null>(null);
   const workspacePath = currentWorkspace?.path || '';
   const folderName = currentWorkspace
     ? (currentWorkspace.name || currentWorkspace.path.split(/[\\/]/).filter(Boolean).pop() || currentWorkspace.path)
     : '';
+  const disabledToolNames = new Set(normalizeContextProviders(config?.context_providers).tools?.disabled ?? []);
+  const enabledTools = tools.filter((tool) => !disabledToolNames.has(tool.name));
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +69,36 @@ export const LeftPanel: React.FC = () => {
     };
   }, [workspacePath]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTools = async () => {
+      setIsLoadingTools(true);
+      setToolsError(null);
+
+      try {
+        const toolCatalog = await listTools();
+        if (!cancelled) {
+          setTools(toolCatalog);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setTools([]);
+          setToolsError(error instanceof Error ? error.message : 'Failed to load tools.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingTools(false);
+        }
+      }
+    };
+
+    void loadTools();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   if (!currentWorkspace) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
@@ -68,21 +106,6 @@ export const LeftPanel: React.FC = () => {
       </div>
     );
   }
-
-  const handleOpenWorkspace = async () => {
-    if (isOpeningWorkspace) {
-      return;
-    }
-
-    setIsOpeningWorkspace(true);
-    try {
-      await invoke('open_workspace_folder', { selectedPath: currentWorkspace.path });
-    } catch (error) {
-      console.error('Failed to open workspace folder:', error);
-    } finally {
-      setIsOpeningWorkspace(false);
-    }
-  };
 
   return (
     <div className="flex flex-col h-full">
@@ -92,20 +115,6 @@ export const LeftPanel: React.FC = () => {
             <div className="font-medium text-gray-900 dark:text-white">
               {`Workspace - ${folderName}`}
             </div>
-            <button
-              type="button"
-              onClick={() => void handleOpenWorkspace()}
-              disabled={isOpeningWorkspace}
-              aria-label="Open workspace folder"
-              title="Open workspace folder"
-              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 5.75H4.5A1.75 1.75 0 002.75 7.5v8A1.75 1.75 0 004.5 17.25h8A1.75 1.75 0 0014.25 15V12.75" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 4.25h5.75V10" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 11.75L15.5 4.5" />
-              </svg>
-            </button>
           </div>
           <div className="text-gray-600 my-4 dark:text-gray-400" title={currentWorkspace.path}>
             <span className="block truncate whitespace-normal">{currentWorkspace.path}</span>
@@ -123,6 +132,23 @@ export const LeftPanel: React.FC = () => {
                 {isLoadingSkills
                   ? 'Scanning...'
                   : `System ${systemSkills.length} · Workspace ${workspaceSkills.length}`}
+              </div>
+            </div>
+            <svg className="h-4 w-4 text-gray-500 dark:text-gray-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 5l5 5-5 5" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsToolsModalOpen(true)}
+            className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-gray-50/90 px-3 py-2 text-left transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800/70 dark:hover:bg-gray-800"
+          >
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
+                Tools
+              </div>
+              <div className="mt-1 text-sm text-gray-700 dark:text-gray-200">
+                {isLoadingTools ? 'Loading...' : `${enabledTools.length} enabled`}
               </div>
             </div>
             <svg className="h-4 w-4 text-gray-500 dark:text-gray-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -234,6 +260,66 @@ export const LeftPanel: React.FC = () => {
                       </div>
                     )}
                   </section>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isToolsModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/55 p-4 backdrop-blur-sm"
+          onClick={() => setIsToolsModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Workspace tools"
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Tools</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {isLoadingTools ? 'Loading available tools...' : `${enabledTools.length} enabled in this workspace`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsToolsModalOpen(false)}
+                className="rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                aria-label="Close tools modal"
+                title="Close tools modal"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 5l10 10M15 5L5 15" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              {toolsError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                  {toolsError}
+                </div>
+              ) : isLoadingTools ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  Loading tools...
+                </div>
+              ) : enabledTools.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  No enabled tools available.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {enabledTools.map((tool) => (
+                    <div key={tool.name} className="rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-800">
+                      <div className="text-sm font-semibold text-gray-900 dark:text-white">{tool.name}</div>
+                      <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">{tool.description}</div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

@@ -7,6 +7,7 @@ const navigateMock = vi.hoisted(() => vi.fn());
 const sendConfigMock = vi.hoisted(() => vi.fn());
 const setConfigMock = vi.hoisted(() => vi.fn());
 const listSystemSkillsMock = vi.hoisted(() => vi.fn());
+const listToolsMock = vi.hoisted(() => vi.fn());
 const inspectOcrSidecarInstallationMock = vi.hoisted(() => vi.fn());
 const installOcrSidecarMock = vi.hoisted(() => vi.fn());
 const openDialogMock = vi.hoisted(() => vi.fn());
@@ -29,6 +30,10 @@ vi.mock("../utils/systemSkills", () => ({
   listSystemSkills: listSystemSkillsMock,
 }));
 
+vi.mock("../utils/toolCatalog", () => ({
+  listTools: listToolsMock,
+}));
+
 vi.mock("../utils/ocr", () => ({
   inspectOcrSidecarInstallation: inspectOcrSidecarInstallationMock,
   installOcrSidecar: installOcrSidecarMock,
@@ -38,7 +43,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: openDialogMock,
 }));
 
-function openTab(name: "Runtime" | "Skill" | "OCR" | "UI") {
+function openTab(name: "Runtime" | "Tools" | "Skill" | "OCR" | "UI") {
   fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}`) }));
 }
 
@@ -64,6 +69,7 @@ describe("SettingsPage", () => {
     sendConfigMock.mockReset();
     setConfigMock.mockReset();
     listSystemSkillsMock.mockReset();
+    listToolsMock.mockReset();
     inspectOcrSidecarInstallationMock.mockReset();
     installOcrSidecarMock.mockReset();
     openDialogMock.mockReset();
@@ -79,6 +85,16 @@ describe("SettingsPage", () => {
         },
       ],
     });
+    listToolsMock.mockResolvedValue([
+      {
+        name: "file_read",
+        description: "Read a file from the workspace.",
+      },
+      {
+        name: "skill_loader",
+        description: "Load local skill instructions.",
+      },
+    ]);
     inspectOcrSidecarInstallationMock.mockResolvedValue({
       appDir: "C:/work-agent",
       installDir: "C:/work-agent/ocr-sidecar/current",
@@ -437,13 +453,19 @@ describe("SettingsPage", () => {
             max_retries: 4,
           }),
         }),
-        context_providers: {
-          skills: {
+        context_providers: expect.objectContaining({
+          skills: expect.objectContaining({
             local: {
               enabled: false,
             },
+            system: {
+              disabled: [],
+            },
+          }),
+          tools: {
+            disabled: [],
           },
-        },
+        }),
       })
     );
     expect(sendConfigMock).toHaveBeenCalledWith(

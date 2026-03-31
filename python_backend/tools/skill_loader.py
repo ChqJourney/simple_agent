@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 from skills.base import SkillProvider
 from tools.base import BaseTool, ToolResult
@@ -35,9 +35,19 @@ class SkillLoaderTool(BaseTool):
         "additionalProperties": False,
     }
 
-    def __init__(self, skill_provider: SkillProvider) -> None:
+    def __init__(
+        self,
+        skill_provider: Optional[SkillProvider] = None,
+        skill_provider_getter: Optional[Callable[[], Optional[SkillProvider]]] = None,
+    ) -> None:
         super().__init__()
         self.skill_provider = skill_provider
+        self.skill_provider_getter = skill_provider_getter
+
+    def _get_skill_provider(self) -> Optional[SkillProvider]:
+        if self.skill_provider_getter is not None:
+            return self.skill_provider_getter()
+        return self.skill_provider
 
     async def execute(
         self,
@@ -47,8 +57,18 @@ class SkillLoaderTool(BaseTool):
         tool_call_id: str = "",
         **_: object,
     ) -> ToolResult:
+        skill_provider = self._get_skill_provider()
+        if skill_provider is None:
+            return ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=self.name,
+                success=False,
+                output=None,
+                error="Local skill provider is not available.",
+            )
+
         normalized_source = source if source in {"app", "workspace"} else None
-        skill = self.skill_provider.load(
+        skill = skill_provider.load(
             skill_name=skill_name,
             workspace_path=workspace_path,
             source=normalized_source,

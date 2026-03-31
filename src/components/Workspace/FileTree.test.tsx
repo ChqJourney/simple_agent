@@ -7,6 +7,7 @@ const readDirMock = vi.hoisted(() => vi.fn());
 const copyFileMock = vi.hoisted(() => vi.fn());
 const existsMock = vi.hoisted(() => vi.fn());
 const openMock = vi.hoisted(() => vi.fn());
+const invokeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
   readDir: readDirMock,
@@ -18,12 +19,17 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: openMock,
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
+}));
+
 describe("FileTree", () => {
   beforeEach(() => {
     readDirMock.mockReset();
     copyFileMock.mockReset();
     existsMock.mockReset();
     openMock.mockReset();
+    invokeMock.mockReset();
     readDirMock.mockResolvedValue([
       { name: "existing.txt", isDirectory: false },
       { name: "new.txt", isDirectory: false },
@@ -183,5 +189,21 @@ describe("FileTree", () => {
       expect(screen.getByText("Skipped existing files: existing.txt")).toBeTruthy();
     });
     expect(copyFileMock).not.toHaveBeenCalled();
+  });
+
+  it("opens the current workspace folder from the file tree header", async () => {
+    render(<FileTree />);
+
+    await waitFor(() => {
+      expect(screen.getByText("existing.txt")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("open_workspace_folder", {
+        selectedPath: "C:/repo",
+      });
+    });
   });
 });

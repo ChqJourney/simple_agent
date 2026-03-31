@@ -1,4 +1,6 @@
 import React from 'react';
+import { useConfigStore } from '../../stores/configStore';
+import { resolveRuntimePolicy } from '../../utils/config';
 import { TokenUsage } from '../../types';
 
 interface TokenUsageWidgetProps {
@@ -6,18 +8,20 @@ interface TokenUsageWidgetProps {
   mode?: 'request' | 'context_estimate';
 }
 
-function formatUsageTitle(usage: TokenUsage, mode: 'request' | 'context_estimate'): string {
+function formatUsageTitle(usage: TokenUsage, effectiveContextLength: number | undefined, mode: 'request' | 'context_estimate'): string {
+  const contextInfo = effectiveContextLength ? ` / context: ${effectiveContextLength}` : '';
+
   if (mode === 'context_estimate') {
     return [
       'Current context estimate',
-      `prompt: ${usage.prompt_tokens}${usage.context_length ? ` / context: ${usage.context_length}` : ''}`,
+      `prompt: ${usage.prompt_tokens}${contextInfo}`,
       'derived from latest session compaction',
     ].join('\n');
   }
 
   const lines = [
     'Last request usage',
-    `prompt: ${usage.prompt_tokens}${usage.context_length ? ` / context: ${usage.context_length}` : ''}`,
+    `prompt: ${usage.prompt_tokens}${contextInfo}`,
     `completion: ${usage.completion_tokens}`,
     `total: ${usage.total_tokens}`,
   ];
@@ -30,7 +34,11 @@ function formatUsageTitle(usage: TokenUsage, mode: 'request' | 'context_estimate
 }
 
 export const TokenUsageWidget: React.FC<TokenUsageWidgetProps> = ({ usage, mode = 'request' }) => {
-  const contextLength = usage?.context_length;
+  const config = useConfigStore((state) => state.config);
+  const configuredContextLength = config
+    ? resolveRuntimePolicy(config.runtime, 'conversation').context_length
+    : undefined;
+  const contextLength = usage?.context_length ?? configuredContextLength;
   const promptTokens = usage?.prompt_tokens ?? 0;
   const percentage = contextLength && contextLength > 0
     ? Math.min(100, Math.round((promptTokens / contextLength) * 100))
@@ -43,7 +51,7 @@ export const TokenUsageWidget: React.FC<TokenUsageWidgetProps> = ({ usage, mode 
   return (
     <div
       className="flex h-8 w-8 items-center justify-center rounded-full"
-      title={usage ? formatUsageTitle(usage, mode) : undefined}
+      title={usage ? formatUsageTitle(usage, contextLength, mode) : undefined}
     >
       <div className="relative h-8 w-8">
         <svg className="h-8 w-8 -rotate-90" viewBox="0 0 40 40" aria-hidden="true">

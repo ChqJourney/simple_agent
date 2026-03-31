@@ -60,6 +60,15 @@
       ]
     },
     {
+      "identifier": "fs:allow-copy-file",
+      "allow": [
+        { "path": "$HOME" },
+        { "path": "$HOME/**" },
+        { "path": "$APPDATA" },
+        { "path": "$APPDATA/**" }
+      ]
+    },
+    {
       "identifier": "fs:allow-stat",
       "allow": [
         { "path": "$HOME" },

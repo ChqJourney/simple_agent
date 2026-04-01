@@ -3,6 +3,8 @@ name: build-ocr-sidecar-windows
 on:
   workflow_dispatch:
   push:
+    tags-ignore:
+      - "v*"
     paths:
       - ".github/workflows/build-ocr-sidecar-windows.yml"
       - "ocr_sidecar/**"

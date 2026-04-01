@@ -50,19 +50,25 @@ from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
 from tools.node_execute import NodeExecuteTool
 from tools.ocr_extract import OcrExtractTool
-from tools.pdf_tools import PdfGetInfoTool, PdfGetOutlineTool, PdfReadLinesTool, PdfReadPagesTool, PdfSearchTool
+from tools.pdf_tools import (
+    PdfGetInfoTool,
+    PdfGetOutlineTool,
+    PdfReadLinesTool,
+    PdfReadPagesTool,
+    PdfSearchTool,
+)
 from tools.python_execute import PythonExecuteTool
 from tools.read_document_segment import ReadDocumentSegmentTool
 from tools.search_documents import SearchDocumentsTool
 from tools.skill_loader import SkillLoaderTool
 from tools.shell_execute import ShellExecuteTool
 from tools.todo_task import TodoTaskTool
+from tools.web_fetch import WebFetchTool
 
 SendCallback = Callable[[Dict[str, Any]], Any]
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 INTERRUPT_TASK_CANCEL_GRACE_SECONDS = 0.5
@@ -85,6 +91,7 @@ def _load_auth_token() -> tuple[str, bool]:
         return configured_token, True
     return uuid.uuid4().hex, False
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup: nothing extra needed
@@ -98,6 +105,7 @@ async def lifespan(app: FastAPI):
     await cleanup_all_tasks()
     await _close_runtime_llms()
     await ocr_manager.stop()
+
 
 app = FastAPI(title="AI Agent Backend", lifespan=lifespan)
 
@@ -127,18 +135,23 @@ tool_registry.register(NodeExecuteTool())
 tool_registry.register(OcrExtractTool(manager=ocr_manager))
 tool_registry.register(TodoTaskTool())
 tool_registry.register(AskQuestionTool())
+tool_registry.register(WebFetchTool())
 tool_registry.register(
     DelegateTaskTool(
         DelegatedTaskRunner(
             config_getter=lambda: runtime_state.current_config,
-            llm_factory=lambda execution_spec: create_llm_for_execution_spec(execution_spec),
+            llm_factory=lambda execution_spec: create_llm_for_execution_spec(
+                execution_spec
+            ),
         )
     )
 )
 skill_search_roots = default_skill_search_roots()
 tool_registry.register(
     SkillLoaderTool(
-        skill_provider_getter=lambda: runtime_state.current_context_bundle.skill_provider,
+        skill_provider_getter=lambda: (
+            runtime_state.current_context_bundle.skill_provider
+        ),
     )
 )
 
@@ -154,12 +167,16 @@ class BackendRuntimeState:
     active_agents: Dict[str, Agent] = field(default_factory=dict)
     current_llm: Optional[BaseLLM] = None
     current_config: Optional[Dict[str, Any]] = None
-    current_context_bundle: ContextProviderBundle = field(default_factory=ContextProviderBundle)
+    current_context_bundle: ContextProviderBundle = field(
+        default_factory=ContextProviderBundle
+    )
     default_workspace: str = field(default_factory=lambda: str(Path.cwd()))
     connection_workspaces: Dict[str, str] = field(default_factory=dict)
     pending_tasks: Set[asyncio.Task] = field(default_factory=set)
     active_session_tasks: Dict[str, object] = field(default_factory=dict)
-    active_session_compaction_tasks: Dict[str, asyncio.Task] = field(default_factory=dict)
+    active_session_compaction_tasks: Dict[str, asyncio.Task] = field(
+        default_factory=dict
+    )
     task_connections: Dict[asyncio.Task, str] = field(default_factory=dict)
     task_sessions: Dict[asyncio.Task, str] = field(default_factory=dict)
     auth_token: str = ""
@@ -199,7 +216,9 @@ def _is_ocr_tool_installed() -> bool:
     return bool(installation.get("installed"))
 
 
-def _is_tool_enabled_for_config(tool_name: str, config: Optional[Dict[str, Any]]) -> bool:
+def _is_tool_enabled_for_config(
+    tool_name: str, config: Optional[Dict[str, Any]]
+) -> bool:
     normalized_tool_name = str(tool_name).strip().lower()
     if normalized_tool_name in get_disabled_tool_names(config):
         return False
@@ -246,7 +265,9 @@ def _normalize_optional_bool(value: Any) -> Optional[bool]:
     return value if isinstance(value, bool) else None
 
 
-def _normalize_tool_decision(value: Any) -> Optional[Literal["approve_once", "approve_always", "reject"]]:
+def _normalize_tool_decision(
+    value: Any,
+) -> Optional[Literal["approve_once", "approve_always", "reject"]]:
     if not isinstance(value, str):
         return None
     normalized = value.strip().lower()
@@ -271,11 +292,14 @@ def _normalize_execution_mode(value: Any) -> Optional[Literal["regular", "free"]
         return cast(Literal["regular", "free"], normalized)
     return None
 
+
 def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
     return normalize_runtime_config(data)
 
 
-def create_llm_for_profile(profile: Dict[str, Any], runtime_policy: Optional[Dict[str, Any]] = None) -> BaseLLM:
+def create_llm_for_profile(
+    profile: Dict[str, Any], runtime_policy: Optional[Dict[str, Any]] = None
+) -> BaseLLM:
     provider = profile.get("provider", "openai")
     profile_config = {
         **profile,
@@ -301,11 +325,27 @@ def create_llm_for_profile(profile: Dict[str, Any], runtime_policy: Optional[Dic
 
 
 def create_llm_for_execution_spec(execution_spec: Dict[str, Any]) -> BaseLLM:
-    profile = execution_spec.get("profile") if isinstance(execution_spec.get("profile"), dict) else {}
-    runtime_policy = execution_spec.get("runtime") if isinstance(execution_spec.get("runtime"), dict) else {}
+    profile = (
+        execution_spec.get("profile")
+        if isinstance(execution_spec.get("profile"), dict)
+        else {}
+    )
+    runtime_policy = (
+        execution_spec.get("runtime")
+        if isinstance(execution_spec.get("runtime"), dict)
+        else {}
+    )
     role = str(execution_spec.get("role") or "unknown")
-    guardrails = execution_spec.get("guardrails") if isinstance(execution_spec.get("guardrails"), dict) else {}
-    warnings = guardrails.get("warnings") if isinstance(guardrails.get("warnings"), list) else []
+    guardrails = (
+        execution_spec.get("guardrails")
+        if isinstance(execution_spec.get("guardrails"), dict)
+        else {}
+    )
+    warnings = (
+        guardrails.get("warnings")
+        if isinstance(guardrails.get("warnings"), list)
+        else []
+    )
 
     for warning in warnings:
         logger.warning(
@@ -333,7 +373,10 @@ def _forget_task(task: asyncio.Task) -> None:
     if connection_id:
         logger.debug("Task released for connection %s", connection_id)
 
-    if session_id and runtime_state.active_session_compaction_tasks.get(session_id) is task:
+    if (
+        session_id
+        and runtime_state.active_session_compaction_tasks.get(session_id) is task
+    ):
         runtime_state.active_session_compaction_tasks.pop(session_id, None)
 
     if session_id and runtime_state.active_session_tasks.get(session_id) is task:
@@ -344,7 +387,10 @@ def _forget_task(task: asyncio.Task) -> None:
             try:
                 asyncio.get_running_loop().create_task(_close_llm_instance(llm))
             except RuntimeError:
-                logger.debug("No running loop available to close agent llm for session %s", session_id)
+                logger.debug(
+                    "No running loop available to close agent llm for session %s",
+                    session_id,
+                )
 
 
 def _origin_allowed(origin: Optional[str]) -> bool:
@@ -447,7 +493,9 @@ async def cleanup_connection_tasks(connection_id: str) -> None:
         task.cancel()
 
     if task_contexts:
-        await asyncio.gather(*(task for task, _ in task_contexts), return_exceptions=True)
+        await asyncio.gather(
+            *(task for task, _ in task_contexts), return_exceptions=True
+        )
 
 
 async def cleanup_all_tasks() -> None:
@@ -465,10 +513,14 @@ async def cleanup_all_tasks() -> None:
         task.cancel()
 
     if task_contexts:
-        await asyncio.gather(*(task for task, _ in task_contexts), return_exceptions=True)
+        await asyncio.gather(
+            *(task for task, _ in task_contexts), return_exceptions=True
+        )
 
 
-def _runtime_policy_value(runtime_policy: Dict[str, Any], key: str, default: int) -> int:
+def _runtime_policy_value(
+    runtime_policy: Dict[str, Any], key: str, default: int
+) -> int:
     value = runtime_policy.get(key)
     try:
         parsed = int(value)
@@ -495,13 +547,17 @@ async def _run_title_task_with_cleanup(
         await _close_llm_instance(llm)
 
 
-async def _run_background_compaction_task(agent: Agent, session: Session, trigger_run_id: str) -> None:
+async def _run_background_compaction_task(
+    agent: Agent, session: Session, trigger_run_id: str
+) -> None:
     try:
         await agent.run_background_compaction(session, trigger_run_id)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        logger.warning("Background compaction task failed for %s: %s", session.session_id, exc)
+        logger.warning(
+            "Background compaction task failed for %s: %s", session.session_id, exc
+        )
 
 
 async def _schedule_background_compaction_task(
@@ -512,11 +568,15 @@ async def _schedule_background_compaction_task(
     connection_id = user_manager.session_connections.get(session.session_id)
 
     async with state_lock:
-        existing_task = runtime_state.active_session_compaction_tasks.get(session.session_id)
+        existing_task = runtime_state.active_session_compaction_tasks.get(
+            session.session_id
+        )
         if existing_task is not None and not existing_task.done():
             return
 
-        task = asyncio.create_task(_run_background_compaction_task(agent, session, trigger_run_id))
+        task = asyncio.create_task(
+            _run_background_compaction_task(agent, session, trigger_run_id)
+        )
         runtime_state.pending_tasks.add(task)
         runtime_state.active_session_compaction_tasks[session.session_id] = task
         runtime_state.task_sessions[task] = session.session_id
@@ -534,13 +594,19 @@ async def get_or_create_agent(
             return None
 
         if session_id not in runtime_state.active_agents:
-            effective_runtime_policy = execution_spec.get("runtime") if isinstance(execution_spec.get("runtime"), dict) else {}
+            effective_runtime_policy = (
+                execution_spec.get("runtime")
+                if isinstance(execution_spec.get("runtime"), dict)
+                else {}
+            )
             agent = Agent(
                 llm=create_llm_for_execution_spec(execution_spec),
                 tool_registry=tool_registry,
                 user_manager=user_manager,
                 skill_provider=runtime_state.current_context_bundle.skill_provider,
-                custom_system_prompt=str(runtime_state.current_config.get("system_prompt") or ""),
+                custom_system_prompt=str(
+                    runtime_state.current_config.get("system_prompt") or ""
+                ),
                 tool_filter=(
                     lambda tool, current_config=dict(runtime_state.current_config): (
                         _is_tool_enabled_for_config(tool.name, current_config)
@@ -558,13 +624,17 @@ async def get_or_create_agent(
                     "max_tool_rounds",
                     DEFAULT_RUNTIME_POLICY["max_tool_rounds"],
                 ),
-                max_retries=_runtime_policy_value(effective_runtime_policy, "max_retries", 3),
+                max_retries=_runtime_policy_value(
+                    effective_runtime_policy, "max_retries", 3
+                ),
             )
             agent.background_compaction_scheduler = (
-                lambda session, run_id, current_agent=agent: _schedule_background_compaction_task(
-                    current_agent,
-                    session,
-                    run_id,
+                lambda session, run_id, current_agent=agent: (
+                    _schedule_background_compaction_task(
+                        current_agent,
+                        session,
+                        run_id,
+                    )
                 )
             )
             runtime_state.active_agents[session_id] = agent
@@ -598,34 +668,44 @@ async def websocket_endpoint(websocket: WebSocket):
                 data = await websocket.receive_json()
 
                 async with state_lock:
-                    is_authenticated = connection_id in runtime_state.authenticated_connections
+                    is_authenticated = (
+                        connection_id in runtime_state.authenticated_connections
+                    )
 
                 message_type = data.get("type")
                 if not is_authenticated:
                     if message_type != "config":
-                        await websocket.send_json({
-                            "type": "error",
-                            "error": "Connection not authenticated. Send config with auth_token first.",
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "error": "Connection not authenticated. Send config with auth_token first.",
+                            }
+                        )
                         continue
                     provided_token = str(data.get("auth_token") or "")
                     if provided_token != runtime_state.auth_token:
-                        await websocket.send_json({
-                            "type": "error",
-                            "error": "Invalid auth_token in config handshake.",
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "error": "Invalid auth_token in config handshake.",
+                            }
+                        )
                         continue
                     async with state_lock:
                         runtime_state.authenticated_connections.add(connection_id)
 
                 if message_type == "message":
                     async with state_lock:
-                        has_bound_workspace = connection_id in runtime_state.connection_workspaces
+                        has_bound_workspace = (
+                            connection_id in runtime_state.connection_workspaces
+                        )
                     if not has_bound_workspace:
-                        await websocket.send_json({
-                            "type": "error",
-                            "error": "Workspace not set. Send set_workspace before message.",
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "error": "Workspace not set. Send set_workspace before message.",
+                            }
+                        )
                         continue
                     # Never trust per-message workspace overrides over connection binding.
                     data["workspace_path"] = None
@@ -673,11 +753,13 @@ async def handle_message(
     elif message_type == "set_workspace":
         await handle_set_workspace(data, send_callback, connection_id)
     else:
-        await send_callback({
-            "type": "error",
-            "session_id": data.get("session_id"),
-            "error": f"Unknown message type: {message_type}"
-        })
+        await send_callback(
+            {
+                "type": "error",
+                "session_id": data.get("session_id"),
+                "error": f"Unknown message type: {message_type}",
+            }
+        )
 
 
 async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> None:
@@ -697,12 +779,18 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
             runtime_state.current_context_bundle = context_bundle
             runtime_state.active_agents.clear()
 
-        await send_callback({
-            "type": "config_updated",
-            "provider": get_primary_profile_config(runtime_state.current_config)["provider"],
-            "model": get_primary_profile_config(runtime_state.current_config)["model"],
-            "ocr": _build_ocr_status_payload(runtime_state.current_config),
-        })
+        await send_callback(
+            {
+                "type": "config_updated",
+                "provider": get_primary_profile_config(runtime_state.current_config)[
+                    "provider"
+                ],
+                "model": get_primary_profile_config(runtime_state.current_config)[
+                    "model"
+                ],
+                "ocr": _build_ocr_status_payload(runtime_state.current_config),
+            }
+        )
 
         logger.info(
             "Configuration updated: provider=%s, model=%s",
@@ -713,7 +801,9 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
     except Exception as e:
         logger.exception(f"Failed to configure LLM: {e}")
         await send_callback(
-            _error_payload("Failed to configure LLM. Check your settings and backend logs.")
+            _error_payload(
+                "Failed to configure LLM. Check your settings and backend logs."
+            )
         )
 
 
@@ -729,18 +819,13 @@ async def handle_user_message(
     normalized_content = content if isinstance(content, str) else ""
 
     if not session_id:
-        await send_callback({
-            "type": "error",
-            "error": "Missing session_id"
-        })
+        await send_callback({"type": "error", "error": "Missing session_id"})
         return
 
     if not normalized_content and not attachments:
-        await send_callback({
-            "type": "error",
-            "session_id": session_id,
-            "error": "Missing content"
-        })
+        await send_callback(
+            {"type": "error", "session_id": session_id, "error": "Missing content"}
+        )
         return
 
     async with state_lock:
@@ -748,13 +833,14 @@ async def handle_user_message(
         workspace = (
             workspace_path
             if workspace_path
-            else runtime_state.connection_workspaces.get(connection_id, runtime_state.default_workspace)
+            else runtime_state.connection_workspaces.get(
+                connection_id, runtime_state.default_workspace
+            )
         )
         existing_task = runtime_state.active_session_tasks.get(session_id)
 
         if existing_task is not None and (
-            existing_task is SESSION_TASK_RESERVED
-            or not existing_task.done()
+            existing_task is SESSION_TASK_RESERVED or not existing_task.done()
         ):
             llm = None
             workspace = None
@@ -767,19 +853,23 @@ async def handle_user_message(
                 runtime_state.active_session_tasks[session_id] = SESSION_TASK_RESERVED
 
     if duplicate_run:
-        await send_callback({
-            "type": "error",
-            "session_id": session_id,
-            "error": f"Session {session_id} already has an active run"
-        })
+        await send_callback(
+            {
+                "type": "error",
+                "session_id": session_id,
+                "error": f"Session {session_id} already has an active run",
+            }
+        )
         return
 
     if not current_config:
-        await send_callback({
-            "type": "error",
-            "session_id": session_id,
-            "error": "LLM not configured. Please send a config message first."
-        })
+        await send_callback(
+            {
+                "type": "error",
+                "session_id": session_id,
+                "error": "LLM not configured. Please send a config message first.",
+            }
+        )
         return
 
     try:
@@ -791,38 +881,51 @@ async def handle_user_message(
         active_profile = conversation_spec["profile"]
 
         if current_config:
-            active_lock_ref = lock_ref_from_profile(active_profile) if active_profile else None
+            active_lock_ref = (
+                lock_ref_from_profile(active_profile) if active_profile else None
+            )
 
-            if session.locked_model and (not active_profile or not session_lock_matches_profile(session.locked_model, active_profile)):
+            if session.locked_model and (
+                not active_profile
+                or not session_lock_matches_profile(
+                    session.locked_model, active_profile
+                )
+            ):
                 await _release_reserved_session(session_id)
-                await send_callback({
-                    "type": "error",
-                    "session_id": session_id,
-                    "error": (
-                        f"Session {session_id} is locked to "
-                        f"{session.locked_model.provider}/{session.locked_model.model}"
-                    ),
-                })
+                await send_callback(
+                    {
+                        "type": "error",
+                        "session_id": session_id,
+                        "error": (
+                            f"Session {session_id} is locked to "
+                            f"{session.locked_model.provider}/{session.locked_model.model}"
+                        ),
+                    }
+                )
                 return
 
             if session.locked_model is None and active_lock_ref is not None:
                 session.locked_model = active_lock_ref
                 await session.save_metadata_async()
-                await send_callback({
-                    "type": "session_lock_updated",
-                    "session_id": session_id,
-                    "locked_model": active_lock_ref.model_dump(mode="json"),
-                })
+                await send_callback(
+                    {
+                        "type": "session_lock_updated",
+                        "session_id": session_id,
+                        "locked_model": active_lock_ref.model_dump(mode="json"),
+                    }
+                )
 
         await user_manager.bind_session_to_connection(session_id, connection_id)
 
         if not active_profile:
             await _release_reserved_session(session_id)
-            await send_callback({
-                "type": "error",
-                "session_id": session_id,
-                "error": "Failed to resolve active model profile for this session.",
-            })
+            await send_callback(
+                {
+                    "type": "error",
+                    "session_id": session_id,
+                    "error": "Failed to resolve active model profile for this session.",
+                }
+            )
             return
 
         has_image_attachments = isinstance(attachments, list) and any(
@@ -840,46 +943,57 @@ async def handle_user_message(
                 supported_input_types = []
             if "image" not in supported_input_types:
                 await _release_reserved_session(session_id)
-                await send_callback({
-                    "type": "error",
-                    "session_id": session_id,
-                    "error": (
-                        f"Model {active_profile.get('provider')}/{active_profile.get('model')} "
-                        "does not support image input."
-                    ),
-                })
+                await send_callback(
+                    {
+                        "type": "error",
+                        "session_id": session_id,
+                        "error": (
+                            f"Model {active_profile.get('provider')}/{active_profile.get('model')} "
+                            "does not support image input."
+                        ),
+                    }
+                )
                 return
 
         agent = await get_or_create_agent(session_id, conversation_spec)
         if not agent:
             await _release_reserved_session(session_id)
-            await send_callback({
-                "type": "error",
-                "session_id": session_id,
-                "error": "Failed to create agent"
-            })
+            await send_callback(
+                {
+                    "type": "error",
+                    "session_id": session_id,
+                    "error": "Failed to create agent",
+                }
+            )
             return
 
         agent.reset_interrupt()
 
         if isinstance(attachments, list) and attachments:
             task = asyncio.create_task(
-                run_agent_task(agent, normalized_content, session, send_callback, attachments=attachments)
+                run_agent_task(
+                    agent,
+                    normalized_content,
+                    session,
+                    send_callback,
+                    attachments=attachments,
+                )
             )
         else:
-            task = asyncio.create_task(run_agent_task(agent, normalized_content, session, send_callback))
+            task = asyncio.create_task(
+                run_agent_task(agent, normalized_content, session, send_callback)
+            )
 
-        should_generate_title = (
-            bool(normalized_content.strip())
-            and not session.title
-        )
+        should_generate_title = bool(normalized_content.strip()) and not session.title
         title_task = None
         if should_generate_title:
             background_spec = build_execution_spec(current_config, "background")
             title_llm = create_llm_for_execution_spec(background_spec)
             if callable(getattr(title_llm, "complete", None)):
                 title_task = asyncio.create_task(
-                    _run_title_task_with_cleanup(session, title_llm, normalized_content, send_callback)
+                    _run_title_task_with_cleanup(
+                        session, title_llm, normalized_content, send_callback
+                    )
                 )
 
         async with state_lock:
@@ -1036,32 +1150,40 @@ async def handle_interrupt(data: Dict[str, Any]) -> None:
         logger.info(f"Agent interrupted for session: {session_id}")
 
 
-async def handle_set_execution_mode(data: Dict[str, Any], send_callback: SendCallback) -> None:
+async def handle_set_execution_mode(
+    data: Dict[str, Any], send_callback: SendCallback
+) -> None:
     session_id = _normalize_non_empty_string(data.get("session_id"))
     mode = _normalize_execution_mode(data.get("execution_mode"))
 
     if not session_id:
-        await send_callback({
-            "type": "error",
-            "error": "Missing or invalid session_id",
-        })
+        await send_callback(
+            {
+                "type": "error",
+                "error": "Missing or invalid session_id",
+            }
+        )
         return
 
     if mode is None:
-        await send_callback({
-            "type": "error",
-            "session_id": session_id,
-            "error": f"Invalid execution_mode: {data.get('execution_mode')}",
-        })
+        await send_callback(
+            {
+                "type": "error",
+                "session_id": session_id,
+                "error": f"Invalid execution_mode: {data.get('execution_mode')}",
+            }
+        )
         return
 
     effective_mode = user_manager.set_session_execution_mode(session_id, mode)
 
-    await send_callback({
-        "type": "execution_mode_updated",
-        "session_id": session_id,
-        "execution_mode": effective_mode,
-    })
+    await send_callback(
+        {
+            "type": "execution_mode_updated",
+            "session_id": session_id,
+            "execution_mode": effective_mode,
+        }
+    )
 
     logger.info(
         "Execution mode updated: session=%s mode=%s",
@@ -1078,25 +1200,26 @@ async def handle_set_workspace(
     workspace_path = data.get("workspace_path")
 
     if not workspace_path:
-        await send_callback({
-            "type": "error",
-            "error": "Missing workspace_path"
-        })
+        await send_callback({"type": "error", "error": "Missing workspace_path"})
         return
 
     workspace = Path(workspace_path)
     if not workspace.exists():
-        await send_callback({
-            "type": "error",
-            "error": f"Workspace path does not exist: {workspace_path}"
-        })
+        await send_callback(
+            {
+                "type": "error",
+                "error": f"Workspace path does not exist: {workspace_path}",
+            }
+        )
         return
 
     if not workspace.is_dir():
-        await send_callback({
-            "type": "error",
-            "error": f"Workspace path is not a directory: {workspace_path}"
-        })
+        await send_callback(
+            {
+                "type": "error",
+                "error": f"Workspace path is not a directory: {workspace_path}",
+            }
+        )
         return
 
     resolved_workspace = str(workspace.resolve())
@@ -1105,10 +1228,9 @@ async def handle_set_workspace(
         if connection_id:
             runtime_state.connection_workspaces[connection_id] = resolved_workspace
 
-    await send_callback({
-        "type": "workspace_updated",
-        "workspace_path": resolved_workspace
-    })
+    await send_callback(
+        {"type": "workspace_updated", "workspace_path": resolved_workspace}
+    )
 
     logger.info(f"Workspace updated: {resolved_workspace}")
 
@@ -1121,7 +1243,7 @@ async def root():
         "message": "AI Agent Backend",
         "status": "running",
         "provider": config.get("provider") if config else None,
-        "model": config.get("model") if config else None
+        "model": config.get("model") if config else None,
     }
 
 
@@ -1156,10 +1278,23 @@ async def test_config(request: Request, data: Dict[str, Any]):
 
     raw_provider = str(data.get("provider") or "").strip().lower()
     if not raw_provider:
-        return JSONResponse(status_code=400, content={"ok": False, "error": "Missing provider"})
+        return JSONResponse(
+            status_code=400, content={"ok": False, "error": "Missing provider"}
+        )
 
-    if raw_provider not in ("openai", "deepseek", "kimi", "glm", "minimax", "qwen", "ollama"):
-        return JSONResponse(status_code=400, content={"ok": False, "error": f"Unsupported provider: {raw_provider}"})
+    if raw_provider not in (
+        "openai",
+        "deepseek",
+        "kimi",
+        "glm",
+        "minimax",
+        "qwen",
+        "ollama",
+    ):
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": f"Unsupported provider: {raw_provider}"},
+        )
 
     config = _normalize_provider_config({**data, "provider": raw_provider})
     provider = config["provider"]
@@ -1168,10 +1303,14 @@ async def test_config(request: Request, data: Dict[str, Any]):
     base_url = config["base_url"]
 
     if provider != "ollama" and not api_key:
-        return JSONResponse(status_code=400, content={"ok": False, "error": "Missing api_key"})
+        return JSONResponse(
+            status_code=400, content={"ok": False, "error": "Missing api_key"}
+        )
 
     if not base_url:
-        return JSONResponse(status_code=400, content={"ok": False, "error": "Missing base_url"})
+        return JSONResponse(
+            status_code=400, content={"ok": False, "error": "Missing base_url"}
+        )
 
     headers: Dict[str, str] = {}
     if provider != "ollama":
@@ -1189,7 +1328,7 @@ async def test_config(request: Request, data: Dict[str, Any]):
                     status_code=400,
                     content={
                         "ok": False,
-                        "error": f"Ollama probe failed with HTTP {response.status_code}"
+                        "error": f"Ollama probe failed with HTTP {response.status_code}",
                     },
                 )
 
@@ -1224,9 +1363,15 @@ async def test_config(request: Request, data: Dict[str, Any]):
                     "stream": False,
                     "max_tokens": 1,
                 }
-                if provider == "kimi" and str(model).strip().lower().startswith("kimi-k2.5"):
-                    chat_payload["temperature"] = 1.0 if config.get("enable_reasoning") else 0.6
-                chat_response = await client.post(chat_url, headers=chat_headers, json=chat_payload)
+                if provider == "kimi" and str(model).strip().lower().startswith(
+                    "kimi-k2.5"
+                ):
+                    chat_payload["temperature"] = (
+                        1.0 if config.get("enable_reasoning") else 0.6
+                    )
+                chat_response = await client.post(
+                    chat_url, headers=chat_headers, json=chat_payload
+                )
                 if chat_response.is_success:
                     return {"ok": True}
 
@@ -1245,17 +1390,21 @@ async def test_config(request: Request, data: Dict[str, Any]):
                 status_code=400,
                 content={
                     "ok": False,
-                    "error": f"Models probe failed with HTTP {response.status_code}"
+                    "error": f"Models probe failed with HTTP {response.status_code}",
                 },
             )
     except Exception as e:
         logger.exception("Test config probe failed: %s", e)
         return JSONResponse(
             status_code=400,
-            content={"ok": False, "error": "Connection test failed before the provider returned a response"},
+            content={
+                "ok": False,
+                "error": "Connection test failed before the provider returned a response",
+            },
         )
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=8765)

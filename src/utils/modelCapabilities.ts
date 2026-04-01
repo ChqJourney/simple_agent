@@ -18,8 +18,8 @@ const GLM_IMAGE_UNSUPPORTED_PREFIXES = ['glm-5', 'glm-4.7', 'glm-4.6'];
 const DEEPSEEK_IMAGE_UNSUPPORTED_PREFIXES = ['deepseek-chat', 'deepseek-reasoner'];
 const MINIMAX_IMAGE_SUPPORTED_PREFIXES: string[] = [];
 const MINIMAX_IMAGE_UNSUPPORTED_PREFIXES = ['minimax-m2'];
-const QWEN_IMAGE_SUPPORTED_PREFIXES = ['qvq'];
-const QWEN_IMAGE_UNSUPPORTED_PREFIXES = ['qwen3', 'qwq'];
+const QWEN_IMAGE_SUPPORTED_PREFIXES = ['qvq','qwen3.5','qwen3.5-plus', 'qwen3.5-plus-2026-02-15'];
+const QWEN_IMAGE_UNSUPPORTED_PREFIXES = ['qwq','qwen3-max-2026-01-23', 'qwen3-coder-next'];
 const OLLAMA_IMAGE_SUPPORTED_PREFIXES: string[] = [];
 const OLLAMA_IMAGE_UNSUPPORTED_PREFIXES: string[] = [];
 const DEFAULT_CONTEXT_LENGTH_PREFIXES: Partial<Record<ProviderType, Record<string, number>>> = {
@@ -37,6 +37,7 @@ const DEFAULT_CONTEXT_LENGTH_PREFIXES: Partial<Record<ProviderType, Record<strin
   },
   kimi: {
     'kimi-k2.5': 256000,
+    'kimi-k2-thinking': 256000,
   },
   glm: {
     'glm-5': 128000,
@@ -45,7 +46,17 @@ const DEFAULT_CONTEXT_LENGTH_PREFIXES: Partial<Record<ProviderType, Record<strin
   },
   minimax: {
     'minimax-m2': 200000,
+    'minimax-m2.7': 200000,
+    'minimax-m2.5': 200000,
   },
+  qwen: {
+    'qwen3': 256000,
+    'qwen3.5': 256000,
+    'qwen3.5-plus': 256000,
+    'qwen3.5-plus-2026-02-15': 256000,
+    'qwen3-max-2026-01-23': 256000,
+    'qwen3-coder-next': 128000,
+  }
 };
 
 function normalizeModel(model: string): string {

@@ -46,7 +46,7 @@ export const DEFAULT_OCR_CONFIG: Required<OcrConfig> = {
   enabled: false,
 };
 
-export function getDefaultBaseUrl(provider: ProviderType): string {
+function getDefaultBaseUrl(provider: ProviderType): string {
   return DEFAULT_BASE_URLS[provider];
 }
 

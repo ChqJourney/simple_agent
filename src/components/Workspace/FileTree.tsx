@@ -5,6 +5,7 @@ import { copyFile, exists, readDir } from '@tauri-apps/plugin-fs';
 import { useWorkspaceStore } from '../../stores';
 import { getFileIconKind, isImagePath } from '../../utils/fileTypes';
 import { clearActiveDraggedFileDescriptors, setActiveDraggedFileDescriptors } from '../../utils/internalDragState';
+import { OpenFolderIcon, ImportFilesIcon } from './FileTreeIcons';
 
 interface FileNode {
   name: string;
@@ -415,17 +416,19 @@ export const FileTree: React.FC = () => {
               type="button"
               onClick={() => void handleOpenWorkspace()}
               disabled={!currentWorkspace?.path || isOpeningWorkspace}
-              className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="group relative rounded-lg border border-gray-200 p-1.5 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              title="Open folder"
             >
-              {isOpeningWorkspace ? 'Opening...' : 'Open folder'}
+              <OpenFolderIcon className="h-5 w-5" />
             </button>
             <button
               type="button"
               onClick={() => void handleImportFiles()}
               disabled={!currentWorkspace?.path || isImporting}
-              className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="group relative rounded-lg border border-gray-200 p-1.5 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              title="Import files"
             >
-              {isImporting ? 'Importing...' : 'Import files'}
+              <ImportFilesIcon className="h-5 w-5" />
             </button>
           </div>
         </div>

@@ -14,6 +14,7 @@ OPENAI_REASONING_PREFIXES = (
 )
 KIMI_REASONING_PREFIXES = (
     'kimi-k2.5',
+    'kimi-k2-thinking',
 )
 GLM_REASONING_PREFIXES = (
     'glm-5',
@@ -40,13 +41,13 @@ OPENAI_VISION_PREFIXES = (
     'gpt-5',
 )
 KIMI_VISION_PREFIXES = (
-    'kimi-k2.5',
+    'kimi-k2.5','kimi-k2-thinking',
 )
 GLM_VISION_PREFIXES = (
     'glm-4.6v',
 )
 QWEN_VISION_PREFIXES = (
-    'qvq',
+    'qvq','qwen3.5','qwen3.5-plus', 'qwen3.5-plus-2026-02-15',
 )
 MINIMAX_VISION_PREFIXES = tuple()
 OLLAMA_VISION_PREFIXES = tuple()
@@ -65,14 +66,24 @@ DEFAULT_CONTEXT_LENGTH_PREFIXES = {
     },
     'kimi': {
         'kimi-k2.5': 256000,
+        'kimi-k2-thinking': 256000,
+
     },
     'glm': {
-        'glm-5': 128000,
+        'glm-5': 256000,
         'glm-4.7': 128000,
         'glm-4.6': 128000,
     },
     'minimax': {
         'minimax-m2': 200000,
+        'minimax-m2.5': 256000,
+        'minimax-m2.7': 256000,
+    },
+    'qwen': {
+        'qwen3-max-2026-01-23': 128000,
+        'qwen3.5-plus': 256000,
+        'qwen3.5-plus-2026-02-15': 256000,
+        'qwen3-coder-next': 128000,
     },
 }
 

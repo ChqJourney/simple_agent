@@ -32,10 +32,10 @@ const PROVIDERS: { value: ProviderType; label: string }[] = [
 const MODELS: Record<ProviderType, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
   deepseek: ['deepseek-chat', 'deepseek-reasoner'],
-  kimi: ['kimi-k2.5'],
+  kimi: ['kimi-k2.5','kimi-k2-thinking'],
   glm: ['glm-5', 'glm-4.7', 'glm-4.6', 'glm-4.6v'],
   minimax: ['MiniMax-M2.5', 'MiniMax-M2.7'],
-  qwen: ['qwen3-max-2026-01-23', 'qwen3.5-plus', 'qwen3-coder-next'],
+  qwen: ['qwen3-max-2026-01-23', 'qwen3.5-plus-2026-02-15','qwen3.5-plus', 'qwen3-coder-next'],
   ollama: ['llama3.1', 'llama3.2', 'qwen3:8b', 'mistral', 'codellama'],
 };
 

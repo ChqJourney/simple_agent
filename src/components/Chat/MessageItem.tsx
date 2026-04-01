@@ -67,7 +67,7 @@ export const MessageItem = memo<MessageItemProps>(({
     <div
       className={`${
         isUser
-          ? 'w-full max-w-[80%]'
+          ? 'w-full max-w-none'
           : 'w-full max-w-none'
       }`}
     >

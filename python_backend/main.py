@@ -1399,7 +1399,7 @@ async def test_config(request: Request, data: Dict[str, Any]):
             status_code=400,
             content={
                 "ok": False,
-                "error": "Connection test failed before the provider returned a response",
+                "error": f"Connection test failed: {str(e)}",
             },
         )
 

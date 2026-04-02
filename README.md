@@ -1,5 +1,7 @@
 # AI Agent
 
+> 📖 **新手入门？** 请先阅读 [**用户指南 (User Guide)**](./USER_GUIDE.md) — 三步上手，快速了解对话、工具确认、设置等核心功能。
+
 基于 `Tauri + React + TypeScript + Python(FastAPI/WebSocket)` 的桌面 Agent 应用。
 
 项目现在已经从“单一聊天壳子”演进到一套可扩展的 Agent 平台，重点能力包括：

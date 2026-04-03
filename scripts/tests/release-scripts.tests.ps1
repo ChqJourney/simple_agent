@@ -44,7 +44,8 @@ $releaseExecutable = Get-ReleaseExecutablePath
 $expectedExecutable = Join-Path $projectRoot ("src-tauri/target/release/{0}.exe" -f (Get-BinaryBaseName))
 Assert-Equal -Actual $releaseExecutable -Expected $expectedExecutable -Message "Release executable path should resolve from package metadata."
 
-Assert-True -Condition (Test-Path -LiteralPath (Split-Path $releaseExecutable -Parent)) -Message "Release executable directory should exist."
+$expectedReleaseExecutableDir = Join-Path $projectRoot "src-tauri/target/release"
+Assert-Equal -Actual (Split-Path $releaseExecutable -Parent) -Expected $expectedReleaseExecutableDir -Message "Release executable directory should resolve to the Tauri release target directory."
 
 $portableResourcesPath = Get-PortableResourcesPath
 $expectedPortableResourcesPath = Join-Path $projectRoot "src-tauri/resources"

@@ -704,7 +704,7 @@ function Join-UrlPath {
     )
 
     $normalizedBase = $BaseUrl.Trim().TrimEnd("/")
-    $normalizedRelative = ($RelativePath -replace "\\", "/").TrimStart("/")
+    $normalizedRelative = ($RelativePath -replace "[\\/]+", "/").TrimStart("/")
     return "$normalizedBase/$normalizedRelative"
 }
 

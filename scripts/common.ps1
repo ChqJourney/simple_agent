@@ -387,11 +387,12 @@ function Get-UpdaterEndpoints {
         return @()
     }
 
-    return @(
-        $raw -split "[`r`n,;]+"
-        | ForEach-Object { $_.Trim() }
-        | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-    )
+    $endpoints = @($raw -split "[`r`n,;]+")
+    $normalized = $endpoints |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    return @($normalized)
 }
 
 function Get-UpdaterPubKey {

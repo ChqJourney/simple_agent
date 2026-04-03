@@ -581,7 +581,8 @@ function Invoke-WindowsCodeSignFiles {
 }
 
 function Test-UpdaterConfigInputsAvailable {
-    return ((Get-UpdaterEndpoints).Count -gt 0 -and -not [string]::IsNullOrWhiteSpace((Get-UpdaterPubKey)))
+    $endpoints = @(Get-UpdaterEndpoints)
+    return ($endpoints.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace((Get-UpdaterPubKey)))
 }
 
 function Test-TauriUpdaterArtifactSigningConfigured {
@@ -619,9 +620,10 @@ function New-TauriBuildConfigOverrideFile {
     }
 
     if (Test-UpdaterConfigInputsAvailable) {
+        $updaterEndpoints = @(Get-UpdaterEndpoints)
         $config.plugins = @{
             updater = @{
-                endpoints = Get-UpdaterEndpoints
+                endpoints = $updaterEndpoints
                 pubkey = Get-UpdaterPubKey
             }
         }

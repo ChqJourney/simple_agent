@@ -28,6 +28,7 @@ jobs:
       WINDOWS_SIGN_CERT_BASE64: ${{ secrets.TAURI_AGENT_WINDOWS_SIGN_CERT_BASE64 }}
       WINDOWS_SIGN_CERT_PASSWORD_INPUT: ${{ secrets.TAURI_AGENT_WINDOWS_SIGN_CERT_PASSWORD }}
       TAURI_AGENT_WINDOWS_SIGN_TIMESTAMP_URL: https://timestamp.digicert.com
+      TAURI_AGENT_WINDOWS_SIGN_TSP: "true"
 
     steps:
       - name: Checkout
@@ -222,6 +223,19 @@ jobs:
           "TAURI_AGENT_WINDOWS_SIGN_CERT_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_CERT_PASSWORD_INPUT)) {
+            $securePassword = ConvertTo-SecureString -String $env:WINDOWS_SIGN_CERT_PASSWORD_INPUT -AsPlainText -Force
+            $importedCertificate = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $securePassword
+          } else {
+            $importedCertificate = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My
+          }
+
+          if ($null -eq $importedCertificate) {
+            throw "Failed to import Windows signing certificate into Cert:\\CurrentUser\\My"
+          }
+
+          "TAURI_AGENT_WINDOWS_SIGN_CERT_THUMBPRINT=$($importedCertificate.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_CERT_PASSWORD_INPUT)) {
             $delimiter = [System.Guid]::NewGuid().ToString("N")
             Add-Content -LiteralPath $env:GITHUB_ENV -Value "TAURI_AGENT_WINDOWS_SIGN_CERT_PASSWORD<<$delimiter"
             Add-Content -LiteralPath $env:GITHUB_ENV -Value $env:WINDOWS_SIGN_CERT_PASSWORD_INPUT
@@ -229,6 +243,7 @@ jobs:
           }
 
           Write-Host "Prepared Windows signing certificate at $certPath"
+          Write-Host "Imported certificate thumbprint: $($importedCertificate.Thumbprint)"
 
       - name: Report signing mode
         shell: pwsh

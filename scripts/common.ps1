@@ -479,6 +479,15 @@ function Get-WindowsCodeSignTimestampDigestAlgorithm {
     return $digest.Trim().ToUpperInvariant()
 }
 
+function Test-WindowsCodeSignTspEnabled {
+    $value = [Environment]::GetEnvironmentVariable("TAURI_AGENT_WINDOWS_SIGN_TSP")
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $true
+    }
+
+    return $value.Trim().ToLowerInvariant() -eq "true"
+}
+
 function Get-WindowsCodeSigningConfig {
     $signToolPath = Get-WindowsCodeSignToolPath
     if ([string]::IsNullOrWhiteSpace($signToolPath)) {
@@ -614,6 +623,31 @@ function New-TauriWindowsSignCommandConfig {
     }
 }
 
+function New-TauriWindowsBundleSigningConfig {
+    $signingConfig = Get-WindowsCodeSigningConfig
+    if ($null -eq $signingConfig) {
+        return $null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($signingConfig.certificateThumbprint)) {
+        $windowsConfig = @{
+            certificateThumbprint = $signingConfig.certificateThumbprint
+            digestAlgorithm = $signingConfig.fileDigestAlgorithm.ToLowerInvariant()
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($signingConfig.timestampUrl)) {
+            $windowsConfig.timestampUrl = $signingConfig.timestampUrl
+            $windowsConfig.tsp = (Test-WindowsCodeSignTspEnabled)
+        }
+
+        return $windowsConfig
+    }
+
+    return @{
+        signCommand = New-TauriWindowsSignCommandConfig
+    }
+}
+
 function New-TauriBuildConfigOverrideFile {
     $config = @{
         '$schema' = 'https://schema.tauri.app/config/2'
@@ -638,9 +672,7 @@ function New-TauriBuildConfigOverrideFile {
     }
 
     if (Test-WindowsCodeSigningConfigured) {
-        $config.bundle.windows = @{
-            signCommand = New-TauriWindowsSignCommandConfig
-        }
+        $config.bundle.windows = New-TauriWindowsBundleSigningConfig
     }
 
     if ($config.Count -le 1) {

@@ -142,6 +142,7 @@ $previousWindowsSignCertPassword = $env:TAURI_AGENT_WINDOWS_SIGN_CERT_PASSWORD
 $previousWindowsSignThumbprint = $env:TAURI_AGENT_WINDOWS_SIGN_CERT_THUMBPRINT
 $previousWindowsSignSubject = $env:TAURI_AGENT_WINDOWS_SIGN_CERT_SUBJECT
 $previousWindowsSignTimestampUrl = $env:TAURI_AGENT_WINDOWS_SIGN_TIMESTAMP_URL
+$previousWindowsSignTsp = $env:TAURI_AGENT_WINDOWS_SIGN_TSP
 
 $windowsSignTempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("tauri-agent-signing-tests-" + [System.Guid]::NewGuid().ToString("N"))
 $windowsSignTool = Join-Path $windowsSignTempRoot "signtool.exe"
@@ -157,7 +158,9 @@ try {
     $env:TAURI_AGENT_WINDOWS_SIGNTOOL_PATH = $windowsSignTool
     $env:TAURI_AGENT_WINDOWS_SIGN_CERT_FILE = $windowsCertFile
     $env:TAURI_AGENT_WINDOWS_SIGN_CERT_PASSWORD = "secret"
+    $env:TAURI_AGENT_WINDOWS_SIGN_CERT_THUMBPRINT = "A1B1A2B2A3B3A4B4A5B5A6B6A7B7A8B8A9B9A0B0"
     $env:TAURI_AGENT_WINDOWS_SIGN_TIMESTAMP_URL = "https://timestamp.example.com"
+    $env:TAURI_AGENT_WINDOWS_SIGN_TSP = "true"
 
     Assert-True -Condition (Test-UpdaterConfigInputsAvailable) -Message "Updater config inputs should be detected from environment variables."
     Assert-True -Condition (-not (Test-TauriUpdaterArtifactSigningConfigured)) -Message "Updater signing should remain disabled without a signing key."
@@ -179,8 +182,10 @@ try {
     Assert-Equal -Actual $buildConfig.plugins.updater.pubkey -Expected "PUBLIC_KEY" -Message "Updater public key should be written into the generated config."
     Assert-Equal -Actual $buildConfig.plugins.updater.endpoints.Count -Expected 2 -Message "Updater endpoints should be parsed into an array."
     Assert-True -Condition ($null -eq $createUpdaterArtifactsProperty -or $null -eq $createUpdaterArtifactsProperty.Value) -Message "Updater artifacts should not be enabled without a Tauri signing key."
-    Assert-Equal -Actual $buildConfig.bundle.windows.signCommand.cmd -Expected "powershell" -Message "Windows sign command should run through PowerShell."
-    Assert-True -Condition ($buildConfig.bundle.windows.signCommand.args -contains "%1") -Message "Windows sign command should preserve the %1 placeholder for Tauri."
+    Assert-Equal -Actual $buildConfig.bundle.windows.certificateThumbprint -Expected "A1B1A2B2A3B3A4B4A5B5A6B6A7B7A8B8A9B9A0B0" -Message "Windows bundle signing should use the configured certificate thumbprint."
+    Assert-Equal -Actual $buildConfig.bundle.windows.digestAlgorithm -Expected "sha256" -Message "Windows bundle signing should set the digest algorithm."
+    Assert-Equal -Actual $buildConfig.bundle.windows.timestampUrl -Expected "https://timestamp.example.com" -Message "Windows bundle signing should include the timestamp URL."
+    Assert-True -Condition ($buildConfig.bundle.windows.tsp) -Message "Windows bundle signing should enable RFC 3161 timestamping by default."
 
     Remove-Item -LiteralPath (Split-Path -Parent $generatedBuildConfig) -Recurse -Force
 }
@@ -194,6 +199,7 @@ finally {
     $env:TAURI_AGENT_WINDOWS_SIGN_CERT_THUMBPRINT = $previousWindowsSignThumbprint
     $env:TAURI_AGENT_WINDOWS_SIGN_CERT_SUBJECT = $previousWindowsSignSubject
     $env:TAURI_AGENT_WINDOWS_SIGN_TIMESTAMP_URL = $previousWindowsSignTimestampUrl
+    $env:TAURI_AGENT_WINDOWS_SIGN_TSP = $previousWindowsSignTsp
     if (Test-Path -LiteralPath $windowsSignTempRoot) {
         Remove-Item -LiteralPath $windowsSignTempRoot -Recurse -Force
     }

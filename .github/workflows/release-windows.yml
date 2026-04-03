@@ -204,11 +204,10 @@ jobs:
           "TAURI_AGENT_WINDOWS_SIGN_CERT_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_CERT_PASSWORD)) {
-            @"
-TAURI_AGENT_WINDOWS_SIGN_CERT_PASSWORD<<EOF
-$env:WINDOWS_SIGN_CERT_PASSWORD
-EOF
-"@ | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            $delimiter = [System.Guid]::NewGuid().ToString("N")
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value "TAURI_AGENT_WINDOWS_SIGN_CERT_PASSWORD<<$delimiter"
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value $env:WINDOWS_SIGN_CERT_PASSWORD
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value $delimiter
           }
 
           Write-Host "Prepared Windows signing certificate at $certPath"

@@ -761,7 +761,22 @@ function Get-RelativePathNormalized {
 
     $resolvedRoot = [System.IO.Path]::GetFullPath($Root)
     $resolvedPath = [System.IO.Path]::GetFullPath($Path)
-    $relative = [System.IO.Path]::GetRelativePath($resolvedRoot, $resolvedPath)
+
+    $getRelativePathMethod = [System.IO.Path].GetMethod("GetRelativePath", [Type[]]@([string], [string]))
+    if ($null -ne $getRelativePathMethod) {
+        $relative = [System.IO.Path]::GetRelativePath($resolvedRoot, $resolvedPath)
+        return ($relative -replace "\\", "/")
+    }
+
+    $directorySeparator = [System.IO.Path]::DirectorySeparatorChar
+    $alternateSeparator = [System.IO.Path]::AltDirectorySeparatorChar
+    if (-not $resolvedRoot.EndsWith($directorySeparator) -and -not $resolvedRoot.EndsWith($alternateSeparator)) {
+        $resolvedRoot = "$resolvedRoot$directorySeparator"
+    }
+
+    $rootUri = New-Object System.Uri($resolvedRoot)
+    $pathUri = New-Object System.Uri($resolvedPath)
+    $relative = [System.Uri]::UnescapeDataString($rootUri.MakeRelativeUri($pathUri).ToString())
     return ($relative -replace "\\", "/")
 }
 

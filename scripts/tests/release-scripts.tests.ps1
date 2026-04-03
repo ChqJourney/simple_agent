@@ -69,6 +69,9 @@ Assert-Equal -Actual $joinedUrl -Expected "https://updates.example.com/work-agen
 $relativePath = Get-RelativePathNormalized -Root "/tmp/work-agent" -Path "/tmp/work-agent/nsis/setup.exe"
 Assert-Equal -Actual $relativePath -Expected "nsis/setup.exe" -Message "Relative updater artifact paths should be normalized to forward slashes."
 
+$windowsRelativePath = Get-RelativePathNormalized -Root "C:\tmp\work-agent" -Path "C:\tmp\work-agent\nsis\setup.exe"
+Assert-Equal -Actual $windowsRelativePath -Expected "nsis/setup.exe" -Message "Relative updater artifact paths should support Windows-style absolute paths."
+
 $nsisTempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("tauri-agent-nsis-tests-" + [System.Guid]::NewGuid().ToString("N"))
 $singleInstallerDir = Join-Path $nsisTempRoot "nsis"
 $singleInstallerPath = Join-Path $singleInstallerDir "work-agent-setup.exe"

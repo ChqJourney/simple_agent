@@ -175,9 +175,10 @@ try {
     Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($generatedBuildConfig)) -Message "A temporary Tauri build config file should be generated when updater or signing env vars are present."
 
     $buildConfig = Get-Content -Raw -LiteralPath $generatedBuildConfig | ConvertFrom-Json
+    $createUpdaterArtifactsProperty = $buildConfig.bundle.PSObject.Properties["createUpdaterArtifacts"]
     Assert-Equal -Actual $buildConfig.plugins.updater.pubkey -Expected "PUBLIC_KEY" -Message "Updater public key should be written into the generated config."
     Assert-Equal -Actual $buildConfig.plugins.updater.endpoints.Count -Expected 2 -Message "Updater endpoints should be parsed into an array."
-    Assert-True -Condition ($null -eq $buildConfig.bundle.createUpdaterArtifacts) -Message "Updater artifacts should not be enabled without a Tauri signing key."
+    Assert-True -Condition ($null -eq $createUpdaterArtifactsProperty -or $null -eq $createUpdaterArtifactsProperty.Value) -Message "Updater artifacts should not be enabled without a Tauri signing key."
     Assert-Equal -Actual $buildConfig.bundle.windows.signCommand.cmd -Expected "powershell" -Message "Windows sign command should run through PowerShell."
     Assert-True -Condition ($buildConfig.bundle.windows.signCommand.args -contains "%1") -Message "Windows sign command should preserve the %1 placeholder for Tauri."
 

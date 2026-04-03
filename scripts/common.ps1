@@ -482,7 +482,7 @@ function Get-WindowsCodeSignTimestampDigestAlgorithm {
 function Test-WindowsCodeSignTspEnabled {
     $value = [Environment]::GetEnvironmentVariable("TAURI_AGENT_WINDOWS_SIGN_TSP")
     if ([string]::IsNullOrWhiteSpace($value)) {
-        return $true
+        return $false
     }
 
     return $value.Trim().ToLowerInvariant() -eq "true"
@@ -509,6 +509,7 @@ function Get-WindowsCodeSigningConfig {
         certificateThumbprint = $certificateThumbprint
         certificateSubject = $certificateSubject
         timestampUrl = Get-WindowsCodeSignTimestampUrl
+        tspEnabled = Test-WindowsCodeSignTspEnabled
         fileDigestAlgorithm = Get-WindowsCodeSignDigestAlgorithm
         timestampDigestAlgorithm = Get-WindowsCodeSignTimestampDigestAlgorithm
     }
@@ -529,7 +530,12 @@ function New-WindowsCodeSigningArguments {
     $arguments = @("sign", "/fd", $Config.fileDigestAlgorithm)
 
     if (-not [string]::IsNullOrWhiteSpace($Config.timestampUrl)) {
-        $arguments += @("/tr", $Config.timestampUrl, "/td", $Config.timestampDigestAlgorithm)
+        if ($Config.PSObject.Properties.Name -contains "tspEnabled" -and $Config.tspEnabled) {
+            $arguments += @("/tr", $Config.timestampUrl, "/td", $Config.timestampDigestAlgorithm)
+        }
+        else {
+            $arguments += @("/t", $Config.timestampUrl)
+        }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($Config.certificateFile)) {
@@ -637,7 +643,9 @@ function New-TauriWindowsBundleSigningConfig {
 
         if (-not [string]::IsNullOrWhiteSpace($signingConfig.timestampUrl)) {
             $windowsConfig.timestampUrl = $signingConfig.timestampUrl
-            $windowsConfig.tsp = (Test-WindowsCodeSignTspEnabled)
+            if ($signingConfig.tspEnabled) {
+                $windowsConfig.tsp = $true
+            }
         }
 
         return $windowsConfig

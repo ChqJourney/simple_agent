@@ -159,8 +159,8 @@ try {
     $env:TAURI_AGENT_WINDOWS_SIGN_CERT_FILE = $windowsCertFile
     $env:TAURI_AGENT_WINDOWS_SIGN_CERT_PASSWORD = "secret"
     $env:TAURI_AGENT_WINDOWS_SIGN_CERT_THUMBPRINT = "A1B1A2B2A3B3A4B4A5B5A6B6A7B7A8B8A9B9A0B0"
-    $env:TAURI_AGENT_WINDOWS_SIGN_TIMESTAMP_URL = "https://timestamp.example.com"
-    $env:TAURI_AGENT_WINDOWS_SIGN_TSP = "true"
+    $env:TAURI_AGENT_WINDOWS_SIGN_TIMESTAMP_URL = "http://timestamp.example.com"
+    $env:TAURI_AGENT_WINDOWS_SIGN_TSP = ""
 
     Assert-True -Condition (Test-UpdaterConfigInputsAvailable) -Message "Updater config inputs should be detected from environment variables."
     Assert-True -Condition (-not (Test-TauriUpdaterArtifactSigningConfigured)) -Message "Updater signing should remain disabled without a signing key."
@@ -169,9 +169,11 @@ try {
     $signingConfig = Get-WindowsCodeSigningConfig
     Assert-Equal -Actual $signingConfig.signToolPath -Expected $windowsSignTool -Message "Configured signtool path should be resolved from environment."
     Assert-Equal -Actual $signingConfig.certificateFile -Expected $windowsCertFile -Message "Configured certificate path should be resolved from environment."
+    Assert-True -Condition (-not $signingConfig.tspEnabled) -Message "RFC 3161 timestamping should remain opt-in when the environment flag is unset."
 
     $signArguments = New-WindowsCodeSigningArguments -FilePath "C:\temp\work-agent.exe" -Config $signingConfig
-    Assert-True -Condition ($signArguments -contains "/tr") -Message "Windows signing arguments should include timestamping when configured."
+    Assert-True -Condition ($signArguments -contains "/t") -Message "Windows signing arguments should use Authenticode timestamping by default."
+    Assert-True -Condition (-not ($signArguments -contains "/tr")) -Message "Windows signing arguments should not force RFC 3161 timestamping unless explicitly enabled."
     Assert-True -Condition ($signArguments -contains $windowsCertFile) -Message "Windows signing arguments should include the certificate path."
 
     $generatedBuildConfig = New-TauriBuildConfigOverrideFile
@@ -184,8 +186,9 @@ try {
     Assert-True -Condition ($null -eq $createUpdaterArtifactsProperty -or $null -eq $createUpdaterArtifactsProperty.Value) -Message "Updater artifacts should not be enabled without a Tauri signing key."
     Assert-Equal -Actual $buildConfig.bundle.windows.certificateThumbprint -Expected "A1B1A2B2A3B3A4B4A5B5A6B6A7B7A8B8A9B9A0B0" -Message "Windows bundle signing should use the configured certificate thumbprint."
     Assert-Equal -Actual $buildConfig.bundle.windows.digestAlgorithm -Expected "sha256" -Message "Windows bundle signing should set the digest algorithm."
-    Assert-Equal -Actual $buildConfig.bundle.windows.timestampUrl -Expected "https://timestamp.example.com" -Message "Windows bundle signing should include the timestamp URL."
-    Assert-True -Condition ($buildConfig.bundle.windows.tsp) -Message "Windows bundle signing should enable RFC 3161 timestamping by default."
+    Assert-Equal -Actual $buildConfig.bundle.windows.timestampUrl -Expected "http://timestamp.example.com" -Message "Windows bundle signing should include the timestamp URL."
+    $tspProperty = $buildConfig.bundle.windows.PSObject.Properties["tsp"]
+    Assert-True -Condition ($null -eq $tspProperty -or -not $tspProperty.Value) -Message "Windows bundle signing should not force RFC 3161 timestamping unless explicitly enabled."
 
     Remove-Item -LiteralPath (Split-Path -Parent $generatedBuildConfig) -Recurse -Force
 }

@@ -120,7 +120,7 @@ https://updates.example.com/work-agent/nsis/<installer>.exe.sig
 - `TAURI_AGENT_WINDOWS_SIGN_CERT_SUBJECT`
   - 可选，从证书存储按 subject 选择发布证书
 - `TAURI_AGENT_WINDOWS_SIGN_TIMESTAMP_URL`
-  - 可选，给 Authenticode 签名附加 RFC 3161 时间戳
+  - 可选，给 Authenticode 签名附加时间戳；仅当证书供应商要求 RFC 3161 时再额外开启 `TAURI_AGENT_WINDOWS_SIGN_TSP=true`
 
 说明：
 

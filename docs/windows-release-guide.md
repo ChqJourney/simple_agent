@@ -195,6 +195,8 @@ Windows PowerShell 示例：
 
 - 如果 PFX 有密码，必须配置
 - 如果你的证书是无密码 PFX，可以不配
+- 当前 workflow 默认会使用 `http://timestamp.digicert.com` 做普通 Authenticode 时间戳
+- 只有你的证书供应商明确要求 RFC 3161 时，才需要把 workflow 里的 `TAURI_AGENT_WINDOWS_SIGN_TSP` 改成 `true`
 
 ## 4. 如何生成 updater key
 

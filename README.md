@@ -16,6 +16,7 @@
 - session memory / compaction 与长会话上下文治理
 - delegated background subtasks 与消息流内 worker 卡片
 - 可选安装的 Paddle OCR sidecar、图片/PDF OCR 与前端 OCR 状态控制
+- 前端 `locale` 支持，当前内置 `zh-CN / en-US` 两种界面语言
 
 ## 架构概览
 
@@ -48,6 +49,7 @@ Workspace
 - Zustand
 - Tailwind CSS v4
 - React Router
+- 轻量前端 i18n 字典层（内置 `zh-CN / en-US`）
 
 ### 后端
 
@@ -100,6 +102,9 @@ Workspace
 - user message 展示：
   - workspace message list 中的用户消息按左对齐气泡展示
   - light / dark mode 下都带柔和底色与圆角
+- 前端 locale：
+  - 当前所有核心页面与高频组件都已接入中英文文案，包括 Welcome / Workspace / Settings / About、聊天区、工具卡片、文件树、task list、run timeline、OCR/UI 设置
+  - 时间格式展示会跟随应用 locale，而不再直接依赖系统默认语言
 - OCR 状态展示：
   - 当 `ocr.enabled = true` 时，workspace 顶栏会显示 `OCR: available / unavailable / starting`
   - 当 `ocr.enabled = false` 时，顶栏不显示 OCR 状态，LLM 也看不到 OCR 工具
@@ -110,6 +115,8 @@ Workspace
 - `primary` / `background` 多 profile 配置
 - Settings 页面会按 provider 记住最近一次保存的 `model / api_key / base_url`
 - provider 下拉会对已保存配置的 provider 标记 `Saved`
+- Settings `UI` tab 支持切换界面语言，当前提供 `中文 / English`
+- `uiStore.locale` 会持久化保存，并在应用启动时按 `navigator.language` 在中英文之间自动选择默认值
 - session 级 locked model 元数据
 - runtime 配置结构已统一到 `runtime.shared + role overrides`
 - 当前实际生效情况：

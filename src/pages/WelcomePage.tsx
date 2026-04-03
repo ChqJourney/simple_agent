@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigate } from 'react-router-dom';
+import { useI18n } from '../i18n';
 import { useUIStore, useWorkspaceStore } from '../stores';
 import { WorkspaceList, WorkspaceDrawer, Logo } from '../components/Welcome';
 
@@ -21,6 +22,7 @@ type WorkspacePrepareResult =
 
 export const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { workspaces, addWorkspace, setCurrentWorkspace, syncWorkspacePath } = useWorkspaceStore();
   const setPageLoading = useUIStore((state) => state.setPageLoading);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -40,7 +42,7 @@ export const WelcomePage: React.FC = () => {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Select Workspace Folder',
+        title: t('welcome.selectWorkspaceFolder'),
       });
       if (selected && typeof selected === 'string') {
         const prepared = await invoke<WorkspacePrepareResult>('prepare_workspace_path', {
@@ -54,7 +56,7 @@ export const WelcomePage: React.FC = () => {
             workspaces.find((workspace) => workspace.path === prepared.canonical_path);
 
           if (!existingWorkspace) {
-            throw new Error('Selected workspace already exists, but could not be resolved locally.');
+            throw new Error(t('welcome.workspaceAlreadyExistsError'));
           }
 
           const syncedWorkspace =
@@ -73,7 +75,7 @@ export const WelcomePage: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to create workspace:', error);
-      setCreateError(error instanceof Error ? error.message : 'Failed to create workspace.');
+      setCreateError(error instanceof Error ? error.message : t('welcome.createWorkspaceError'));
     } finally {
       setIsCreating(false);
     }
@@ -99,7 +101,7 @@ export const WelcomePage: React.FC = () => {
         <button
           onClick={() => setIsDrawerOpen(true)}
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-          title="Workspace list"
+          title={t('welcome.workspaceList')}
         >
           <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -108,7 +110,7 @@ export const WelcomePage: React.FC = () => {
         <button
           onClick={() => navigate('/settings')}
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-          title="Settings"
+          title={t('welcome.settings')}
         >
           <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -122,12 +124,11 @@ export const WelcomePage: React.FC = () => {
           <div className="flex items-center justify-center gap-4 mb-4">
             <Logo size={48} />
             <h1 className="text-4xl font-bold text-gray-900 dark:text-white">
-              Work Agent
+              {t('welcome.title')}
             </h1>
           </div>
           <p className="text-lg text-gray-600 dark:text-gray-400">
-            Your AI Assistant for File System Tasks and Beyond, <br />
-            not just answering questions but also taking actions on your behalf.
+            {t('welcome.subtitle')}
           </p>
         </div>
 
@@ -142,13 +143,13 @@ export const WelcomePage: React.FC = () => {
           disabled={isCreating}
           className="px-6 py-3 bg-slate-600 hover:bg-slate-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition-colors mb-8"
         >
-          {isCreating ? 'Creating...' : '+ New Workspace'}
+          {isCreating ? t('welcome.creatingWorkspace') : t('welcome.createWorkspace')}
         </button>
 
         {recentWorkspaces.length > 0 && (
           <div className="w-full max-w-md">
             <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3 text-center">
-              Recent Workspaces
+              {t('welcome.recentWorkspaces')}
             </h2>
             <WorkspaceList
               workspaces={recentWorkspaces}

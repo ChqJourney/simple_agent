@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 import type { Workspace } from '../../types';
 import { WorkspaceItem } from './WorkspaceItem';
 
@@ -13,6 +14,7 @@ export const WorkspaceList: React.FC<WorkspaceListProps> = ({
   onSelect,
   onDelete,
 }) => {
+  const { t } = useI18n();
   const handleDelete = (id: string) => {
     if (onDelete) {
       onDelete(id);
@@ -22,7 +24,7 @@ export const WorkspaceList: React.FC<WorkspaceListProps> = ({
   if (workspaces.length === 0) {
     return (
       <div className="text-center text-gray-500 dark:text-gray-400 py-4">
-        No workspaces yet
+        {t('welcome.noWorkspacesYet')}
       </div>
     );
   }

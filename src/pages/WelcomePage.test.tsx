@@ -38,6 +38,7 @@ describe("WelcomePage", () => {
     useUIStore.setState((state) => ({
       ...state,
       isPageLoading: false,
+      locale: "en-US",
     }));
   });
 

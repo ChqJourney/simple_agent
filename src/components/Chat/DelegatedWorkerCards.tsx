@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../../i18n';
 import { formatToolTechnicalValue } from '../../utils/toolMessages';
 
 export type DelegatedWorkerStatus = 'running' | 'completed' | 'failed';
@@ -68,6 +69,7 @@ function WorkerDetailModal({
   worker: DelegatedWorkerViewModel;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const workerLabel = useMemo(() => {
@@ -104,14 +106,14 @@ function WorkerDetailModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Delegated worker detail: ${worker.taskLabel}`}
+        aria-label={t('chat.delegated.modalLabel', { task: worker.taskLabel })}
         className="w-full max-w-2xl rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
-              Delegated Worker
+              {t('chat.delegated.title')}
             </div>
             <h3 className="mt-1 text-base font-semibold text-gray-900 dark:text-gray-100">
               {worker.taskLabel}
@@ -125,8 +127,8 @@ function WorkerDetailModal({
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            aria-label="Close delegated worker details"
-            title="Close delegated worker details"
+            aria-label={t('chat.delegated.close')}
+            title={t('chat.delegated.close')}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -138,37 +140,37 @@ function WorkerDetailModal({
         <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
           <div className="grid gap-3 rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-700/80 dark:bg-gray-950/50 md:grid-cols-2">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Tool Call</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('chat.delegated.toolCall')}</div>
               <div className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-200">{worker.toolCallId}</div>
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Worker Model</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('chat.delegated.workerModel')}</div>
               <div className="mt-1 text-xs text-gray-700 dark:text-gray-200">
-                {workerLabel || 'Unavailable'}
+                {workerLabel || t('common.unavailable')}
                 {worker.workerProfileName ? ` · ${worker.workerProfileName}` : ''}
               </div>
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Started</div>
-              <div className="mt-1 text-xs text-gray-700 dark:text-gray-200">{worker.startedAt || 'Unavailable'}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('chat.delegated.started')}</div>
+              <div className="mt-1 text-xs text-gray-700 dark:text-gray-200">{worker.startedAt || t('common.unavailable')}</div>
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Completed</div>
-              <div className="mt-1 text-xs text-gray-700 dark:text-gray-200">{worker.completedAt || 'Still running'}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('chat.delegated.completed')}</div>
+              <div className="mt-1 text-xs text-gray-700 dark:text-gray-200">{worker.completedAt || t('chat.delegated.stillRunning')}</div>
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Expected Output</div>
-              <div className="mt-1 text-xs text-gray-700 dark:text-gray-200">{worker.expectedOutput || 'text'}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('chat.delegated.expectedOutput')}</div>
+              <div className="mt-1 text-xs text-gray-700 dark:text-gray-200">{worker.expectedOutput || t('chat.delegated.defaultExpectedOutput')}</div>
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Status</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('chat.delegated.status')}</div>
               <div className="mt-1 text-xs text-gray-700 dark:text-gray-200">{worker.statusLabel}</div>
             </div>
           </div>
 
           {worker.summary && (
             <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Summary</div>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('chat.delegated.summary')}</div>
               <div className="rounded-2xl border border-gray-200/80 bg-white/80 p-4 text-sm leading-6 text-gray-800 dark:border-gray-700/80 dark:bg-gray-950/50 dark:text-gray-100">
                 {worker.summary}
               </div>
@@ -177,7 +179,7 @@ function WorkerDetailModal({
 
           {worker.error && (
             <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-500 dark:text-red-300">Error</div>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-500 dark:text-red-300">{t('chat.delegated.error')}</div>
               <pre className="overflow-auto whitespace-pre-wrap break-all rounded-2xl border border-red-200/90 bg-red-50/90 p-4 font-mono text-[12px] leading-5 text-red-700 dark:border-red-800/80 dark:bg-red-950/40 dark:text-red-200">
                 {worker.error}
               </pre>
@@ -186,7 +188,7 @@ function WorkerDetailModal({
 
           {typeof worker.data !== 'undefined' && (
             <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Structured Data</div>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('chat.delegated.structuredData')}</div>
               <pre className="overflow-auto whitespace-pre-wrap break-all rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 font-mono text-[12px] leading-5 text-gray-700 dark:border-gray-700/80 dark:bg-gray-950/50 dark:text-gray-200">
                 {formatToolTechnicalValue(worker.data)}
               </pre>
@@ -199,6 +201,7 @@ function WorkerDetailModal({
 }
 
 export const DelegatedWorkerCards = memo<DelegatedWorkerCardsProps>(({ workers }) => {
+  const { t } = useI18n();
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
   const selectedWorker = useMemo(
     () => workers.find((worker) => worker.toolCallId === selectedWorkerId) ?? null,
@@ -221,7 +224,7 @@ export const DelegatedWorkerCards = memo<DelegatedWorkerCardsProps>(({ workers }
               type="button"
               onClick={() => setSelectedWorkerId(worker.toolCallId)}
               className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-transform hover:-translate-y-0.5 hover:shadow-sm ${styles}`}
-              aria-label={`Open delegated worker details for ${worker.taskLabel}`}
+              aria-label={t('chat.delegated.open', { task: worker.taskLabel })}
               data-testid={`delegated-worker-card-${worker.toolCallId}`}
             >
               <div className="flex min-w-0 items-center gap-3">

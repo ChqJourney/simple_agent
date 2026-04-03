@@ -38,7 +38,12 @@ function ensureStorage(name: "localStorage" | "sessionStorage") {
 ensureStorage("localStorage");
 ensureStorage("sessionStorage");
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   globalThis.localStorage?.clear?.();
+  const { useUIStore } = await import("../stores/uiStore");
+  useUIStore.setState((state) => ({
+    ...state,
+    locale: "en-US",
+  }));
 });

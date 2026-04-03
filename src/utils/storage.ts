@@ -1,5 +1,6 @@
 import { Attachment, Message, ToolCall } from '../types';
 import { LockedModelRef } from '../types';
+import { formatDateTime } from '../i18n';
 import {
   createToolDecisionSummary,
   createToolResultSummary,
@@ -28,8 +29,7 @@ async function tauriInvoke<T>(command: string, args: Record<string, unknown>): P
 }
 
 export function formatTimestamp(isoString: string): string {
-  const date = new Date(isoString);
-  return date.toLocaleString();
+  return formatDateTime(isoString);
 }
 
 export function truncateText(text: string, maxLength: number): string {

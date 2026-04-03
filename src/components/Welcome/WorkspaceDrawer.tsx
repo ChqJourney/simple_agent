@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 import { useWorkspaceStore } from '../../stores';
 import { WorkspaceList } from './WorkspaceList';
 
@@ -13,6 +14,7 @@ export const WorkspaceDrawer: React.FC<WorkspaceDrawerProps> = ({
   onClose,
   onSelect,
 }) => {
+  const { t } = useI18n();
   const { workspaces, removeWorkspace } = useWorkspaceStore();
 
   const handleDelete = (id: string) => {
@@ -31,7 +33,7 @@ export const WorkspaceDrawer: React.FC<WorkspaceDrawerProps> = ({
       <div className="fixed left-0 top-0 bottom-0 w-80 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 z-50 flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="font-semibold text-gray-900 dark:text-white">
-            Workspaces
+            {t('welcome.workspaces')}
           </h2>
           <button
             onClick={onClose}
@@ -46,9 +48,9 @@ export const WorkspaceDrawer: React.FC<WorkspaceDrawerProps> = ({
         <div className="flex-1 overflow-y-auto p-4">
           {workspaces.length === 0 ? (
             <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-              No workspaces yet.
+              {t('welcome.noWorkspacesYet')}
               <br />
-              Create your first workspace to get started.
+              {t('welcome.noWorkspacesHint')}
             </div>
           ) : (
             <WorkspaceList

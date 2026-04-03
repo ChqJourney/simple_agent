@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 import { ProviderType, ProviderConfig } from '../../types';
 import { getImageSupportStatus, ImageSupportStatus, supportsReasoning } from '../../utils/modelCapabilities';
 import { CustomSelect } from '../common';
@@ -42,22 +43,22 @@ const MODELS: Record<ProviderType, string[]> = {
 function getImageSupportBadge(status: ImageSupportStatus): string {
   switch (status) {
     case 'supported':
-      return 'Images';
+      return 'supported';
     case 'unsupported':
-      return 'Text only';
+      return 'unsupported';
     default:
-      return 'Unknown';
+      return 'unknown';
   }
 }
 
-function getImageSupportDescription(status: ImageSupportStatus): string {
+function getImageSupportDescription(status: ImageSupportStatus, t: ReturnType<typeof useI18n>['t']): string {
   switch (status) {
     case 'supported':
-      return 'Image input is supported for this model.';
+      return t('settings.provider.imageSupportedDesc');
     case 'unsupported':
-      return 'This model is treated as text-only and image input stays disabled.';
+      return t('settings.provider.imageUnsupportedDesc');
     default:
-      return 'Image support is unknown, so the app keeps image input disabled by default.';
+      return t('settings.provider.imageUnknownDesc');
   }
 }
 
@@ -80,6 +81,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   testConnectionFailureLabel = "Failed",
   testButtonVariant = "primary",
 }) => {
+  const { t } = useI18n();
   const idPrefix = fieldIdPrefix(title);
   const provider = config.provider;
   const hasSavedProviderConfig = provider ? Boolean(configuredProviders[provider]) : false;
@@ -126,23 +128,23 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
           id={`${idPrefix}-provider-label`}
           className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
         >
-          Provider
+          {t('settings.provider.provider')}
         </label>
         <CustomSelect
           ariaLabel={`${title || 'Model'} Provider`}
           ariaLabelledBy={`${idPrefix}-provider-label`}
           value={config.provider || ''}
           onChange={(nextValue) => handleProviderChange(nextValue as ProviderType)}
-          placeholder="Select a provider"
+          placeholder={t('settings.provider.selectProvider')}
           options={PROVIDERS.map((item) => ({
             value: item.value,
             label: item.label,
-            hint: configuredProviders[item.value] ? 'Saved configuration available' : undefined,
+            hint: configuredProviders[item.value] ? t('settings.provider.savedConfigHint') : undefined,
           }))}
         />
         {provider && hasSavedProviderConfig && (
           <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
-            Saved API configuration found for this provider.
+            {t('settings.provider.savedConfigFound')}
           </p>
         )}
       </div>
@@ -154,23 +156,23 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
               id={`${idPrefix}-model-label`}
               className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
             >
-              Model
+              {t('settings.provider.model')}
             </label>
             <CustomSelect
               ariaLabel={`${title || 'Model'} Model`}
               ariaLabelledBy={`${idPrefix}-model-label`}
               value={config.model || ''}
               onChange={handleModelChange}
-              placeholder="Select a model"
+              placeholder={t('settings.provider.selectModel')}
               options={MODELS[provider].map((modelName) => ({
                 value: modelName,
                 label: modelName,
-                hint: getImageSupportBadge(getImageSupportStatus(provider, modelName)),
+                hint: t(`settings.provider.image${getImageSupportBadge(getImageSupportStatus(provider, modelName)).charAt(0).toUpperCase()}${getImageSupportBadge(getImageSupportStatus(provider, modelName)).slice(1)}`),
               }))}
             />
             {config.model && (
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {getImageSupportDescription(selectedImageSupport)}
+                {getImageSupportDescription(selectedImageSupport, t)}
               </p>
             )}
           </div>
@@ -178,13 +180,13 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
           {config.provider !== 'ollama' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                API Key
+                {t('settings.provider.apiKey')}
               </label>
               <input
                 type="password"
                 value={config.api_key || ''}
                 onChange={(e) => handleChange('api_key', e.target.value)}
-                placeholder="Enter your API key"
+                placeholder={t('settings.provider.enterApiKey')}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
               />
             </div>
@@ -192,13 +194,13 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Base URL (optional)
+              {t('settings.provider.baseUrl')}
             </label>
             <input
               type="text"
               value={config.base_url || ''}
               onChange={(e) => handleChange('base_url', e.target.value)}
-              placeholder="Custom API endpoint"
+              placeholder={t('settings.provider.customApiEndpoint')}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             />
           </div>
@@ -213,7 +215,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
                 className="rounded border-gray-300 dark:border-gray-600"
               />
               <label htmlFor={`${idPrefix}-enable-reasoning`} className="text-sm text-gray-700 dark:text-gray-300">
-                Enable reasoning
+                {t('settings.provider.enableReasoning')}
               </label>
             </div>
           )}

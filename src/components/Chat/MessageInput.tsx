@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useI18n } from '../../i18n';
 import { Attachment, ExecutionMode } from '../../types';
 import { isImagePath } from '../../utils/fileTypes';
 import { clearActiveDraggedFileDescriptors, getActiveDraggedFileDescriptors } from '../../utils/internalDragState';
@@ -336,10 +337,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   onInterrupt,
   isStreaming = false,
   disabled = false,
-  placeholder = 'Type your message...',
+  placeholder,
   executionMode = 'regular',
   supportsImageAttachments = false,
 }) => {
+  const { t } = useI18n();
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [promptPaths, setPromptPaths] = useState<PromptPathReference[]>([]);
@@ -351,6 +353,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const isInputDisabled = disabled;
   const canSubmitMessage = !disabled && !isStreaming;
   const canAttachImages = supportsImageAttachments && !isStreaming;
+  const resolvedPlaceholder = placeholder ?? t('chat.input.placeholder');
 
   const resetImageDragState = () => {
     imageDragDepthRef.current = 0;
@@ -714,13 +717,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       >
         {canAttachImages && isImageDragActive && (
           <div
-            aria-label="Image attachment drop zone"
+            aria-label={t('chat.input.imageDropZone')}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => void handleAttachmentDrop(e)}
             className="mb-3 rounded-[1.25rem] border border-dashed border-blue-300 bg-blue-50/90 px-4 py-4 text-sm text-blue-700 transition-colors dark:border-blue-700 dark:bg-blue-950/50 dark:text-blue-200"
           >
-            <div className="font-medium">Drop images here</div>
-            <div className="text-xs opacity-80">Images are attached to the next user message.</div>
+            <div className="font-medium">{t('chat.input.dropImagesHere')}</div>
+            <div className="text-xs opacity-80">{t('chat.input.imagesAttachedHint')}</div>
           </div>
         )}
 
@@ -734,8 +737,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 <button
                   type="button"
                   onClick={() => removeAttachment(attachment)}
-                  aria-label={`Remove attachment ${attachment.name}`}
-                  title={`Remove attachment ${attachment.name}`}
+                  aria-label={t('chat.input.removeAttachment', { name: attachment.name })}
+                  title={t('chat.input.removeAttachment', { name: attachment.name })}
                   className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-blue-700 shadow-sm transition-colors hover:bg-white dark:bg-gray-900/90 dark:text-blue-100"
                 >
                   <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -745,7 +748,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 {getAttachmentPreviewSrc(attachment) && (
                   <img
                     src={getAttachmentPreviewSrc(attachment) || undefined}
-                    alt={`Attachment preview: ${attachment.name}`}
+                    alt={t('chat.input.attachmentPreview', { name: attachment.name })}
                     className="h-20 w-full rounded-xl object-cover"
                   />
                 )}
@@ -769,12 +772,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             <div className="min-h-[8.25rem] whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
               {content
                 ? renderHighlightedContent(content, promptPaths)
-                : <span className="text-gray-500 dark:text-gray-400">{placeholder}</span>}
+                : <span className="text-gray-500 dark:text-gray-400">{resolvedPlaceholder}</span>}
             </div>
           </div>
           <textarea
             ref={textareaRef}
-            aria-label="Message input"
+            aria-label={t('chat.input.messageInput')}
             value={content}
             onChange={(e) => {
               selectionRef.current = {
@@ -791,7 +794,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onDragOver={(e) => e.preventDefault()}
             onDrop={handlePromptDrop}
             onPaste={(e) => void handlePaste(e)}
-            placeholder={placeholder}
+            placeholder={resolvedPlaceholder}
             disabled={isInputDisabled}
             rows={5}
             className={`relative z-10 h-[8.25rem] w-full resize-none overflow-y-auto bg-transparent px-4 py-4 pb-16 pr-20 text-transparent caret-gray-900 outline-none transition-colors selection:bg-blue-200/80 dark:caret-gray-100 dark:selection:bg-blue-700/40 disabled:cursor-not-allowed disabled:opacity-70 ${COMPOSER_TEXT_METRICS_CLASS}`}
@@ -806,8 +809,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               type="button"
               onClick={onInterrupt}
               disabled={disabled}
-              aria-label="Stop generating"
-              title="Stop generating"
+              aria-label={t('chat.input.stopGenerating')}
+              title={t('chat.input.stopGenerating')}
               className="absolute bottom-3 right-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500 text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"
             >
               <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -818,8 +821,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             <button
               type="submit"
               disabled={!canSubmitMessage || (!content.trim() && attachments.length === 0)}
-              aria-label="Send message"
-              title="Send message"
+              aria-label={t('chat.input.sendMessage')}
+              title={t('chat.input.sendMessage')}
               className="absolute bottom-3 right-3 flex h-8 w-20 items-center justify-center rounded-lg bg-slate-600 text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"
             >
               <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -829,19 +832,19 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           )}
           <div className="flex items-center border-gray-200/80 px-4 py-3 dark:border-gray-700/80">
             <label id="execution-mode-label" className="text-xs font-semibold tracking-[0.12em] text-gray-600 dark:text-gray-300">
-              Approval
+              {t('chat.input.approval')}
             </label>
             <div className="ml-2 w-[148px] shrink-0">
               <CustomSelect
                 id="execution-mode-select"
-                ariaLabel="Execution mode"
+                ariaLabel={t('chat.input.executionMode')}
                 ariaLabelledBy="execution-mode-label"
                 value={executionMode}
                 onChange={(nextValue) => onExecutionModeChange?.(nextValue === 'free' ? 'free' : 'regular')}
                 disabled={disabled || isStreaming}
                 options={[
-                  { value: 'regular', label: 'Regular', hint: 'Ask before sensitive actions' },
-                  { value: 'free', label: 'Free', hint: 'Let the agent run with fewer blocks' },
+                  { value: 'regular', label: t('chat.input.mode.regular'), hint: t('chat.input.mode.regularHint') },
+                  { value: 'free', label: t('chat.input.mode.free'), hint: t('chat.input.mode.freeHint') },
                 ]}
                 showSelectedHint={false}
                 menuPlacement="top"

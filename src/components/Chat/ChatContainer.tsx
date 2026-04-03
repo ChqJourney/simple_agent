@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { useI18n } from '../../i18n';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useRunStore } from '../../stores/runStore';
@@ -30,6 +31,7 @@ const emptySession = {
 };
 
 export const ChatContainer = () => {
+  const { t } = useI18n();
   const { currentSessionId, createSession } = useSession();
   const { sendMessage, answerQuestion, isConnected, confirmTool, interrupt, setExecutionMode } = useWebSocket();
   const { currentWorkspace } = useWorkspaceStore();
@@ -43,10 +45,10 @@ export const ChatContainer = () => {
   const canSendMessage = isConnected && hasRunnableConfig && Boolean(currentWorkspace?.path);
   const supportsImageAttachments = supportsImageAttachmentsForRole(config, 'conversation');
   const composerPlaceholder = !hasConfiguredModel
-    ? 'Configure a primary model before sending messages...'
+    ? t('chat.input.configureModel')
     : hasRunnableConfig
-      ? 'Type your message...'
-      : 'Add an API key before sending messages...';
+      ? t('chat.input.placeholder')
+      : t('chat.input.addApiKey');
 
   const {
     messages,

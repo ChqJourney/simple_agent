@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useI18n } from '../../i18n';
 
 interface ReasoningBlockProps {
   content: string;
@@ -11,6 +12,7 @@ export const ReasoningBlock: React.FC<ReasoningBlockProps> = ({
   collapsible = true,
   defaultExpanded = false,
 }) => {
+  const { t } = useI18n();
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   if (!content) return null;
@@ -18,7 +20,7 @@ export const ReasoningBlock: React.FC<ReasoningBlockProps> = ({
   if (!collapsible) {
     return (
       <div className="text-gray-500 dark:text-gray-400">
-        <div className="text-sm font-medium">Thinking</div>
+        <div className="text-sm font-medium">{t('reasoning.thinking')}</div>
         <div className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-gray-600 dark:text-gray-300">
           {content}
         </div>
@@ -33,7 +35,7 @@ export const ReasoningBlock: React.FC<ReasoningBlockProps> = ({
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex w-full cursor-pointer items-center justify-between gap-3 text-left text-sm transition-colors hover:text-gray-700 dark:hover:text-gray-300"
       >
-        <span className="font-medium">Thinking</span>
+        <span className="font-medium">{t('reasoning.thinking')}</span>
         <svg
           className={`h-4 w-4 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
           viewBox="0 0 20 20"

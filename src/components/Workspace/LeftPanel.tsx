@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useI18n } from '../../i18n';
 import { useWorkspaceStore } from '../../stores';
 import { useConfigStore } from '../../stores/configStore';
 import { SessionList } from '../Sidebar/SessionList';
@@ -7,6 +8,7 @@ import { listTools, ToolCatalogEntry } from '../../utils/toolCatalog';
 import { normalizeContextProviders } from '../../utils/config';
 
 export const LeftPanel: React.FC = () => {
+  const { t } = useI18n();
   const { currentWorkspace } = useWorkspaceStore();
   const config = useConfigStore((state) => state.config);
   const [systemSkills, setSystemSkills] = useState<SkillEntry[]>([]);
@@ -54,7 +56,7 @@ export const LeftPanel: React.FC = () => {
         if (!cancelled) {
           setSystemSkills([]);
           setWorkspaceSkills([]);
-          setSkillsError(error instanceof Error ? error.message : 'Failed to scan skills.');
+          setSkillsError(error instanceof Error ? error.message : t('settings.error.scanSkills'));
         }
       } finally {
         if (!cancelled) {
@@ -84,7 +86,7 @@ export const LeftPanel: React.FC = () => {
       } catch (error) {
         if (!cancelled) {
           setTools([]);
-          setToolsError(error instanceof Error ? error.message : 'Failed to load tools.');
+          setToolsError(error instanceof Error ? error.message : t('settings.error.loadTools'));
         }
       } finally {
         if (!cancelled) {
@@ -102,7 +104,7 @@ export const LeftPanel: React.FC = () => {
   if (!currentWorkspace) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        No workspace selected
+        {t('workspace.noWorkspaceSelected')}
       </div>
     );
   }
@@ -113,7 +115,7 @@ export const LeftPanel: React.FC = () => {
         <div className="space-y-2 text-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="font-medium text-gray-900 dark:text-white">
-              {`Workspace - ${folderName}`}
+              {t('workspace.leftPanel.workspaceTitle', { name: folderName })}
             </div>
           </div>
           <div className="text-gray-600 my-4 dark:text-gray-400" title={currentWorkspace.path}>
@@ -126,12 +128,12 @@ export const LeftPanel: React.FC = () => {
           >
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
-                Skills
+                {t('workspace.leftPanel.skills')}
               </div>
               <div className="mt-1 text-sm text-gray-700 dark:text-gray-200">
                 {isLoadingSkills
-                  ? 'Scanning...'
-                  : `System ${systemSkills.length} · Workspace ${workspaceSkills.length}`}
+                  ? t('workspace.leftPanel.scanning')
+                  : t('workspace.leftPanel.skillsSummary', { system: systemSkills.length, workspace: workspaceSkills.length })}
               </div>
             </div>
             <svg className="h-4 w-4 text-gray-500 dark:text-gray-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -145,10 +147,10 @@ export const LeftPanel: React.FC = () => {
           >
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
-                Tools
+                {t('workspace.leftPanel.tools')}
               </div>
               <div className="mt-1 text-sm text-gray-700 dark:text-gray-200">
-                {isLoadingTools ? 'Loading...' : `${enabledTools.length} enabled`}
+                {isLoadingTools ? t('common.loading') : t('workspace.leftPanel.toolsSummary', { count: enabledTools.length })}
               </div>
             </div>
             <svg className="h-4 w-4 text-gray-500 dark:text-gray-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -170,23 +172,23 @@ export const LeftPanel: React.FC = () => {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Workspace skills"
+            aria-label={t('workspace.leftPanel.workspaceSkillsDialog')}
             className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Skills</h2>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('workspace.leftPanel.skills')}</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  System {systemSkills.length} · Workspace {workspaceSkills.length}
+                  {t('workspace.leftPanel.skillsSummary', { system: systemSkills.length, workspace: workspaceSkills.length })}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsSkillsModalOpen(false)}
                 className="rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                aria-label="Close skills modal"
-                title="Close skills modal"
+                aria-label={t('workspace.leftPanel.closeSkillsDialog')}
+                title={t('workspace.leftPanel.closeSkillsDialog')}
               >
                 <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 5l10 10M15 5L5 15" />
@@ -204,7 +206,7 @@ export const LeftPanel: React.FC = () => {
                   <section>
                     <div className="mb-3 flex items-center justify-between">
                       <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
-                        System Skills
+                        {t('workspace.leftPanel.systemSkills')}
                       </h3>
                       <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                         {systemSkills.length}
@@ -212,7 +214,7 @@ export const LeftPanel: React.FC = () => {
                     </div>
                     {systemSkills.length === 0 ? (
                       <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                        No system-level skills found.
+                        {t('workspace.leftPanel.noSystemSkills')}
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -220,7 +222,7 @@ export const LeftPanel: React.FC = () => {
                           <div key={skill.path} className="rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-800">
                             <div className="text-sm font-semibold text-gray-900 dark:text-white">{skill.name}</div>
                             <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                              {skill.description || 'No description found in frontmatter.'}
+                              {skill.description || t('common.noDescription')}
                             </div>
                             <div className="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
                               {skill.path}
@@ -234,7 +236,7 @@ export const LeftPanel: React.FC = () => {
                   <section>
                     <div className="mb-3 flex items-center justify-between">
                       <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
-                        Workspace Skills
+                        {t('workspace.leftPanel.workspaceSkills')}
                       </h3>
                       <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                         {workspaceSkills.length}
@@ -242,7 +244,7 @@ export const LeftPanel: React.FC = () => {
                     </div>
                     {workspaceSkills.length === 0 ? (
                       <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                        No workspace-level skills found under `.agent/skills`.
+                        {t('workspace.leftPanel.noWorkspaceSkills')}
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -250,7 +252,7 @@ export const LeftPanel: React.FC = () => {
                           <div key={skill.path} className="rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-800">
                             <div className="text-sm font-semibold text-gray-900 dark:text-white">{skill.name}</div>
                             <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                              {skill.description || 'No description found in frontmatter.'}
+                              {skill.description || t('common.noDescription')}
                             </div>
                             <div className="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
                               {skill.path}
@@ -275,23 +277,23 @@ export const LeftPanel: React.FC = () => {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Workspace tools"
+            aria-label={t('workspace.leftPanel.workspaceToolsDialog')}
             className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Tools</h2>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('workspace.leftPanel.tools')}</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {isLoadingTools ? 'Loading available tools...' : `${enabledTools.length} enabled in this workspace`}
+                  {isLoadingTools ? t('workspace.leftPanel.loadingAvailableTools') : t('workspace.leftPanel.enabledInWorkspace', { count: enabledTools.length })}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsToolsModalOpen(false)}
                 className="rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                aria-label="Close tools modal"
-                title="Close tools modal"
+                aria-label={t('workspace.leftPanel.closeToolsDialog')}
+                title={t('workspace.leftPanel.closeToolsDialog')}
               >
                 <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 5l10 10M15 5L5 15" />
@@ -306,11 +308,11 @@ export const LeftPanel: React.FC = () => {
                 </div>
               ) : isLoadingTools ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  Loading tools...
+                  {t('workspace.leftPanel.loadingTools')}
                 </div>
               ) : enabledTools.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  No enabled tools available.
+                  {t('workspace.leftPanel.noEnabledTools')}
                 </div>
               ) : (
                 <div className="space-y-3">

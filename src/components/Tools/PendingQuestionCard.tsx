@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useI18n } from '../../i18n';
 import { PendingQuestion } from '../../types';
 import { ToolCard } from './ToolCard';
 
@@ -13,6 +14,7 @@ export const PendingQuestionCard: React.FC<PendingQuestionCardProps> = ({
   onSubmitAnswer,
   onDismiss,
 }) => {
+  const { t } = useI18n();
   const isSubmitting = question.status === 'submitting';
   const [draftAnswer, setDraftAnswer] = useState('');
   const trimmedAnswer = draftAnswer.trim();
@@ -30,14 +32,14 @@ export const PendingQuestionCard: React.FC<PendingQuestionCardProps> = ({
   };
 
   const helperText = question.options.length > 0
-    ? 'Choose an option or type a custom answer.'
-    : 'Type your answer below to let the assistant continue.';
+    ? t('tools.pendingQuestion.helperWithOptions')
+    : t('tools.pendingQuestion.helperWithoutOptions');
 
   return (
     <div className="mx-5 mb-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 shadow-sm dark:border-amber-900/70 dark:bg-amber-950/60 md:mx-6">
       <ToolCard
         summary={question.question}
-        badges={['interaction']}
+        badges={[t('tools.pendingQuestion.badge')]}
         tone="neutral"
         defaultExpanded={true}
       >
@@ -80,7 +82,7 @@ export const PendingQuestionCard: React.FC<PendingQuestionCardProps> = ({
                     handleSubmitAnswer();
                   }
                 }}
-                placeholder="Type your answer"
+                placeholder={t('tools.pendingQuestion.placeholder')}
                 className="min-w-0 flex-1 rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm text-amber-950 outline-none transition-colors placeholder:text-amber-700/60 focus:border-amber-500 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-50 dark:placeholder:text-amber-200/60 dark:focus:border-amber-500"
               />
               <button
@@ -89,14 +91,14 @@ export const PendingQuestionCard: React.FC<PendingQuestionCardProps> = ({
                 onClick={handleSubmitAnswer}
                 className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-amber-300 dark:bg-amber-500 dark:hover:bg-amber-400 dark:disabled:bg-amber-800"
               >
-                Submit
+                {t('tools.pendingQuestion.submit')}
               </button>
             </div>
           </div>
 
           {isSubmitting && (
             <p className="text-xs font-medium uppercase tracking-[0.14em] text-amber-700 dark:text-amber-300">
-              Submitting answer...
+              {t('tools.pendingQuestion.submitting')}
             </p>
           )}
 
@@ -107,7 +109,7 @@ export const PendingQuestionCard: React.FC<PendingQuestionCardProps> = ({
               onClick={onDismiss}
               className="text-xs font-medium uppercase tracking-[0.14em] text-amber-700 transition-colors hover:text-amber-900 disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300 dark:hover:text-amber-100"
             >
-              Dismiss
+              {t('tools.pendingQuestion.dismiss')}
             </button>
           </div>
         </div>

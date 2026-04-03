@@ -126,6 +126,7 @@ describe("WorkspacePage", () => {
     useUIStore.setState((state) => ({
       ...state,
       isPageLoading: true,
+      locale: "en-US",
     }));
     useSessionStore.setState((state) => ({
       ...state,
@@ -236,6 +237,7 @@ describe("WorkspacePage", () => {
       ...state,
       leftPanelWidth: 312,
       rightPanelWidth: 344,
+      locale: "en-US",
     }));
 
     render(<WorkspacePage />);

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useI18n } from '../../i18n';
 import { useChatStore, useRunStore, useSessionStore, useUIStore, useWorkspaceStore } from '../../stores';
 import { WSStatusIndicator, OCRStatusIndicator, ModelDisplay, TokenUsageWidget } from '../common';
 import { RunEventRecord, TokenUsage } from '../../types';
@@ -19,7 +20,11 @@ function getLatestCompactionEvent(events: RunEventRecord[]): RunEventRecord | nu
   return null;
 }
 
-function getCompactionBadge(event: RunEventRecord | null): {
+function getCompactionBadge(
+  event: RunEventRecord | null,
+  formatTimeLabel: (value: string | number | Date) => string,
+  t: ReturnType<typeof useI18n>['t']
+): {
   label: string;
   className: string;
   title: string;
@@ -29,39 +34,36 @@ function getCompactionBadge(event: RunEventRecord | null): {
   }
 
   const strategy = typeof event.payload.strategy === 'string' ? event.payload.strategy : 'compaction';
-  const timeLabel = new Date(event.timestamp).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const timeLabel = formatTimeLabel(event.timestamp);
 
   if (event.event_type === 'session_compaction_completed') {
     return {
-      label: 'Compacted',
+      label: t('workspace.topbar.compacted'),
       className: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
-      title: `${strategy} compaction completed at ${timeLabel}`,
+      title: t('workspace.topbar.compactionCompletedTitle', { strategy, time: timeLabel }),
     };
   }
 
   if (event.event_type === 'session_compaction_failed') {
     return {
-      label: 'Compact failed',
+      label: t('workspace.topbar.compactFailed'),
       className: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300',
-      title: `${strategy} compaction failed at ${timeLabel}`,
+      title: t('workspace.topbar.compactionFailedTitle', { strategy, time: timeLabel }),
     };
   }
 
   if (event.event_type === 'session_compaction_started') {
     return {
-      label: 'Compacting',
+      label: t('workspace.topbar.compacting'),
       className: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
-      title: `${strategy} compaction started at ${timeLabel}`,
+      title: t('workspace.topbar.compactionStartedTitle', { strategy, time: timeLabel }),
     };
   }
 
   return {
-    label: 'Compact skipped',
+    label: t('workspace.topbar.compactSkipped'),
     className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-    title: `${strategy} compaction skipped at ${timeLabel}`,
+    title: t('workspace.topbar.compactionSkippedTitle', { strategy, time: timeLabel }),
   };
 }
 
@@ -96,6 +98,7 @@ function getTokenUsageDisplay(sessionState?: {
 
 export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) => {
   const navigate = useNavigate();
+  const { t, formatTime } = useI18n();
   const { currentWorkspace } = useWorkspaceStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { leftPanelCollapsed, rightPanelCollapsed, toggleLeftPanel, toggleRightPanel } = useUIStore();
@@ -106,7 +109,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) =>
   const latestCompactionEvent = useRunStore((state) =>
     currentSessionId ? getLatestCompactionEvent(state.sessions[currentSessionId]?.events || []) : null
   );
-  const compactionBadge = getCompactionBadge(latestCompactionEvent);
+  const compactionBadge = getCompactionBadge(latestCompactionEvent, formatTime, t);
 
   return (
     <header className="h-12 flex items-center justify-between px-4 bg-white/85 backdrop-blur dark:bg-gray-900/85">
@@ -114,7 +117,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) =>
         <button
           onClick={toggleLeftPanel}
           className="rounded-xl p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-          title={leftPanelCollapsed ? 'Show left panel' : 'Hide left panel'}
+          title={leftPanelCollapsed ? t('workspace.topbar.showLeftPanel') : t('workspace.topbar.hideLeftPanel')}
         >
           <svg className="h-5 w-5 text-gray-600 dark:text-gray-300" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
             <rect x="3" y="4" width="14" height="12" rx="2" />
@@ -130,7 +133,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) =>
             navigate('/');
           }}
           className="rounded-xl p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-          title="Back to home"
+          title={t('workspace.topbar.backHome')}
         >
           <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -160,8 +163,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) =>
           type="button"
           onClick={onOpenTimeline}
           className="rounded-xl p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-          title="Open run timeline"
-          aria-label="Open run timeline"
+          title={t('workspace.topbar.openRunTimeline')}
+          aria-label={t('workspace.topbar.openRunTimeline')}
         >
           <svg className="h-5 w-5 text-gray-600 dark:text-gray-300" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
             <path d="M426.666667 170.666667h512q42.666667 0 42.666666 42.666666t-42.666666 42.666667h-512q-42.666667 0-42.666667-42.666667t42.666667-42.666666z" />
@@ -179,7 +182,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenTimeline, onBackHome }) =>
         <button
           onClick={toggleRightPanel}
           className="rounded-xl p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-          title={rightPanelCollapsed ? 'Show right panel' : 'Hide right panel'}
+          title={rightPanelCollapsed ? t('workspace.topbar.showRightPanel') : t('workspace.topbar.hideRightPanel')}
         >
           <svg className="h-5 w-5 text-gray-600 dark:text-gray-300" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
             <rect x="3" y="4" width="14" height="12" rx="2" />

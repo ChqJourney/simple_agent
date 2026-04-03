@@ -76,8 +76,9 @@ flowchart LR
 
 | 模块 | 关键文件 | 职责 | 输入 | 输出 |
 | --- | --- | --- | --- | --- |
-| 路由与应用壳 | `src/App.tsx` | 挂载 Router、WebSocketProvider、全局 LoadingOverlay | 浏览器路由、全局 store | 页面切换、上下文注入 |
+| 路由与应用壳 | `src/App.tsx` | 挂载 Router、WebSocketProvider、全局 LoadingOverlay，并同步 `document.documentElement.lang` | 浏览器路由、全局 store | 页面切换、上下文注入 |
 | 页面层 | `src/pages/*.tsx` | Welcome / Workspace / Settings 三大页面 | store、Tauri invoke、HTTP/WebSocket | 页面状态与用户操作 |
+| 本地化层 | `src/i18n/*` | 管理 `zh-CN / en-US` 字典、locale 解析、`t()` 与时间格式化入口 | `uiStore.locale`、浏览器语言 | 统一 UI 文案与 locale-sensitive 格式化 |
 | 通信层 | `src/contexts/WebSocketContext.tsx` `src/services/websocket.ts` | 建立 WebSocket、发送协议消息、分发后端事件 | ProviderConfig、聊天输入、工具确认 | chat/session/run/task/workspace store 更新 |
 | 状态层 | `src/stores/*.ts` | Zustand 持有聊天、会话、工作区、配置、运行状态、UI 状态 | WebSocket 事件、用户操作 | 组件渲染数据 |
 | 工作区 UI | `src/components/Workspace/*` | TopBar、SessionList、FileTree、TaskList、skills/tools modal | workspace/session/chat store | 工作区侧栏、文件变化高亮、工具/skill 概览 |
@@ -120,6 +121,7 @@ flowchart LR
 
 | 功能域 | 实现位置 | 说明 |
 | --- | --- | --- |
+| 前端 Locale / i18n | `src/i18n/index.ts` `src/stores/uiStore.ts` `src/pages/SettingsPage.tsx` | 当前只支持 `zh-CN / en-US`；locale 持久化到 `uiStore`，设置页可即时切换，页面与高频组件统一通过 `t()` 取文案 |
 | 多 Provider 配置 | `src/pages/SettingsPage.tsx` `python_backend/runtime/config.py` | 支持 OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama，前后端各自做 normalize |
 | Provider 配置记忆 | `src/pages/SettingsPage.tsx` `src/utils/config.ts` | 前端持久化 `provider_memory`，切换 provider 时恢复上次保存的 `model / api_key / base_url` |
 | 主/后台模型 profile | `src/types/index.ts` `python_backend/runtime/router.py` | `primary` 负责主对话，`background` 负责标题生成、compaction 与 delegated task 等后台任务 |
@@ -323,7 +325,7 @@ flowchart TD
 | `configStore` | provider/profile/runtime/context provider 配置与 `ocr.enabled` | SettingsPage | WebSocketContext、LeftPanel、ModelDisplay、OCR 状态 UI |
 | `runStore` | 按 session 聚合的运行事件与生命周期状态 | `run_event` | RunTimeline |
 | `taskStore` | `todo_task` 派生出的任务树 | `tool_result` | TaskList |
-| `uiStore` | 左右栏折叠、theme、右栏 tab、loading | 用户操作 | 各页面与布局组件 |
+| `uiStore` | 左右栏折叠、theme、locale、右栏 tab、loading、基础字号 | 用户操作、浏览器语言默认值 | 各页面、布局组件、i18n 层 |
 
 ### 6.2 前端恢复机制
 
@@ -343,6 +345,8 @@ flowchart TD
 
 - OCR sidecar 的安装目录不放在浏览器持久化里，而是通过 Tauri command 按实际安装目录检查
 - OCR 顶栏状态属于运行态派生信息，来源于后端 `config_updated` 与 sidecar health 状态
+- `uiStore` 通过 Zustand `persist` 保存 `theme / locale / panel widths / baseFontSize`
+- locale 默认按 `navigator.language` 在 `zh-CN / en-US` 间解析，时间显示与部分 aria/title 文案也统一走前端 i18n 层
 
 ## 7. 后端内部数据流
 

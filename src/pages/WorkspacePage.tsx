@@ -17,6 +17,7 @@ import { backendHealthUrl, backendHttpBase } from '../utils/backendEndpoint';
 import { loadSessionHistory } from '../utils/storage';
 import { useChatStore } from '../stores/chatStore';
 import { RunEventRecord } from '../types';
+import { useI18n } from '../i18n';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -64,20 +65,24 @@ function hasActiveCompactionState(events: RunEventRecord[] | undefined): boolean
   return false;
 }
 
-function getLeaveWorkspacePrompt(hasActiveReply: boolean, hasActiveCompaction: boolean): string {
+function getLeaveWorkspacePrompt(
+  hasActiveReply: boolean,
+  hasActiveCompaction: boolean,
+  t: ReturnType<typeof useI18n>['t']
+): string {
   if (hasActiveReply && hasActiveCompaction) {
-    return 'A reply is still streaming and session compaction is in progress. Leave this workspace and stop both?';
+    return t('workspace.leave.streamingAndCompaction');
   }
 
   if (hasActiveReply) {
-    return 'A reply is still streaming. Leave this workspace and stop it?';
+    return t('workspace.leave.streaming');
   }
 
   if (hasActiveCompaction) {
-    return 'Session compaction is still in progress. Leave this workspace and stop it?';
+    return t('workspace.leave.compaction');
   }
 
-  return 'Work is still in progress. Leave this workspace and stop it?';
+  return t('workspace.leave.generic');
 }
 
 function normalizeComparableWorkspacePath(path: string): string {
@@ -131,6 +136,7 @@ function clampPanelWidth(width: number): number {
 export const WorkspacePage: React.FC = () => {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { workspaces, setCurrentWorkspace, currentWorkspace, syncWorkspacePath } = useWorkspaceStore();
   const {
     leftPanelCollapsed,
@@ -222,15 +228,15 @@ export const WorkspacePage: React.FC = () => {
       return true;
     }
 
-    const prompt = getLeaveWorkspacePrompt(hasActiveReply, hasActiveCompaction);
+    const prompt = getLeaveWorkspacePrompt(hasActiveReply, hasActiveCompaction, t);
     const confirmed = hasTauriRuntime()
       ? await (async () => {
           const { confirm } = await import('@tauri-apps/plugin-dialog');
           return confirm(prompt, {
-            title: 'Stop running task?',
+            title: t('workspace.leave.confirmTitle'),
             kind: 'warning',
-            okLabel: 'Leave',
-            cancelLabel: 'Stay',
+            okLabel: t('workspace.leave.confirmOk'),
+            cancelLabel: t('workspace.leave.confirmCancel'),
           });
         })()
       : window.confirm(prompt);
@@ -341,7 +347,7 @@ export const WorkspacePage: React.FC = () => {
         console.error('Failed to prepare workspace:', error);
         if (!cancelled) {
           setWorkspaceAccessError(
-            error instanceof Error ? error.message : 'Failed to access the selected workspace.'
+            error instanceof Error ? error.message : t('workspace.accessError')
           );
         }
       } finally {
@@ -458,7 +464,7 @@ export const WorkspacePage: React.FC = () => {
   if (!currentWorkspace) {
     return (
       <div className="flex h-screen items-center justify-center bg-white dark:bg-gray-900">
-        <div className="text-gray-500 dark:text-gray-400">Loading...</div>
+        <div className="text-gray-500 dark:text-gray-400">{t('workspace.loading')}</div>
       </div>
     );
   }
@@ -482,7 +488,7 @@ export const WorkspacePage: React.FC = () => {
             data-testid="workspace-left-resize-handle"
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize left panel"
+            aria-label={t('workspace.resizeLeftPanel')}
             className="w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-200/70 dark:hover:bg-blue-900/70"
             onMouseDown={startResize('left')}
             onDoubleClick={resetLeftPanelWidth}
@@ -499,10 +505,10 @@ export const WorkspacePage: React.FC = () => {
           ) : IS_DEV && !backendReady ? (
             <div className="flex-1 flex items-center justify-center p-4 bg-yellow-50 dark:bg-yellow-950 text-yellow-900 dark:text-yellow-200 text-center text-sm">
               <div>
-                Waiting for Python backend at {backendHttpBase}...
+                {t('workspace.backendWaiting', { url: backendHttpBase })}
                 <br />
                 <code className="text-xs bg-yellow-100 dark:bg-yellow-900 px-1.5 py-0.5 rounded">
-                  cd python_backend && python main.py
+                  {t('workspace.backendWaitingCommand')}
                 </code>
               </div>
             </div>
@@ -516,7 +522,7 @@ export const WorkspacePage: React.FC = () => {
             data-testid="workspace-right-resize-handle"
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize right panel"
+            aria-label={t('workspace.resizeRightPanel')}
             className="w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-200/70 dark:hover:bg-blue-900/70"
             onMouseDown={startResize('right')}
             onDoubleClick={resetRightPanelWidth}
@@ -542,21 +548,21 @@ export const WorkspacePage: React.FC = () => {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Run timeline"
+            aria-label={t('workspace.timeline')}
             className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Run timeline</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Review recent execution events for the active session.</p>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('workspace.timeline')}</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('workspace.timelineSubtitle')}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsTimelineModalOpen(false)}
                 className="rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                aria-label="Close run timeline"
-                title="Close run timeline"
+                aria-label={t('workspace.closeRunTimeline')}
+                title={t('workspace.closeRunTimeline')}
               >
                 <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 5l10 10M15 5L5 15" />

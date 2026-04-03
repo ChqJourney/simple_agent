@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../../i18n';
 import { Message, AssistantStatus, RunEventRecord } from '../../types';
 import { MessageItem } from './MessageItem';
 import { AssistantTurn } from './AssistantTurn';
@@ -169,6 +170,7 @@ function buildDelegatedWorkers(
   assistantMessages: Message[],
   runEvents: RunEventRecord[],
   now: number,
+  t: ReturnType<typeof useI18n>['t'],
 ): DelegatedWorkerViewModel[] {
   const workers = new Map<string, DelegatedWorkerAccumulator>();
   let nextOrder = 0;
@@ -322,14 +324,14 @@ function buildDelegatedWorkers(
 
       return {
         toolCallId: worker.toolCallId,
-        taskLabel: worker.taskLabel || 'Delegated task',
+        taskLabel: worker.taskLabel || t('chat.delegated.task'),
         status,
         statusLabel:
           status === 'running'
-            ? 'Running'
+            ? t('chat.delegated.running')
             : status === 'failed'
-              ? 'Failed'
-              : 'Completed',
+              ? t('chat.assistant.failed')
+              : t('chat.assistant.completed'),
         elapsedLabel: formatElapsedLabel(elapsedMs),
         expectedOutput: worker.expectedOutput,
         summary: worker.summary,
@@ -372,6 +374,7 @@ export const MessageList = memo<MessageListProps>(({
   runEvents = [],
   onRetryMessage,
 }) => {
+  const { t } = useI18n();
   const listRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
   const currentRunTiming = useMemo(() => getCurrentRunTiming(runEvents), [runEvents]);
@@ -428,7 +431,7 @@ export const MessageList = memo<MessageListProps>(({
     groups.push(currentGroup);
   }
 
-  const delegatedWorkersByGroup = groups.map((group) => buildDelegatedWorkers(group.assistantMessages, runEvents, now));
+  const delegatedWorkersByGroup = groups.map((group) => buildDelegatedWorkers(group.assistantMessages, runEvents, now, t));
 
   return (
     <div
@@ -439,7 +442,7 @@ export const MessageList = memo<MessageListProps>(({
     >
       {messages.length === 0 && !isStreaming && (
         <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-          <p>Just input what you want</p>
+          <p>{t('chat.messageList.empty')}</p>
         </div>
       )}
 

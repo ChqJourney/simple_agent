@@ -23,6 +23,7 @@ import { getDefaultContextLength } from '../utils/modelCapabilities';
 import { inspectOcrSidecarInstallation, installOcrSidecar, OcrSidecarInstallInfo } from '../utils/ocr';
 import { listSystemSkills, SkillEntry } from '../utils/systemSkills';
 import { listTools, ToolCatalogEntry } from '../utils/toolCatalog';
+import { AppLocale, useI18n } from '../i18n';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 type ProfileName = 'primary' | 'background';
@@ -41,71 +42,15 @@ interface OcrInstallState {
   info: OcrSidecarInstallInfo | null;
 }
 
-const SETTINGS_TABS: Array<{ value: SettingsTab; label: string; description: string }> = [
-  { value: 'model', label: 'Model', description: 'Primary and background model profiles' },
-  { value: 'runtime', label: 'Runtime', description: 'Context, output, retries, and tool limits' },
-  { value: 'tools', label: 'Tools', description: 'Review available tools and control runtime availability' },
-  { value: 'skills', label: 'Skill', description: 'System-level skills and local skill scanning' },
-  { value: 'ocr', label: 'OCR', description: 'Install the Paddle OCR sidecar and control its availability' },
-  { value: 'ui', label: 'UI', description: 'Theme, typography, and display preferences' },
-];
-
-const THEME_OPTIONS = [
-  { value: 'system', label: 'System', hint: 'Follow the operating system preference' },
-  { value: 'light', label: 'Light', hint: 'Bright interface for daytime use' },
-  { value: 'dark', label: 'Dark', hint: 'Low-glare interface for darker environments' },
-];
-
 const APP_FONT_LABEL = 'Inter';
 const APP_FONT_STACK = "'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif";
 const CONNECTION_TEST_TIMEOUT_MS = 15000;
-const RUNTIME_FIELD_CONFIG: Array<{ key: keyof RuntimePolicy; label: string; min: number }> = [
-  { key: 'context_length', label: 'Context Length', min: 0 },
-  { key: 'max_output_tokens', label: 'Max Output Tokens', min: 1 },
-  { key: 'max_tool_rounds', label: 'Max Tool Rounds', min: 1 },
-  { key: 'max_retries', label: 'Max Retries', min: 1 },
-];
-const DELEGATED_TASK_RUNTIME_FIELD_CONFIG: Array<{ key: keyof RuntimePolicy; label: string; min: number }> = [
-  { key: 'timeout_seconds', label: 'Timeout Seconds', min: 1 },
-];
-const ROLE_RUNTIME_SECTIONS: Array<{
-  key: Exclude<RuntimeSectionKey, 'shared'>;
-  title: string;
-  description: string;
-  role: ExecutionRole;
-  fields?: Array<{ key: keyof RuntimePolicy; label: string; min: number }>;
-}> = [
-  {
-    key: 'conversation',
-    title: 'Conversation Overrides',
-    description: 'Use these values only for the primary conversation model. Leave fields blank to inherit from Shared Runtime.',
-    role: 'conversation',
-  },
-  {
-    key: 'background',
-    title: 'Background Overrides',
-    description: 'Use these values for title generation and other background model tasks. Leave fields blank to inherit from Shared Runtime.',
-    role: 'background',
-  },
-  {
-    key: 'compaction',
-    title: 'Compaction Overrides',
-    description: 'Use these values for session compaction. Leave fields blank to inherit from Shared Runtime.',
-    role: 'compaction',
-  },
-  {
-    key: 'delegated_task',
-    title: 'Delegated Task Overrides',
-    description: 'Use this timeout limit for delegated background subtasks. Leave the field blank to inherit from Shared Runtime.',
-    role: 'delegated_task',
-    fields: DELEGATED_TASK_RUNTIME_FIELD_CONFIG,
-  },
-];
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const { config, setConfig } = useConfigStore();
-  const { theme, setTheme, baseFontSize, setBaseFontSize } = useUIStore();
+  const { t } = useI18n();
+  const { theme, setTheme, locale: currentLocale, setLocale, baseFontSize, setBaseFontSize } = useUIStore();
   const { sendConfig } = useWebSocket();
   const [activeTab, setActiveTab] = useState<SettingsTab>('model');
   const [draftConfig, setDraftConfig] = useState<Partial<ProviderConfig>>(config || {});
@@ -130,6 +75,65 @@ export const SettingsPage: React.FC = () => {
     info: null,
   });
   const [saveError, setSaveError] = useState<string | null>(null);
+  const settingsTabs: Array<{ value: SettingsTab; label: string; description: string }> = [
+    { value: 'model', label: t('settings.tab.model'), description: t('settings.tab.modelDescription') },
+    { value: 'runtime', label: t('settings.tab.runtime'), description: t('settings.tab.runtimeDescription') },
+    { value: 'tools', label: t('settings.tab.tools'), description: t('settings.tab.toolsDescription') },
+    { value: 'skills', label: t('settings.tab.skills'), description: t('settings.tab.skillsDescription') },
+    { value: 'ocr', label: t('settings.tab.ocr'), description: t('settings.tab.ocrDescription') },
+    { value: 'ui', label: t('settings.tab.ui'), description: t('settings.tab.uiDescription') },
+  ];
+  const themeOptions = [
+    { value: 'system', label: t('settings.ui.theme.system'), hint: t('settings.ui.theme.systemHint') },
+    { value: 'light', label: t('settings.ui.theme.light'), hint: t('settings.ui.theme.lightHint') },
+    { value: 'dark', label: t('settings.ui.theme.dark'), hint: t('settings.ui.theme.darkHint') },
+  ];
+  const localeOptions = [
+    { value: 'en-US', label: t('settings.ui.locale.en-US') },
+    { value: 'zh-CN', label: t('settings.ui.locale.zh-CN') },
+  ];
+  const runtimeFieldConfig: Array<{ key: keyof RuntimePolicy; label: string; min: number }> = [
+    { key: 'context_length', label: t('settings.runtime.contextLength'), min: 0 },
+    { key: 'max_output_tokens', label: t('settings.runtime.maxOutputTokens'), min: 1 },
+    { key: 'max_tool_rounds', label: t('settings.runtime.maxToolRounds'), min: 1 },
+    { key: 'max_retries', label: t('settings.runtime.maxRetries'), min: 1 },
+  ];
+  const delegatedTaskRuntimeFieldConfig: Array<{ key: keyof RuntimePolicy; label: string; min: number }> = [
+    { key: 'timeout_seconds', label: t('settings.runtime.timeoutSeconds'), min: 1 },
+  ];
+  const roleRuntimeSections: Array<{
+    key: Exclude<RuntimeSectionKey, 'shared'>;
+    title: string;
+    description: string;
+    role: ExecutionRole;
+    fields?: Array<{ key: keyof RuntimePolicy; label: string; min: number }>;
+  }> = [
+    {
+      key: 'conversation',
+      title: t('settings.runtime.conversationTitle'),
+      description: t('settings.runtime.conversationDescription'),
+      role: 'conversation',
+    },
+    {
+      key: 'background',
+      title: t('settings.runtime.backgroundTitle'),
+      description: t('settings.runtime.backgroundDescription'),
+      role: 'background',
+    },
+    {
+      key: 'compaction',
+      title: t('settings.runtime.compactionTitle'),
+      description: t('settings.runtime.compactionDescription'),
+      role: 'compaction',
+    },
+    {
+      key: 'delegated_task',
+      title: t('settings.runtime.delegatedTitle'),
+      description: t('settings.runtime.delegatedDescription'),
+      role: 'delegated_task',
+      fields: delegatedTaskRuntimeFieldConfig,
+    },
+  ];
 
   useEffect(() => {
     setDraftConfig(config || {});
@@ -150,7 +154,7 @@ export const SettingsPage: React.FC = () => {
         }
       } catch (error) {
         if (!cancelled) {
-          setSkillsError(error instanceof Error ? error.message : 'Failed to scan system skills.');
+          setSkillsError(error instanceof Error ? error.message : t('settings.error.scanSkills'));
           setSystemSkills([]);
           setSkillsRootPaths([]);
         }
@@ -180,7 +184,7 @@ export const SettingsPage: React.FC = () => {
         }
       } catch (error) {
         if (!cancelled) {
-          setToolsError(error instanceof Error ? error.message : 'Failed to load tools.');
+          setToolsError(error instanceof Error ? error.message : t('settings.error.loadTools'));
           setTools([]);
         }
       } finally {
@@ -221,7 +225,7 @@ export const SettingsPage: React.FC = () => {
           setOcrInstallState({
             loading: false,
             installing: false,
-            error: error instanceof Error ? error.message : 'Failed to inspect OCR installation.',
+            error: error instanceof Error ? error.message : t('settings.error.inspectOcr'),
             info: null,
           });
         }
@@ -293,7 +297,10 @@ export const SettingsPage: React.FC = () => {
 
     if (effectiveRuntime.max_output_tokens > effectiveRuntime.context_length) {
       warnings.push(
-        `Max output tokens (${effectiveRuntime.max_output_tokens}) exceeds the effective context length (${effectiveRuntime.context_length}). The backend will clamp it at run time.`
+        t('settings.runtime.outputExceedsContext', {
+          output: effectiveRuntime.max_output_tokens,
+          context: effectiveRuntime.context_length,
+        })
       );
     }
 
@@ -301,7 +308,7 @@ export const SettingsPage: React.FC = () => {
       return warnings;
     }
 
-    const role = ROLE_RUNTIME_SECTIONS.find((section) => section.key === sectionKey)?.role;
+    const role = roleRuntimeSections.find((section) => section.key === sectionKey)?.role;
     const profile = role ? resolveProfileForRole(draftConfig as ProviderConfig, role) : undefined;
     if (!profile?.provider || !profile.model) {
       return warnings;
@@ -310,7 +317,12 @@ export const SettingsPage: React.FC = () => {
     const knownContextLength = getDefaultContextLength(profile.provider, profile.model);
     if (knownContextLength && effectiveRuntime.context_length > knownContextLength) {
       warnings.push(
-        `Context length (${effectiveRuntime.context_length}) is higher than the known ${profile.provider}/${profile.model} window (${knownContextLength}). The backend will clamp it at run time.`
+        t('settings.runtime.contextExceedsModel', {
+          context: effectiveRuntime.context_length,
+          provider: profile.provider,
+          model: profile.model,
+          knownContext: knownContextLength,
+        })
       );
     }
 
@@ -464,12 +476,12 @@ export const SettingsPage: React.FC = () => {
   const handleTest = async (profileName: ProfileName) => {
     const profile = getProfileForTest(profileName);
     if (!profile.provider || !profile.model) {
-      setConnectionTestState(profileName, 'error', 'Provider and model are required');
+      setConnectionTestState(profileName, 'error', t('settings.validation.providerModelRequired'));
       return;
     }
 
     if (profile.provider !== 'ollama' && !profile.api_key) {
-      setConnectionTestState(profileName, 'error', 'API key is required for this provider');
+      setConnectionTestState(profileName, 'error', t('settings.validation.apiKeyRequired'));
       return;
     }
 
@@ -482,7 +494,7 @@ export const SettingsPage: React.FC = () => {
     try {
       const authToken = await getBackendAuthToken({ isTestMode: import.meta.env.MODE === 'test' });
       if (!authToken) {
-        setConnectionTestState(profileName, 'error', 'Backend auth handshake failed');
+        setConnectionTestState(profileName, 'error', t('settings.validation.backendAuthFailed'));
         return;
       }
 
@@ -506,7 +518,7 @@ export const SettingsPage: React.FC = () => {
       const payload = await response.json().catch(() => ({}));
 
       if (response.status === 404) {
-        setConnectionTestState(profileName, 'error', 'Backend endpoint /test-config not found. Please update backend build.');
+        setConnectionTestState(profileName, 'error', t('settings.validation.testEndpointMissing'));
         return;
       }
 
@@ -514,23 +526,25 @@ export const SettingsPage: React.FC = () => {
         setConnectionTestState(profileName, 'success', null);
         return;
       }
-      setConnectionTestState(profileName, 'error', payload.error || 'Connection test failed');
+      setConnectionTestState(profileName, 'error', payload.error || t('settings.validation.connectionTestFailed'));
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         setConnectionTestState(
           profileName,
           'error',
-          `Connection test timed out after ${Math.round(CONNECTION_TEST_TIMEOUT_MS / 1000)} seconds`
+          t('settings.validation.connectionTimedOut', {
+            seconds: Math.round(CONNECTION_TEST_TIMEOUT_MS / 1000),
+          })
         );
         return;
       }
 
-      const message = error instanceof Error ? error.message : 'Connection failed';
+      const message = error instanceof Error ? error.message : t('settings.validation.connectionFailed');
       if (message.toLowerCase().includes('failed to fetch')) {
         setConnectionTestState(
           profileName,
           'error',
-          `Cannot reach backend endpoint: ${backendTestConfigUrl}`
+          t('settings.validation.cannotReachBackend', { url: backendTestConfigUrl })
         );
         return;
       }
@@ -544,12 +558,12 @@ export const SettingsPage: React.FC = () => {
     setSaveError(null);
 
     if (!primaryProfile.provider || !primaryProfile.model) {
-      setSaveError('Provider and model are required');
+      setSaveError(t('settings.validation.providerModelRequired'));
       return;
     }
 
     if (backgroundProfile.provider && !backgroundProfile.model) {
-      setSaveError('Background model is required when a background provider is selected');
+      setSaveError(t('settings.validation.backgroundModelRequired'));
       return;
     }
 
@@ -628,7 +642,7 @@ export const SettingsPage: React.FC = () => {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Select OCR sidecar folder',
+        title: t('settings.ocr.selectFolderTitle'),
       });
 
       if (!selected || Array.isArray(selected)) {
@@ -654,7 +668,7 @@ export const SettingsPage: React.FC = () => {
       setOcrInstallState((current) => ({
         ...current,
         installing: false,
-        error: error instanceof Error ? error.message : 'Failed to install OCR sidecar.',
+        error: error instanceof Error ? error.message : t('settings.error.installOcr'),
       }));
     }
   };
@@ -665,15 +679,15 @@ export const SettingsPage: React.FC = () => {
         <div className="space-y-6">
           <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mb-4">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Model Configuration</h2>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.model.title')}</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Configure the main conversation model and the background execution model.
+                {t('settings.model.description')}
               </p>
             </div>
 
             <div className="space-y-5">
               <ProviderConfigForm
-                title="Primary Model"
+                title={t('settings.model.primary')}
                 config={primaryProfile}
                 configuredProviders={configuredProviders}
                 onChange={(nextConfig) => updateProfile('primary', nextConfig)}
@@ -681,16 +695,16 @@ export const SettingsPage: React.FC = () => {
                 canTestConnection={isProfileTestable(primaryProfile)}
                 testConnectionStatus={connectionTests.primary.status}
                 testConnectionError={connectionTests.primary.error}
-                testConnectionLabel="Test Primary Connection"
-                testConnectionBusyLabel="Testing Primary..."
-                testConnectionSuccessLabel="Primary connected"
-                testConnectionFailureLabel="Primary failed"
+                testConnectionLabel={t('settings.model.primaryTest')}
+                testConnectionBusyLabel={t('settings.model.primaryTesting')}
+                testConnectionSuccessLabel={t('settings.model.primaryConnected')}
+                testConnectionFailureLabel={t('settings.model.primaryFailed')}
                 testButtonVariant="primary"
               />
 
               <div className="rounded-2xl border border-dashed border-gray-200 p-4 dark:border-gray-700">
                 <ProviderConfigForm
-                  title="Background Model"
+                  title={t('settings.model.background')}
                   config={backgroundProfile}
                   configuredProviders={configuredProviders}
                   onChange={(nextConfig) => updateProfile('background', nextConfig)}
@@ -698,14 +712,14 @@ export const SettingsPage: React.FC = () => {
                   canTestConnection={isProfileTestable(backgroundProfile)}
                   testConnectionStatus={connectionTests.background.status}
                   testConnectionError={connectionTests.background.error}
-                  testConnectionLabel="Test Background Connection"
-                  testConnectionBusyLabel="Testing Background..."
-                  testConnectionSuccessLabel="Background connected"
-                  testConnectionFailureLabel="Background failed"
+                  testConnectionLabel={t('settings.model.backgroundTest')}
+                  testConnectionBusyLabel={t('settings.model.backgroundTesting')}
+                  testConnectionSuccessLabel={t('settings.model.backgroundConnected')}
+                  testConnectionFailureLabel={t('settings.model.backgroundFailed')}
                   testButtonVariant="secondary"
                 />
                 <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                  Used for title generation, session compaction, and future delegated background tasks. Falls back to the primary model when unset.
+                  {t('settings.model.backgroundHint')}
                 </p>
               </div>
             </div>
@@ -719,7 +733,7 @@ export const SettingsPage: React.FC = () => {
         sectionKey: RuntimeSectionKey,
         title: string,
         description: string,
-        fields: Array<{ key: keyof RuntimePolicy; label: string; min: number }> = RUNTIME_FIELD_CONFIG,
+        fields: Array<{ key: keyof RuntimePolicy; label: string; min: number }> = runtimeFieldConfig,
       ) => {
         const sectionDraft = getRuntimeSectionDraft(sectionKey);
         const effectiveRuntime = getEffectiveRuntimeSection(sectionKey);
@@ -770,8 +784,13 @@ export const SettingsPage: React.FC = () => {
             {sectionKey !== 'shared' && (
               <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
                 {sectionKey === 'delegated_task'
-                  ? `Effective value: timeout ${effectiveRuntime.timeout_seconds} seconds.`
-                  : `Effective values: context ${effectiveRuntime.context_length}, output ${effectiveRuntime.max_output_tokens}, tool rounds ${effectiveRuntime.max_tool_rounds}, retries ${effectiveRuntime.max_retries}.`}
+                  ? t('settings.runtime.effectiveTimeout', { timeout: effectiveRuntime.timeout_seconds ?? 0 })
+                  : t('settings.runtime.effectiveValues', {
+                      context: effectiveRuntime.context_length ?? 0,
+                      output: effectiveRuntime.max_output_tokens ?? 0,
+                      toolRounds: effectiveRuntime.max_tool_rounds ?? 0,
+                      retries: effectiveRuntime.max_retries ?? 0,
+                    })}
               </p>
             )}
 
@@ -790,24 +809,24 @@ export const SettingsPage: React.FC = () => {
         <div className="space-y-6">
           {renderRuntimeSection(
             'shared',
-            'Shared Runtime',
-            'Set the default runtime values used by every execution role unless an override is provided.'
+            t('settings.runtime.sharedTitle'),
+            t('settings.runtime.sharedDescription')
           )}
-          {ROLE_RUNTIME_SECTIONS.map((section) =>
+          {roleRuntimeSections.map((section) =>
             renderRuntimeSection(section.key, section.title, section.description, section.fields)
           )}
 
           <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mb-4">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Custom System Prompt</h2>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.runtime.customPromptTitle')}</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                This text is appended after the built-in system instructions. Leave blank to use the default prompt only.
+                {t('settings.runtime.customPromptDescription')}
               </p>
             </div>
 
             <div>
               <label htmlFor="custom-system-prompt" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Additional Instructions
+                {t('settings.runtime.additionalInstructions')}
               </label>
               <textarea
                 id="custom-system-prompt"
@@ -819,7 +838,7 @@ export const SettingsPage: React.FC = () => {
                     system_prompt: e.target.value,
                   })
                 }
-                placeholder="Example: Prefer concise answers. Mention risks before implementation details."
+                placeholder={t('settings.runtime.customPromptPlaceholder')}
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 font-mono text-sm text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               />
             </div>
@@ -834,14 +853,14 @@ export const SettingsPage: React.FC = () => {
           <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">Tools</h2>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.tools.title')}</h2>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Control which tools are exposed to the model at runtime. Disabled tools are truly unavailable, not just hidden.
+                  {t('settings.tools.description')}
                 </p>
               </div>
               {tools.length > 0 && (
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                  {tools.length} total
+                  {t('settings.tools.total', { count: tools.length })}
                 </span>
               )}
             </div>
@@ -849,7 +868,7 @@ export const SettingsPage: React.FC = () => {
             <div className="space-y-3">
               {toolsLoading && (
                 <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  Loading tools...
+                  {t('settings.tools.loading')}
                 </div>
               )}
 
@@ -861,7 +880,7 @@ export const SettingsPage: React.FC = () => {
 
               {!toolsLoading && !toolsError && tools.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  No tools were returned by the backend.
+                  {t('settings.tools.empty')}
                 </div>
               )}
 
@@ -878,7 +897,7 @@ export const SettingsPage: React.FC = () => {
                       <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{tool.description}</p>
                     </div>
                     <label className="flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300">
-                      <span>{enabled ? 'Enabled' : 'Disabled'}</span>
+                      <span>{enabled ? t('common.enabled') : t('common.disabled')}</span>
                       <input
                         type="checkbox"
                         checked={enabled}
@@ -900,19 +919,19 @@ export const SettingsPage: React.FC = () => {
         <div className="space-y-6">
           <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mb-4">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Skill Runtime</h2>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.skills.title')}</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Control whether local skills participate in the system prompt and which app-level system skills remain available.
+                {t('settings.skills.description')}
               </p>
             </div>
 
             <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
               <div>
                 <label htmlFor="enable-local-skills" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Enable Local Skills
+                  {t('settings.skills.enableLocalSkills')}
                 </label>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  Scan local skill metadata into the system prompt and allow the agent to load full instructions with `skill_loader`.
+                  {t('settings.skills.enableLocalSkillsDescription')}
                 </p>
               </div>
               <input
@@ -941,21 +960,21 @@ export const SettingsPage: React.FC = () => {
           <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">System Skills</h2>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.skills.systemSkillsTitle')}</h2>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  App-level skills discovered outside the current workspace, including the deployed app directory and app data directory. Workspace skills stay enabled by default and are not managed here.
+                  {t('settings.skills.systemSkillsDescription')}
                 </p>
               </div>
               {skillsRootPaths.length > 0 && (
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                  {systemSkills.length} loaded
+                  {t('settings.skills.loaded', { count: systemSkills.length })}
                 </span>
               )}
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                Skill Roots
+                {t('settings.skills.skillRoots')}
               </div>
               {skillsRootPaths.length > 0 ? (
                 <div className="mt-2 space-y-2">
@@ -967,7 +986,7 @@ export const SettingsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="mt-2 break-all font-mono text-sm text-gray-900 dark:text-gray-100">
-                  Unavailable
+                  {t('common.unavailable')}
                 </div>
               )}
             </div>
@@ -975,7 +994,7 @@ export const SettingsPage: React.FC = () => {
             <div className="mt-4 space-y-3">
               {skillsLoading && (
                 <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  Scanning system skills...
+                  {t('settings.skills.scanning')}
                 </div>
               )}
 
@@ -987,7 +1006,7 @@ export const SettingsPage: React.FC = () => {
 
               {!skillsLoading && !skillsError && systemSkills.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  No system-level skills were found in the configured app skill directories.
+                  {t('settings.skills.empty')}
                 </div>
               )}
 
@@ -1000,11 +1019,11 @@ export const SettingsPage: React.FC = () => {
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-gray-900 dark:text-white">{skill.name}</div>
                       <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                        {skill.description || 'No description found in frontmatter.'}
+                        {skill.description || t('common.noDescription')}
                       </p>
                     </div>
                     <label className="flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300">
-                      <span>{disabledSystemSkillNames.has(skill.name) ? 'Disabled' : 'Enabled'}</span>
+                      <span>{disabledSystemSkillNames.has(skill.name) ? t('common.disabled') : t('common.enabled')}</span>
                       <input
                         type="checkbox"
                         checked={!disabledSystemSkillNames.has(skill.name)}
@@ -1029,19 +1048,19 @@ export const SettingsPage: React.FC = () => {
         <div className="space-y-6">
           <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mb-4">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">OCR Availability</h2>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ocr.title')}</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Control whether the agent can use the optional Paddle OCR sidecar for screenshots and scanned PDFs.
+                {t('settings.ocr.description')}
               </p>
             </div>
 
             <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
               <div>
                 <label htmlFor="enable-ocr" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Enable OCR Tooling
+                  {t('settings.ocr.enableTooling')}
                 </label>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  When enabled, the top bar shows OCR status and the agent can call `ocr_extract`.
+                  {t('settings.ocr.enableToolingDescription')}
                 </p>
               </div>
               <input
@@ -1064,9 +1083,9 @@ export const SettingsPage: React.FC = () => {
           <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">OCR Sidecar Installation</h2>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ocr.installationTitle')}</h2>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Install the packaged OCR sidecar into the app directory under `ocr-sidecar/current`.
+                  {t('settings.ocr.installationDescription')}
                 </p>
               </div>
               <button
@@ -1075,35 +1094,35 @@ export const SettingsPage: React.FC = () => {
                 disabled={ocrInstallState.installing}
                 className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
               >
-                {ocrInstallState.installing ? 'Installing OCR...' : 'Install OCR Plugin'}
+                {ocrInstallState.installing ? t('settings.ocr.installing') : t('settings.ocr.installButton')}
               </button>
             </div>
 
             <div className="space-y-3 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  Install Status
+                  {t('settings.ocr.installStatus')}
                 </div>
                 <div className="mt-2 text-sm text-gray-900 dark:text-gray-100">
                   {ocrInstallState.loading
-                    ? 'Checking OCR installation...'
+                    ? t('settings.ocr.checking')
                     : ocrInstallState.info?.installed
-                      ? `Installed${ocrInstallState.info.version ? ` (v${ocrInstallState.info.version})` : ''}`
-                      : 'Not installed'}
+                      ? `${t('settings.ocr.installed')}${ocrInstallState.info.version ? ` (v${ocrInstallState.info.version})` : ''}`
+                      : t('settings.ocr.notInstalled')}
                 </div>
               </div>
 
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  Target Directory
+                  {t('settings.ocr.targetDirectory')}
                 </div>
                 <div className="mt-2 break-all font-mono text-sm text-gray-900 dark:text-gray-100">
-                  {ocrInstallState.info?.installDir || 'Unavailable'}
+                  {ocrInstallState.info?.installDir || t('common.unavailable')}
                 </div>
               </div>
 
               <div className="text-xs text-gray-500 dark:text-gray-400">
-                Choose a folder that contains `manifest.json` and `ocr-server.exe`, or a parent folder that contains `current/`.
+                {t('settings.ocr.chooseFolder')}
               </div>
             </div>
 
@@ -1121,45 +1140,69 @@ export const SettingsPage: React.FC = () => {
       <div className="space-y-6">
         <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="mb-4">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Display Mode</h2>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ui.languageTitle')}</h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Switch between system, light, and dark themes using the custom UI selector.
+              {t('settings.ui.languageDescription')}
             </p>
           </div>
 
           <div className="max-w-md space-y-2">
-            <label id="theme-label" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Theme
+            <label id="language-label" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              {t('settings.ui.languageLabel')}
             </label>
             <CustomSelect
-              id="theme"
-              ariaLabel="Theme"
-              ariaLabelledBy="theme-label"
-              value={theme}
-              onChange={(nextTheme) => setTheme(nextTheme as 'light' | 'dark' | 'system')}
-              options={THEME_OPTIONS}
+              id="language"
+              ariaLabel={t('settings.ui.languageLabel')}
+              ariaLabelledBy="language-label"
+              value={currentLocale}
+              onChange={(nextLocale) => setLocale(nextLocale as AppLocale)}
+              options={localeOptions}
+              showSelectedHint={false}
             />
           </div>
         </section>
 
         <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="mb-4">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Typography</h2>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ui.displayModeTitle')}</h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Review the current app font and adjust the base font size.
+              {t('settings.ui.displayModeDescription')}
+            </p>
+          </div>
+
+          <div className="max-w-md space-y-2">
+            <label id="theme-label" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              {t('settings.ui.themeLabel')}
+            </label>
+            <CustomSelect
+              id="theme"
+              ariaLabel={t('settings.ui.themeLabel')}
+              ariaLabelledBy="theme-label"
+              value={theme}
+              onChange={(nextTheme) => setTheme(nextTheme as 'light' | 'dark' | 'system')}
+              options={themeOptions}
+            />
+          </div>
+        </section>
+
+        <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ui.typographyTitle')}</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {t('settings.ui.typographyDescription')}
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),220px]">
             <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(14,165,233,0.08),rgba(99,102,241,0.08))] p-5 dark:bg-[linear-gradient(135deg,rgba(14,165,233,0.14),rgba(99,102,241,0.14))]">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                Current Font
+                {t('settings.ui.currentFont')}
               </div>
               <div className="mt-3 text-2xl font-semibold text-gray-900 dark:text-white" style={{ fontFamily: APP_FONT_STACK }}>
                 {APP_FONT_LABEL}
               </div>
               <div className="mt-2 text-sm text-gray-600 dark:text-gray-300" style={{ fontFamily: APP_FONT_STACK }}>
-                The quick brown fox jumps over the lazy dog.
+                {t('settings.ui.fontSample')}
               </div>
               <div className="mt-3 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
                 {APP_FONT_STACK}
@@ -1168,7 +1211,7 @@ export const SettingsPage: React.FC = () => {
 
             <div>
               <label htmlFor="base-font-size" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Base Font Size
+                {t('settings.ui.baseFontSize')}
               </label>
               <input
                 id="base-font-size"
@@ -1185,7 +1228,7 @@ export const SettingsPage: React.FC = () => {
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               />
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Applies immediately so you can preview the result before saving.
+                {t('settings.ui.baseFontSizeHint')}
               </p>
             </div>
           </div>
@@ -1201,16 +1244,16 @@ export const SettingsPage: React.FC = () => {
           <button
             onClick={() => navigate(-1)}
             className="rounded-xl p-2 text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-            aria-label="Go back"
-            title="Go back"
+            aria-label={t('about.back')}
+            title={t('about.back')}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <div>
-            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Settings</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Tabs on the left, detailed controls on the right.</p>
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">{t('settings.title')}</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('settings.subtitle')}</p>
           </div>
         </div>
 
@@ -1219,7 +1262,7 @@ export const SettingsPage: React.FC = () => {
           onClick={() => navigate('/about')}
           className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
         >
-          About
+          {t('settings.about')}
         </button>
       </header>
 
@@ -1227,7 +1270,7 @@ export const SettingsPage: React.FC = () => {
         <div className="flex items-start gap-6">
           <aside className="w-60 shrink-0 rounded-[1.75rem] border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="space-y-1.5">
-              {SETTINGS_TABS.map((tab) => (
+              {settingsTabs.map((tab) => (
                 <button
                   key={tab.value}
                   type="button"

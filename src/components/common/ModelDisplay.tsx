@@ -1,13 +1,15 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 import { useConfigStore } from '../../stores/configStore';
 
 export const ModelDisplay: React.FC = () => {
+  const { t } = useI18n();
   const { config } = useConfigStore();
 
   if (!config) {
     return (
       <span className="text-sm text-gray-500 dark:text-gray-400">
-        No model selected
+        {t('model.noneSelected')}
       </span>
     );
   }

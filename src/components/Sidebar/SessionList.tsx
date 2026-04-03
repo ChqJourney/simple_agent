@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useI18n } from '../../i18n';
 import { useSessionStore } from '../../stores/sessionStore';
 import { formatTimestamp } from '../../utils/storage';
 import { useSession } from '../../hooks/useSession';
@@ -8,6 +9,7 @@ interface SessionListProps {
 }
 
 export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
+  const { t } = useI18n();
   const { sessions, currentSessionId } = useSessionStore();
   const { createSession, switchSession, deleteSession } = useSession();
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -64,7 +66,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">Sessions</h3>
+          <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">{t('sessions.title')}</h3>
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
             {sortedSessions.length}
           </span>
@@ -72,7 +74,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
         <button
           onClick={handleNewSession}
           className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 transition-colors"
-          title="New Session"
+          title={t('sessions.new')}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -82,7 +84,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
 
       <div data-testid="session-list-scroll" className="min-h-0 flex-1 overflow-y-auto pr-1 pt-2">
         {sortedSessions.length === 0 ? (
-          <p className="text-xs text-gray-400 dark:text-gray-500">No sessions yet</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">{t('sessions.empty')}</p>
         ) : (
           <div className="space-y-2">
             <ul className="space-y-1">
@@ -95,9 +97,9 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
                         ? 'bg-blue-50 dark:bg-blue-900 text-blue-900 dark:text-blue-100'
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100'
                     }`}
-                  >
+                    >
                     <div className="font-medium truncate">
-                      {session.title?.trim() || 'new session'}
+                      {session.title?.trim() || t('sessions.newSessionTitle')}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">
                       {formatTimestamp(session.updated_at)}
@@ -106,7 +108,7 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
                   <button
                     onClick={(e) => handleDeleteClick(e, session.session_id)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900 text-red-500 dark:text-red-400 transition-opacity"
-                    title="Delete session"
+                    title={t('sessions.delete')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -122,7 +124,9 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
                 onClick={() => setShowAll((value) => !value)}
                 className="px-2 text-sm text-gray-500 transition-colors hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-300"
               >
-                {showAll ? "Show less" : `Show more (${sortedSessions.length - 5} more)`}
+                {showAll
+                  ? t('sessions.showLess')
+                  : t('sessions.showMore', { count: sortedSessions.length - 5 })}
               </button>
             )}
           </div>
@@ -132,9 +136,9 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 max-w-sm mx-4 shadow-xl">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Delete Session</h3>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">{t('sessions.deleteTitle')}</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Are you sure you want to delete this session? This action cannot be undone.
+              {t('sessions.deleteBody')}
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -142,14 +146,14 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
                 disabled={isDeleting}
                 className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={() => void handleConfirmDelete()}
                 disabled={isDeleting}
                 className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors disabled:opacity-50"
               >
-                {isDeleting ? 'Deleting...' : 'Delete'}
+                {isDeleting ? t('sessions.deleting') : t('common.delete')}
               </button>
             </div>
           </div>

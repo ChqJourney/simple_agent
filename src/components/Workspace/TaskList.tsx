@@ -1,7 +1,9 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 import { useTaskStore, useSessionStore } from '../../stores';
 
 export const TaskList: React.FC = () => {
+  const { t } = useI18n();
   const { currentSessionId } = useSessionStore();
   const { getTasksBySession } = useTaskStore();
 
@@ -38,7 +40,7 @@ export const TaskList: React.FC = () => {
   if (tasks.length === 0) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        No tasks yet
+        {t('workspace.tasksEmpty')}
       </div>
     );
   }

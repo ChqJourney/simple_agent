@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../../i18n';
 
 export interface CustomSelectOption {
   value: string;
@@ -26,7 +27,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   value,
   options,
   onChange,
-  placeholder = 'Select an option',
+  placeholder,
   disabled = false,
   ariaLabel,
   ariaLabelledBy,
@@ -35,11 +36,13 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   showSelectedHint = true,
   menuPlacement = 'bottom',
 }) => {
+  const { t } = useI18n();
   const generatedId = useId();
   const selectId = id || `custom-select-${generatedId}`;
   const listboxId = `${selectId}-listbox`;
   const containerRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const resolvedPlaceholder = placeholder || t('common.selectOption');
 
   const selectedOption = useMemo(
     () => options.find((option) => option.value === value),
@@ -92,7 +95,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
       >
         <span className="min-w-0">
           <span className={`block truncate ${selectedOption ? '' : 'text-gray-400 dark:text-gray-500'}`}>
-            {selectedOption?.label || placeholder}
+            {selectedOption?.label || resolvedPlaceholder}
           </span>
           {showSelectedHint && selectedOption?.hint && (
             <span className="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">

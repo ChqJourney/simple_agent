@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { copyFile, exists, readDir } from '@tauri-apps/plugin-fs';
+import { useI18n } from '../../i18n';
 import { useWorkspaceStore } from '../../stores';
 import { getFileIconKind, isImagePath } from '../../utils/fileTypes';
 import { clearActiveDraggedFileDescriptors, setActiveDraggedFileDescriptors } from '../../utils/internalDragState';
@@ -137,6 +138,7 @@ function renderFileIcon(kind: ReturnType<typeof getFileIconKind>) {
 }
 
 export const FileTree: React.FC = () => {
+  const { t } = useI18n();
   const { currentWorkspace, changedFiles, markChangedFile } = useWorkspaceStore();
   const [tree, setTree] = useState<FileNode[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
@@ -258,7 +260,7 @@ export const FileTree: React.FC = () => {
       const selected = await open({
         multiple: true,
         directory: false,
-        title: 'Import files into workspace',
+        title: t('fileTree.importDialogTitle'),
       });
 
       const selectedPaths = Array.isArray(selected)
@@ -293,10 +295,10 @@ export const FileTree: React.FC = () => {
       }
 
       if (conflicts.length > 0) {
-        setImportError(`Skipped existing files: ${conflicts.join(', ')}`);
+        setImportError(t('fileTree.importSkipped', { files: conflicts.join(', ') }));
       }
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Failed to import files.');
+      setImportError(error instanceof Error ? error.message : t('fileTree.importFailed'));
     } finally {
       setIsImporting(false);
     }
@@ -391,7 +393,7 @@ export const FileTree: React.FC = () => {
   if (!currentWorkspace) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        No workspace selected
+        {t('fileTree.noWorkspaceSelected')}
       </div>
     );
   }
@@ -399,7 +401,7 @@ export const FileTree: React.FC = () => {
   if (isInitialLoading) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-        Loading...
+        {t('fileTree.loading')}
       </div>
     );
   }
@@ -409,7 +411,7 @@ export const FileTree: React.FC = () => {
       <div className="sticky top-0 z-10 border-b border-gray-200/80 bg-white/95 px-2 py-2 backdrop-blur dark:border-gray-800/80 dark:bg-gray-900/95">
         <div className="flex items-center justify-between gap-2">
           <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
-            Files
+            {t('fileTree.files')}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -417,7 +419,7 @@ export const FileTree: React.FC = () => {
               onClick={() => void handleOpenWorkspace()}
               disabled={!currentWorkspace?.path || isOpeningWorkspace}
               className="group relative rounded-lg border border-gray-200 p-1.5 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-              title="Open folder"
+              title={t('fileTree.openFolder')}
             >
               <OpenFolderIcon className="h-5 w-5" />
             </button>
@@ -426,7 +428,7 @@ export const FileTree: React.FC = () => {
               onClick={() => void handleImportFiles()}
               disabled={!currentWorkspace?.path || isImporting}
               className="group relative rounded-lg border border-gray-200 p-1.5 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-              title="Import files"
+              title={t('fileTree.importFiles')}
             >
               <ImportFilesIcon className="h-5 w-5" />
             </button>

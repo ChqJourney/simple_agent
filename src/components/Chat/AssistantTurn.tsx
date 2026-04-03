@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { useI18n } from '../../i18n';
 import { AssistantStatus, Message } from '../../types';
 import { markdownComponents, markdownRemarkPlugins, parseMarkdown } from '../../utils/markdown';
 import { ReasoningBlock } from '../Reasoning/ReasoningBlock';
@@ -53,6 +54,7 @@ function getRoundDetailsLabel(
   messages: Message[],
   hasStreamingReasoning: boolean,
   hiddenToolCallIds: Set<string>,
+  t: ReturnType<typeof useI18n>['t'],
 ): string {
   let reasoningCount = hasStreamingReasoning ? 1 : 0;
   let toolCallCount = 0;
@@ -84,26 +86,30 @@ function getRoundDetailsLabel(
 
   const parts: string[] = [];
   if (reasoningCount > 0) {
-    parts.push(`thinking ${reasoningCount}`);
+    parts.push(t('chat.assistant.thinkingCount', { count: reasoningCount }));
   }
   if (toolCallCount > 0) {
-    parts.push(`tool calls ${toolCallCount}`);
+    parts.push(t('chat.assistant.toolCallsCount', { count: toolCallCount }));
   }
   if (toolResultCount > 0) {
-    parts.push(`tool results ${toolResultCount}`);
+    parts.push(t('chat.assistant.toolResultsCount', { count: toolResultCount }));
   }
   if (userActionCount > 0) {
-    parts.push(`user actions ${userActionCount}`);
+    parts.push(t('chat.assistant.userActionsCount', { count: userActionCount }));
   }
 
-  return parts.length > 0 ? parts.join(' · ') : 'Round details';
+  return parts.length > 0 ? parts.join(' · ') : t('chat.assistant.roundDetails');
 }
 
 function renderToolMessage(message: Message) {
   return <ToolMessageDisplay message={message} collapsible={false} />;
 }
 
-function renderDetailMessage(message: Message, hiddenToolCallIds: Set<string>) {
+function renderDetailMessage(
+  message: Message,
+  hiddenToolCallIds: Set<string>,
+  t: ReturnType<typeof useI18n>['t'],
+) {
   if (message.role === 'reasoning') {
     return <ReasoningBlock content={message.content || ''} collapsible={false} defaultExpanded={true} />;
   }
@@ -127,7 +133,7 @@ function renderDetailMessage(message: Message, hiddenToolCallIds: Set<string>) {
       <div className="rounded-2xl border border-gray-200/80 bg-white/70 p-4 dark:border-gray-700/80 dark:bg-gray-900/50">
         <div className="flex items-center justify-between gap-3">
           <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
-            Assistant activity
+            {t('chat.assistant.activity')}
           </div>
           {hasContent && <CopyMessageButton text={message.content || ''} />}
         </div>
@@ -167,6 +173,7 @@ export const AssistantTurn = ({
   elapsedLabel,
   onRetry,
 }: AssistantTurnProps) => {
+  const { t } = useI18n();
   const hiddenDelegatedToolCallIds = useMemo(
     () => new Set(delegatedWorkers.map((worker) => worker.toolCallId)),
     [delegatedWorkers],
@@ -215,6 +222,7 @@ export const AssistantTurn = ({
     detailMessages,
     Boolean(currentReasoningContent),
     hiddenDelegatedToolCallIds,
+    t,
   );
 
   return (
@@ -222,7 +230,7 @@ export const AssistantTurn = ({
       {hasHeader && (
         <div className="mb-2 flex items-center justify-between">
           <span className="font-semibold text-xs text-gray-600 dark:text-gray-400">
-            Assistant
+            {t('chat.assistant.label')}
           </span>
           <div className="flex items-center gap-2">
             {elapsedLabel && (
@@ -232,7 +240,7 @@ export const AssistantTurn = ({
             )}
             {formalAssistantMessage?.usage && (
               <span className="text-xs text-gray-400 dark:text-gray-500">
-                {formalAssistantMessage.usage.total_tokens} tokens
+                {t('chat.assistant.tokens', { count: formalAssistantMessage.usage.total_tokens })}
               </span>
             )}
             {copyableContent && <CopyMessageButton text={copyableContent} />}
@@ -263,7 +271,7 @@ export const AssistantTurn = ({
           {isExpanded && (
             <div className="mt-4 space-y-3 border-t border-gray-200/80 pt-4 dark:border-gray-700/80">
               {visibleDetailMessages.map((message) => {
-                const content = renderDetailMessage(message, hiddenDelegatedToolCallIds);
+                const content = renderDetailMessage(message, hiddenDelegatedToolCallIds, t);
                 if (!content) {
                   return null;
                 }
@@ -324,15 +332,15 @@ export const AssistantTurn = ({
             <svg className="h-3.5 w-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path fillRule="evenodd" d="M18 10A8 8 0 114 4.73V3a1 1 0 10-2 0v4a1 1 0 001 1h4a1 1 0 100-2H5.22A6 6 0 1010 4a1 1 0 100-2 8 8 0 018 8zm-8-3a1 1 0 00-1 1v3a1 1 0 102 0V8a1 1 0 00-1-1zm0 8a1.25 1.25 0 100-2.5A1.25 1.25 0 0010 15z" clipRule="evenodd" />
             </svg>
-            <span className="font-medium">Failed</span>
+            <span className="font-medium">{t('chat.assistant.failed')}</span>
           </div>
           {onRetry && (
             <button
               type="button"
               onClick={onRetry}
               className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-white/80 text-red-600 transition-colors hover:bg-white hover:text-red-700 dark:border-red-800 dark:bg-red-950/20 dark:text-red-300 dark:hover:bg-red-950/40"
-              aria-label="Resend message"
-              title="Resend message"
+              aria-label={t('chat.assistant.resend')}
+              title={t('chat.assistant.resend')}
             >
               <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path d="M4.93 4.93a7 7 0 111.06 9.04 1 1 0 10-1.68 1.08A9 9 0 1010 1a1 1 0 100 2 7 7 0 00-5.07 1.93V3a1 1 0 10-2 0v4a1 1 0 001 1h4a1 1 0 000-2H4.93z" />

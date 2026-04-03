@@ -43,6 +43,7 @@ describe("TopBar", () => {
       ...state,
       leftPanelCollapsed: false,
       rightPanelCollapsed: false,
+      locale: "en-US",
     }));
     useChatStore.setState({
       sessions: {},

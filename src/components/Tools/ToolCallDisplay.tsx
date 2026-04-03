@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 import { ToolCall } from '../../types';
 import {
   createToolCallDetailTitle,
@@ -23,6 +24,7 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   collapsible = true,
   result,
 }) => {
+  const { t } = useI18n();
   const summary = createToolCallSummary(toolCall);
   const category = getToolCategoryLabel(toolCall.name);
   const impact = getToolImpactLabel(toolCall.name);
@@ -46,7 +48,7 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
 
         {result && (
           <>
-            <div className="mt-3 font-medium">Output</div>
+            <div className="mt-3 font-medium">{t('common.output')}</div>
             <pre className="mt-1 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-gray-300">
               {formatToolTechnicalValue(result.output)}
             </pre>

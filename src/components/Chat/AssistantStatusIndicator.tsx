@@ -1,4 +1,5 @@
 import { AssistantStatus } from '../../types';
+import { useI18n } from '../../i18n';
 
 interface AssistantStatusIndicatorProps {
   status: AssistantStatus;
@@ -6,6 +7,8 @@ interface AssistantStatusIndicatorProps {
 }
 
 export const AssistantStatusIndicator = ({ status, toolName }: AssistantStatusIndicatorProps) => {
+  const { t } = useI18n();
+
   if (status === 'idle') {
     return null;
   }
@@ -16,16 +19,16 @@ export const AssistantStatusIndicator = ({ status, toolName }: AssistantStatusIn
         <svg className="w-3 h-3 text-green-500" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
         </svg>
-        <span>Completed</span>
+        <span>{t('chat.assistant.completed')}</span>
       </div>
     );
   }
 
   const statusConfig: Record<Exclude<AssistantStatus, 'idle' | 'completed'>, string> = {
-    waiting: 'Waiting for response...',
-    thinking: 'Thinking...',
-    streaming: 'Streaming response...',
-    tool_calling: 'Calling tool...',
+    waiting: t('chat.assistant.waiting'),
+    thinking: t('chat.assistant.thinking'),
+    streaming: t('chat.assistant.streaming'),
+    tool_calling: t('chat.assistant.toolCalling'),
   };
 
   const isToolCalling = status === 'tool_calling';

@@ -152,6 +152,7 @@ describe("SettingsPage", () => {
     useUIStore.setState((state) => ({
       ...state,
       theme: "system",
+      locale: "en-US",
       baseFontSize: 16,
     }));
   });

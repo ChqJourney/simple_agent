@@ -1,4 +1,5 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
+import { useI18n } from '../../i18n';
 import type { Attachment } from '../../types';
 import { attachmentKey, resolveAttachmentPreviewSrc } from '../../utils/imageAttachments';
 
@@ -49,6 +50,7 @@ function useResolvedPreview(attachment: Attachment): string | null {
 }
 
 const AttachmentThumbnail = memo<AttachmentThumbnailProps>(({ attachment, onOpenPreview }) => {
+  const { t } = useI18n();
   const previewSrc = useResolvedPreview(attachment);
 
   return (
@@ -56,8 +58,8 @@ const AttachmentThumbnail = memo<AttachmentThumbnailProps>(({ attachment, onOpen
       <div
         role="button"
         tabIndex={0}
-        aria-label={`Open image preview for ${attachment.name}`}
-        title={`Double-click to preview ${attachment.name}`}
+        aria-label={t('chat.image.openPreview', { name: attachment.name })}
+        title={t('chat.image.doubleClickPreview', { name: attachment.name })}
         onDoubleClick={() => onOpenPreview(attachment)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -70,15 +72,15 @@ const AttachmentThumbnail = memo<AttachmentThumbnailProps>(({ attachment, onOpen
         {previewSrc ? (
           <img
             src={previewSrc}
-            alt={`Attachment preview: ${attachment.name}`}
+            alt={t('chat.input.attachmentPreview', { name: attachment.name })}
             className="h-20 w-full rounded-xl object-cover"
           />
         ) : (
           <div className="flex h-20 w-full items-center justify-center rounded-xl border border-dashed border-blue-300/80 bg-white/70 px-2 text-center text-[11px] text-blue-600 dark:border-blue-700 dark:bg-gray-900/40 dark:text-blue-200">
-            Preview unavailable
+            {t('chat.image.previewUnavailable')}
           </div>
         )}
-        <span className="block truncate text-[11px] opacity-80">Double-click to preview</span>
+        <span className="block truncate text-[11px] opacity-80">{t('chat.image.doubleClickHint')}</span>
       </div>
       <span className="mt-1 block truncate px-1 text-xs font-medium text-blue-700 dark:text-blue-100">
         {attachment.name}
@@ -95,6 +97,7 @@ interface AttachmentPreviewModalProps {
 }
 
 const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({ attachment, onClose }) => {
+  const { t } = useI18n();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previewSrc = useResolvedPreview(attachment);
 
@@ -127,7 +130,7 @@ const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({ attachm
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Image preview: ${attachment.name}`}
+        aria-label={t('chat.image.modalLabel', { name: attachment.name })}
         className="w-full max-w-5xl rounded-[1.75rem] border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900"
         onClick={(event) => event.stopPropagation()}
       >
@@ -144,8 +147,8 @@ const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({ attachm
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            aria-label="Close image preview"
-            title="Close image preview"
+            aria-label={t('chat.image.closePreview')}
+            title={t('chat.image.closePreview')}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -158,12 +161,12 @@ const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({ attachm
           {previewSrc ? (
             <img
               src={previewSrc}
-              alt={`Expanded preview: ${attachment.name}`}
+              alt={t('chat.image.expandedPreview', { name: attachment.name })}
               className="max-h-[78vh] max-w-full rounded-xl object-contain"
             />
           ) : (
             <div className="rounded-2xl border border-dashed border-gray-300 bg-white/80 px-6 py-10 text-center text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900/70 dark:text-gray-300">
-              Unable to load a preview for this image.
+              {t('chat.image.unableToLoadPreview')}
             </div>
           )}
         </div>

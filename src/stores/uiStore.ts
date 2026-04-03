@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { AppLocale, resolveAppLocale } from '../i18n/locale';
 import { normalizeBaseFontSize } from '../utils/config';
 
 type RightPanelTab = 'filetree' | 'tasklist';
@@ -25,6 +26,7 @@ interface UIState {
   rightPanelWidth: number;
   rightPanelTab: RightPanelTab;
   theme: 'light' | 'dark' | 'system';
+  locale: AppLocale;
   baseFontSize: number;
   isPageLoading: boolean;
 
@@ -36,6 +38,7 @@ interface UIState {
   resetRightPanelWidth: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  setLocale: (locale: AppLocale) => void;
   setBaseFontSize: (size: number) => void;
   setPageLoading: (loading: boolean) => void;
 }
@@ -49,6 +52,7 @@ export const useUIStore = create<UIState>()(
       rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH,
       rightPanelTab: 'filetree',
       theme: 'system',
+      locale: resolveAppLocale(typeof navigator !== 'undefined' ? navigator.language : undefined),
       baseFontSize: 16,
       isPageLoading: false,
 
@@ -66,6 +70,7 @@ export const useUIStore = create<UIState>()(
 
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
       setTheme: (theme) => set({ theme }),
+      setLocale: (locale) => set({ locale }),
       setBaseFontSize: (size) => set({ baseFontSize: normalizeBaseFontSize(size) }),
       setPageLoading: (loading) => set({ isPageLoading: loading }),
     }),
@@ -78,6 +83,7 @@ export const useUIStore = create<UIState>()(
         rightPanelWidth: state.rightPanelWidth,
         rightPanelTab: state.rightPanelTab,
         theme: state.theme,
+        locale: state.locale,
         baseFontSize: state.baseFontSize,
       }),
     }

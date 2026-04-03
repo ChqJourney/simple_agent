@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useI18n } from '../../i18n';
 import type { Workspace } from '../../types';
 
 interface WorkspaceItemProps {
@@ -12,6 +13,7 @@ export const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   onSelect,
   onDelete,
 }) => {
+  const { t } = useI18n();
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -41,7 +43,7 @@ export const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
             onDelete(workspace.id);
           }}
           className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
-          title="Remove workspace"
+          title={t('welcome.removeWorkspace')}
         >
           <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

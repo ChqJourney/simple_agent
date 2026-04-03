@@ -30,6 +30,7 @@ function RoutedContent() {
 function App() {
   const setPageLoading = useUIStore((state) => state.setPageLoading);
   const theme = useUIStore((state) => state.theme);
+  const locale = useUIStore((state) => state.locale);
   const baseFontSize = useUIStore((state) => state.baseFontSize);
 
   useEffect(() => {
@@ -64,6 +65,10 @@ function App() {
   useEffect(() => {
     document.documentElement.style.fontSize = `${baseFontSize}px`;
   }, [baseFontSize]);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   return (
     <BrowserRouter>

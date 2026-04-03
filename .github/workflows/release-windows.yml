@@ -114,7 +114,14 @@ jobs:
       - name: Resolve release version
         shell: pwsh
         run: |
-          $releaseVersion = "${{ github.event.inputs.release_version }}"
+          $releaseVersion = ""
+
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch" -and (Test-Path -LiteralPath $env:GITHUB_EVENT_PATH)) {
+            $eventPayload = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            if ($null -ne $eventPayload.inputs) {
+              $releaseVersion = "$($eventPayload.inputs.release_version)"
+            }
+          }
 
           if (-not [string]::IsNullOrWhiteSpace($releaseVersion)) {
             # Strip leading 'v' if present (e.g. "v0.5.17" -> "0.5.17")
@@ -130,7 +137,19 @@ jobs:
       - name: Resolve updater URLs
         shell: pwsh
         run: |
-          $pagesBaseUrl = "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          $repoParts = $env:GITHUB_REPOSITORY -split '/', 2
+          if ($repoParts.Count -ne 2) {
+            throw "Unexpected GITHUB_REPOSITORY format: $env:GITHUB_REPOSITORY"
+          }
+
+          $owner = $repoParts[0]
+          $repoName = $repoParts[1]
+          if ($repoName -ieq "$owner.github.io") {
+            $pagesBaseUrl = "https://$owner.github.io"
+          } else {
+            $pagesBaseUrl = "https://$owner.github.io/$repoName"
+          }
+
           $baseUrl = $env:TAURI_AGENT_UPDATER_BASE_URL
           $endpoints = $env:TAURI_AGENT_UPDATER_ENDPOINTS
 
@@ -362,7 +381,7 @@ jobs:
           Copy-Item -LiteralPath (Join-Path $bundleRoots[0].FullName "*") -Destination $pagesRoot -Recurse -Force
 
           if (-not (Test-Path -LiteralPath (Join-Path $pagesRoot "latest.json"))) {
-            throw "GitHub Pages payload is missing latest.json. Ensure updater configuration is available before publishing."
+            Write-Host "latest.json was not generated; deploying bundle without updater manifest."
           }
 
           Write-Host "Prepared GitHub Pages payload at $pagesRoot"

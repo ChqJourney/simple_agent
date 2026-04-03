@@ -40,7 +40,9 @@ if (-not $SkipInstallerPackage) {
     Invoke-CheckedCommand -FilePath "powershell" -Arguments $installerArgs
 
     $resolvedUpdaterBaseUrl = Get-UpdaterBaseUrl -BaseUrl $UpdaterBaseUrl
-    if (-not [string]::IsNullOrWhiteSpace($resolvedUpdaterBaseUrl)) {
+    $updaterArtifactSigningConfigured = Test-TauriUpdaterArtifactSigningConfigured
+
+    if (-not [string]::IsNullOrWhiteSpace($resolvedUpdaterBaseUrl) -and $updaterArtifactSigningConfigured) {
         $manifestArgs = @(
             "-ExecutionPolicy", "Bypass",
             "-File", (Join-Path $PSScriptRoot "generate-updater-manifest.ps1"),
@@ -52,6 +54,9 @@ if (-not $SkipInstallerPackage) {
         }
 
         Invoke-CheckedCommand -FilePath "powershell" -Arguments $manifestArgs
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($resolvedUpdaterBaseUrl)) {
+        Write-Host "TAURI_SIGNING_PRIVATE_KEY not set; skipping latest.json generation."
     }
     else {
         Write-Host "TAURI_AGENT_UPDATER_BASE_URL not set; skipping latest.json generation."

@@ -69,6 +69,22 @@ Assert-Equal -Actual $joinedUrl -Expected "https://updates.example.com/work-agen
 $relativePath = Get-RelativePathNormalized -Root "/tmp/work-agent" -Path "/tmp/work-agent/nsis/setup.exe"
 Assert-Equal -Actual $relativePath -Expected "nsis/setup.exe" -Message "Relative updater artifact paths should be normalized to forward slashes."
 
+$nsisTempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("tauri-agent-nsis-tests-" + [System.Guid]::NewGuid().ToString("N"))
+$singleInstallerDir = Join-Path $nsisTempRoot "nsis"
+$singleInstallerPath = Join-Path $singleInstallerDir "work-agent-setup.exe"
+New-Item -ItemType Directory -Path $singleInstallerDir -Force | Out-Null
+Set-Content -LiteralPath $singleInstallerPath -Value "stub"
+
+try {
+    $resolvedInstaller = Find-UpdaterNsisInstaller -BundleRoot $nsisTempRoot
+    Assert-Equal -Actual $resolvedInstaller.FullName -Expected $singleInstallerPath -Message "Updater installer discovery should work when exactly one NSIS installer exists."
+}
+finally {
+    if (Test-Path -LiteralPath $nsisTempRoot) {
+        Remove-Item -LiteralPath $nsisTempRoot -Recurse -Force
+    }
+}
+
 $legacyArtifactsRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("tauri-agent-legacy-release-" + [System.Guid]::NewGuid().ToString("N"))
 $legacyMarker = Join-Path $legacyArtifactsRoot "portable/stale.txt"
 New-Item -ItemType Directory -Path (Split-Path $legacyMarker -Parent) -Force | Out-Null

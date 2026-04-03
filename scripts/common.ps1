@@ -776,9 +776,9 @@ function Find-UpdaterNsisInstaller {
         throw "Expected NSIS bundle directory was not found: $nsisRoot"
     }
 
-    $candidates = Get-ChildItem -LiteralPath $nsisRoot -File -Recurse | Where-Object {
+    $candidates = @(Get-ChildItem -LiteralPath $nsisRoot -File -Recurse | Where-Object {
         $_.Extension -ieq ".exe"
-    } | Sort-Object FullName
+    } | Sort-Object FullName)
 
     if ($candidates.Count -eq 0) {
         throw "No NSIS installer executable was found under $nsisRoot"

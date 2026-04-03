@@ -5,6 +5,7 @@ use std::{
 };
 use serde::Serialize;
 use tauri::Manager;
+use tauri_plugin_updater::UpdaterExt;
 
 mod session_storage;
 mod skill_catalog;
@@ -144,6 +145,31 @@ struct OcrSidecarInstallPayload {
     version: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct AppUpdateConfigPayload {
+    configured: bool,
+    reason: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct AppUpdateCheckPayload {
+    configured: bool,
+    current_version: String,
+    update_available: bool,
+    version: Option<String>,
+    body: Option<String>,
+    date: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct AppUpdateInstallPayload {
+    installed: bool,
+    version: Option<String>,
+}
+
 fn ocr_install_root(app_dir: &Path) -> PathBuf {
     app_dir.join(OCR_SIDECAR_RELATIVE_DIR)
 }
@@ -258,6 +284,85 @@ fn get_backend_auth_token(
 #[tauri::command]
 fn inspect_ocr_sidecar_installation() -> Result<OcrSidecarInstallPayload, String> {
     inspect_ocr_sidecar_impl()
+}
+
+#[tauri::command]
+fn get_app_update_config_state(app: tauri::AppHandle) -> AppUpdateConfigPayload {
+    match app.updater() {
+        Ok(_) => AppUpdateConfigPayload {
+            configured: true,
+            reason: None,
+        },
+        Err(error) => AppUpdateConfigPayload {
+            configured: false,
+            reason: Some(error.to_string()),
+        },
+    }
+}
+
+#[tauri::command]
+async fn check_for_app_update(app: tauri::AppHandle) -> Result<AppUpdateCheckPayload, String> {
+    let current_version = app.package_info().version.to_string();
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(_error) => {
+            return Ok(AppUpdateCheckPayload {
+                configured: false,
+                current_version,
+                update_available: false,
+                version: None,
+                body: None,
+                date: None,
+            })
+        }
+    };
+
+    let update = updater
+        .check()
+        .await
+        .map_err(|error| format!("Failed to check for updates: {error}"))?;
+
+    Ok(match update {
+        Some(update) => AppUpdateCheckPayload {
+            configured: true,
+            current_version,
+            update_available: true,
+            version: Some(update.version.to_string()),
+            body: update.body.clone(),
+            date: update.date.map(|value| value.to_string()),
+        },
+        None => AppUpdateCheckPayload {
+            configured: true,
+            current_version,
+            update_available: false,
+            version: None,
+            body: None,
+            date: None,
+        },
+    })
+}
+
+#[tauri::command]
+async fn install_app_update(app: tauri::AppHandle) -> Result<AppUpdateInstallPayload, String> {
+    let updater = app
+        .updater()
+        .map_err(|error| format!("Updater is not configured: {error}"))?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|error| format!("Failed to check for updates: {error}"))?
+        .ok_or_else(|| "No update is currently available.".to_string())?;
+
+    let version = update.version.to_string();
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|error| format!("Failed to install update {version}: {error}"))?;
+
+    Ok(AppUpdateInstallPayload {
+        installed: true,
+        version: Some(version),
+    })
 }
 
 #[tauri::command]
@@ -572,6 +677,7 @@ pub fn run() {
     });
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -588,6 +694,9 @@ pub fn run() {
             scan_system_skills,
             scan_workspace_skills,
             get_backend_auth_token,
+            get_app_update_config_state,
+            check_for_app_update,
+            install_app_update,
             inspect_ocr_sidecar_installation,
             install_ocr_sidecar
         ])

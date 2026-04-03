@@ -1,7 +1,10 @@
 param(
     [string]$Version,
     [string]$VendorRoot,
+    [string]$UpdaterBaseUrl,
+    [string]$ReleaseNotes,
     [switch]$SkipRuntimePrepare,
+    [switch]$SkipInstallerPackage,
     [switch]$SkipPortablePackage
 )
 
@@ -26,6 +29,33 @@ if (-not $SkipRuntimePrepare) {
     }
 
     Invoke-CheckedCommand -FilePath "powershell" -Arguments $prepareArgs
+}
+
+if (-not $SkipInstallerPackage) {
+    $installerArgs = @("-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "package-app.ps1"), "-Version", $releaseVersion, "-Bundle")
+    if (-not [string]::IsNullOrWhiteSpace($VendorRoot)) {
+        $installerArgs += @("-VendorRoot", $VendorRoot)
+    }
+
+    Invoke-CheckedCommand -FilePath "powershell" -Arguments $installerArgs
+
+    $resolvedUpdaterBaseUrl = Get-UpdaterBaseUrl -BaseUrl $UpdaterBaseUrl
+    if (-not [string]::IsNullOrWhiteSpace($resolvedUpdaterBaseUrl)) {
+        $manifestArgs = @(
+            "-ExecutionPolicy", "Bypass",
+            "-File", (Join-Path $PSScriptRoot "generate-updater-manifest.ps1"),
+            "-Version", $releaseVersion,
+            "-BaseUrl", $resolvedUpdaterBaseUrl
+        )
+        if (-not [string]::IsNullOrWhiteSpace($ReleaseNotes)) {
+            $manifestArgs += @("-ReleaseNotes", $ReleaseNotes)
+        }
+
+        Invoke-CheckedCommand -FilePath "powershell" -Arguments $manifestArgs
+    }
+    else {
+        Write-Host "TAURI_AGENT_UPDATER_BASE_URL not set; skipping latest.json generation."
+    }
 }
 
 if (-not $SkipPortablePackage) {

@@ -1,7 +1,8 @@
 param(
     [string]$Version,
     [string]$VendorRoot,
-    [switch]$SkipBackendBuild
+    [switch]$SkipBackendBuild,
+    [switch]$Bundle
 )
 
 Set-StrictMode -Version Latest
@@ -54,11 +55,35 @@ if (-not (Test-Path -LiteralPath $pythonResources) -or -not (Test-Path -LiteralP
 Invoke-CheckedCommand -FilePath "npm" -Arguments @("run", "build") -WorkingDirectory $projectRoot
 $originalCargoBuildJobs = $env:CARGO_BUILD_JOBS
 $env:CARGO_BUILD_JOBS = "1"
+$buildOverrideConfigPath = $null
 
 try {
-    Invoke-CheckedCommand -FilePath "npm" -Arguments @("run", "tauri", "build", "--", "--no-bundle") -WorkingDirectory $projectRoot
+    $tauriBuildArgs = @("run", "tauri", "build", "--")
+
+    if (-not $Bundle) {
+        $tauriBuildArgs += "--no-bundle"
+    }
+    else {
+        $buildOverrideConfigPath = New-TauriBuildConfigOverrideFile
+        if ($null -ne $buildOverrideConfigPath) {
+            Write-Host "Using generated Tauri build override config: $buildOverrideConfigPath"
+            $tauriBuildArgs += @("--config", $buildOverrideConfigPath)
+        }
+        else {
+            Write-Host "No temporary Tauri build overrides were generated; building NSIS installer with repository defaults."
+        }
+    }
+
+    Invoke-CheckedCommand -FilePath "npm" -Arguments $tauriBuildArgs -WorkingDirectory $projectRoot
 }
 finally {
+    if ($null -ne $buildOverrideConfigPath) {
+        $buildOverrideConfigDir = Split-Path -Parent $buildOverrideConfigPath
+        if (Test-Path -LiteralPath $buildOverrideConfigDir) {
+            Remove-Item -LiteralPath $buildOverrideConfigDir -Recurse -Force
+        }
+    }
+
     if ($null -eq $originalCargoBuildJobs) {
         Remove-Item Env:CARGO_BUILD_JOBS -ErrorAction SilentlyContinue
     }
@@ -79,5 +104,28 @@ if (-not (Test-Path -LiteralPath $portableResources)) {
     throw "Could not find portable resources directory: $portableResources"
 }
 
-Write-Host "App compiled without bundling for release version $releaseVersion"
+if (-not $Bundle) {
+    Invoke-WindowsCodeSignFiles -Paths @(
+        $releaseExecutable,
+        $compiledSidecar
+    )
+}
+
+Write-Host "App compiled for release version $releaseVersion"
 Write-Host "Executable: $releaseExecutable"
+
+if ($Bundle) {
+    $bundleOutputRoot = Get-WindowsBundleOutputRoot
+    if (-not (Test-Path -LiteralPath $bundleOutputRoot)) {
+        throw "Could not find Tauri bundle output directory: $bundleOutputRoot"
+    }
+
+    $bundleReleaseRoot = Get-BundledReleaseRoot -Version $releaseVersion
+    Ensure-Directory -Path (Split-Path $bundleReleaseRoot -Parent)
+    Reset-Directory -Path $bundleReleaseRoot
+    Get-ChildItem -LiteralPath $bundleOutputRoot -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $bundleReleaseRoot $_.Name) -Recurse -Force
+    }
+
+    Write-Host "Bundled installer artifacts copied to $bundleReleaseRoot"
+}

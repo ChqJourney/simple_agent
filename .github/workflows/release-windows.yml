@@ -13,10 +13,19 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      TAURI_AGENT_UPDATER_ENDPOINTS: ${{ vars.TAURI_AGENT_UPDATER_ENDPOINTS }}
+      TAURI_AGENT_UPDATER_BASE_URL: ${{ vars.TAURI_AGENT_UPDATER_BASE_URL }}
+      TAURI_AGENT_UPDATER_PUBKEY: ${{ secrets.TAURI_AGENT_UPDATER_PUBKEY }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      TAURI_AGENT_WINDOWS_SIGN_TIMESTAMP_URL: https://timestamp.digicert.com
 
     steps:
       - name: Checkout
@@ -50,6 +59,10 @@ jobs:
       - name: Run frontend tests
         shell: pwsh
         run: npm run test
+
+      - name: Run release script tests
+        shell: pwsh
+        run: ./scripts/tests/release-scripts.tests.ps1
 
       - name: Download runtime source archives
         shell: pwsh
@@ -113,6 +126,103 @@ jobs:
           }
 
           "RELEASE_VERSION=$releaseVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Resolve updater URLs
+        shell: pwsh
+        run: |
+          $pagesBaseUrl = "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          $baseUrl = $env:TAURI_AGENT_UPDATER_BASE_URL
+          $endpoints = $env:TAURI_AGENT_UPDATER_ENDPOINTS
+
+          if ([string]::IsNullOrWhiteSpace($baseUrl)) {
+            $baseUrl = $pagesBaseUrl
+          }
+
+          if ([string]::IsNullOrWhiteSpace($endpoints)) {
+            $endpoints = "$baseUrl/latest.json"
+          }
+
+          "TAURI_AGENT_UPDATER_BASE_URL=$baseUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TAURI_AGENT_UPDATER_ENDPOINTS=$endpoints" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "Resolved updater base URL: $baseUrl"
+          Write-Host "Resolved updater endpoints: $endpoints"
+
+      - name: Resolve signtool
+        if: ${{ secrets.TAURI_AGENT_WINDOWS_SIGN_CERT_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $signtool = Get-Command "signtool.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
+
+          if ([string]::IsNullOrWhiteSpace($signtool)) {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+            if (Test-Path -LiteralPath $vswhere) {
+              $installationPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.Windows10SDK -property installationPath
+              if (-not [string]::IsNullOrWhiteSpace($installationPath)) {
+                $searchRoots = @(
+                  (Join-Path $installationPath "SDK\ScopeCppSDK"),
+                  (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin")
+                )
+
+                foreach ($root in $searchRoots) {
+                  if (-not (Test-Path -LiteralPath $root)) {
+                    continue
+                  }
+
+                  $candidate = Get-ChildItem -Path $root -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+                    Sort-Object FullName -Descending |
+                    Select-Object -First 1
+                  if ($null -ne $candidate) {
+                    $signtool = $candidate.FullName
+                    break
+                  }
+                }
+              }
+            }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($signtool)) {
+            throw "signtool.exe was not found on this runner."
+          }
+
+          "TAURI_AGENT_WINDOWS_SIGNTOOL_PATH=$signtool" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Using signtool: $signtool"
+
+      - name: Prepare Windows signing certificate
+        if: ${{ secrets.TAURI_AGENT_WINDOWS_SIGN_CERT_BASE64 != '' }}
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_CERT_BASE64: ${{ secrets.TAURI_AGENT_WINDOWS_SIGN_CERT_BASE64 }}
+          WINDOWS_SIGN_CERT_PASSWORD: ${{ secrets.TAURI_AGENT_WINDOWS_SIGN_CERT_PASSWORD }}
+        run: |
+          $certDir = Join-Path $env:RUNNER_TEMP "codesign"
+          New-Item -ItemType Directory -Force -Path $certDir | Out-Null
+
+          $certPath = Join-Path $certDir "windows-release-cert.pfx"
+          [System.IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGN_CERT_BASE64))
+
+          "TAURI_AGENT_WINDOWS_SIGN_CERT_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_CERT_PASSWORD)) {
+            @"
+TAURI_AGENT_WINDOWS_SIGN_CERT_PASSWORD<<EOF
+$env:WINDOWS_SIGN_CERT_PASSWORD
+EOF
+"@ | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
+          Write-Host "Prepared Windows signing certificate at $certPath"
+
+      - name: Report signing mode
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_CERT_BASE64: ${{ secrets.TAURI_AGENT_WINDOWS_SIGN_CERT_BASE64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_CERT_BASE64)) {
+            Write-Host "Windows signing secrets are not configured; continuing with unsigned build artifacts."
+          } else {
+            Write-Host "Windows signing secrets detected; release artifacts will be Authenticode-signed."
+          }
 
       - name: Build portable release
         shell: pwsh
@@ -229,6 +339,40 @@ jobs:
           path: artifacts/release/*/portable/*.zip
           if-no-files-found: error
 
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bundle
+          path: artifacts/release/*/bundle/**
+          if-no-files-found: error
+
+      - name: Prepare GitHub Pages payload
+        shell: pwsh
+        run: |
+          $bundleRoots = @(Get-ChildItem -Path "artifacts/release/*/bundle" -Directory)
+          if ($bundleRoots.Count -ne 1) {
+            throw "Expected exactly one bundle directory for GitHub Pages deployment, found $($bundleRoots.Count)."
+          }
+
+          $pagesRoot = Join-Path $env:RUNNER_TEMP "github-pages"
+          if (Test-Path -LiteralPath $pagesRoot) {
+            Remove-Item -LiteralPath $pagesRoot -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Path $pagesRoot | Out-Null
+          Copy-Item -LiteralPath (Join-Path $bundleRoots[0].FullName "*") -Destination $pagesRoot -Recurse -Force
+
+          if (-not (Test-Path -LiteralPath (Join-Path $pagesRoot "latest.json"))) {
+            throw "GitHub Pages payload is missing latest.json. Ensure updater configuration is available before publishing."
+          }
+
+          Write-Host "Prepared GitHub Pages payload at $pagesRoot"
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/github-pages
+
       - name: Publish ZIP assets to GitHub Release
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         shell: pwsh
@@ -255,3 +399,30 @@ jobs:
           }
 
           gh release upload $tagName --repo $env:GITHUB_REPOSITORY --clobber $zipFiles[0].FullName
+
+      - name: Publish bundle assets to GitHub Release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $tagName = $env:GITHUB_REF_NAME
+          $bundleFiles = @(Get-ChildItem -Path "artifacts/release/*/bundle" -Recurse -File)
+
+          if ($bundleFiles.Count -eq 0) {
+            throw "No bundle artifacts were found for GitHub Release upload."
+          }
+
+          gh release upload $tagName --repo $env:GITHUB_REPOSITORY --clobber $bundleFiles.FullName
+
+  deploy-gh-pages:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -5,6 +5,7 @@
   "windows": ["*"],
   "permissions": [
     "core:default",
+    "updater:default",
     "opener:default",
     "opener:allow-open-path",
     "dialog:default",

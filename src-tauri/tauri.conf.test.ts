@@ -32,13 +32,13 @@ describe("tauri.conf bundle configuration", () => {
     );
   });
 
-  it("keeps the Windows bundle target set to msi", () => {
+  it("keeps the Windows bundle target set to nsis", () => {
     const configPath = join(process.cwd(), "src-tauri", "tauri.windows.conf.json");
     const config = JSON.parse(readFileSync(configPath, "utf-8")) as {
       bundle?: { targets?: string | string[] };
     };
 
-    expect(config.bundle?.targets).toBe("msi");
+    expect(config.bundle?.targets).toBe("nsis");
   });
 
   it("allows the Vite HMR websocket in the dev CSP only", () => {

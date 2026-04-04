@@ -519,9 +519,18 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           $tagName = $env:GITHUB_REF_NAME
-          $bundleFiles = @(Get-ChildItem -Path "artifacts/release/*/bundle" -Recurse -File)
+          $bundleRoots = @(Get-ChildItem -Path "artifacts/release/*/bundle" -Directory)
+          $bundleFiles = @()
+
+          foreach ($bundleRoot in $bundleRoots) {
+            $bundleFiles += @(Get-ChildItem -LiteralPath $bundleRoot.FullName -Recurse -File)
+          }
 
           if ($bundleFiles.Count -eq 0) {
+            if (Test-Path -LiteralPath "artifacts/release") {
+              Write-Host "Current artifacts/release contents:"
+              Get-ChildItem -Path artifacts/release -Recurse | Select-Object FullName | Format-Table -HideTableHeaders | Out-String | Write-Host
+            }
             throw "No bundle artifacts were found for GitHub Release upload."
           }
 

@@ -397,6 +397,83 @@ jobs:
 
           Copy-Item -LiteralPath ($bundleItems | Select-Object -ExpandProperty FullName) -Destination $pagesRoot -Recurse -Force
 
+          $manifestLinks = @(
+            Get-ChildItem -LiteralPath $pagesRoot -Filter "*.json" -File -ErrorAction SilentlyContinue |
+              Sort-Object Name |
+              ForEach-Object { "<li><a href=`"./$($_.Name)`">$($_.Name)</a></li>" }
+          )
+
+          $installerLinks = @()
+          $nsisRoot = Join-Path $pagesRoot "nsis"
+          if (Test-Path -LiteralPath $nsisRoot) {
+            $installerLinks = @(
+              Get-ChildItem -LiteralPath $nsisRoot -Filter "*.exe" -File -ErrorAction SilentlyContinue |
+                Sort-Object Name |
+                ForEach-Object { "<li><a href=`"./nsis/$($_.Name)`">$($_.Name)</a></li>" }
+            )
+          }
+
+          $manifestMarkup = if ($manifestLinks.Count -gt 0) { $manifestLinks -join [Environment]::NewLine } else { "<li>No manifest files found.</li>" }
+          $installerMarkup = if ($installerLinks.Count -gt 0) { $installerLinks -join [Environment]::NewLine } else { "<li>No installer files found.</li>" }
+
+          $indexLines = @(
+            '<!DOCTYPE html>'
+            '<html lang="en">'
+            '<head>'
+            '  <meta charset="utf-8" />'
+            '  <meta name="viewport" content="width=device-width, initial-scale=1" />'
+            '  <title>Work Agent Windows Release</title>'
+            '  <style>'
+            '    :root { color-scheme: light; }'
+            '    body {'
+            '      margin: 0;'
+            '      font-family: "Segoe UI", sans-serif;'
+            '      background: #f5f7fb;'
+            '      color: #1f2937;'
+            '    }'
+            '    main {'
+            '      max-width: 760px;'
+            '      margin: 48px auto;'
+            '      padding: 32px;'
+            '      background: #ffffff;'
+            '      border: 1px solid #dbe3f0;'
+            '      border-radius: 16px;'
+            '      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);'
+            '    }'
+            '    h1, h2 { margin-top: 0; }'
+            '    ul { padding-left: 20px; }'
+            '    a { color: #0f62fe; text-decoration: none; }'
+            '    a:hover { text-decoration: underline; }'
+            '    code {'
+            '      padding: 2px 6px;'
+            '      border-radius: 6px;'
+            '      background: #eef4ff;'
+            '      font-size: 0.95em;'
+            '    }'
+            '  </style>'
+            '</head>'
+            '<body>'
+            '  <main>'
+            '    <h1>Work Agent Windows Release</h1>'
+            '    <p>This site hosts the Windows updater manifest and installer artifacts published by GitHub Actions.</p>'
+            '    <h2>Updater Manifests</h2>'
+            '    <ul>'
+            $manifestMarkup
+            '    </ul>'
+            '    <h2>Installer Downloads</h2>'
+            '    <ul>'
+            $installerMarkup
+            '    </ul>'
+            '    <p>Updater clients should use <code>latest.json</code> instead of the site root URL.</p>'
+            '  </main>'
+            '</body>'
+            '</html>'
+          )
+
+          Set-Content -LiteralPath (Join-Path $pagesRoot "index.html") -Value $indexLines -Encoding utf8
+
+          Set-Content -LiteralPath (Join-Path $pagesRoot ".nojekyll") -Value "" -Encoding ascii
+
           if (-not (Test-Path -LiteralPath (Join-Path $pagesRoot "latest.json"))) {
             Write-Host "latest.json was not generated; deploying bundle without updater manifest."
           }

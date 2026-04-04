@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getIdentifier, getName, getTauriVersion, getVersion } from '@tauri-apps/api/app';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
@@ -13,6 +13,7 @@ interface AboutInfo {
 }
 
 type UpdateStatus = 'idle' | 'checking' | 'installing' | 'up-to-date' | 'available' | 'error' | 'unavailable';
+type UpdateNoticeTone = 'info' | 'success' | 'error';
 
 const FALLBACK_INFO: AboutInfo = {
   name: 'work agent',
@@ -29,6 +30,52 @@ export const AboutPage: React.FC = () => {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [availableVersion, setAvailableVersion] = useState<string | null>(null);
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  const [updateNotice, setUpdateNotice] = useState<{ tone: UpdateNoticeTone; message: string } | null>(null);
+  const hasActiveUpdateInteraction = useRef(false);
+
+  const updateStatusLabel = (() => {
+    switch (updateStatus) {
+      case 'checking':
+        return t('about.update.status.checking');
+      case 'installing':
+        return t('about.update.status.installing');
+      case 'available':
+        return t('about.update.status.available');
+      case 'up-to-date':
+        return t('about.update.status.upToDate');
+      case 'error':
+        return t('about.update.status.error');
+      case 'unavailable':
+        return t('about.update.status.unavailable');
+      default:
+        return t('about.update.status.ready');
+    }
+  })();
+
+  const updateStatusClasses = (() => {
+    switch (updateStatus) {
+      case 'checking':
+      case 'installing':
+        return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300';
+      case 'available':
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300';
+      case 'up-to-date':
+        return 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
+      case 'error':
+        return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300';
+      case 'unavailable':
+        return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300';
+      default:
+        return 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300';
+    }
+  })();
+
+  const updateNoticeClasses = updateNotice?.tone === 'error'
+    ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300'
+    : updateNotice?.tone === 'success'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
+      : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300';
 
   useEffect(() => {
     let cancelled = false;
@@ -74,18 +121,32 @@ export const AboutPage: React.FC = () => {
           return;
         }
 
+        if (hasActiveUpdateInteraction.current) {
+          return;
+        }
+
         if (!configState.configured) {
           setUpdateStatus('unavailable');
           setUpdateMessage(configState.reason || t('about.update.unavailableHint'));
+          setUpdateNotice({
+            tone: 'info',
+            message: configState.reason || t('about.update.unavailableHint'),
+          });
           return;
         }
 
         setUpdateStatus('idle');
         setUpdateMessage(t('about.update.readyHint'));
+        setUpdateNotice(null);
       } catch (error) {
         if (!cancelled) {
+          if (hasActiveUpdateInteraction.current) {
+            return;
+          }
           setUpdateStatus('error');
-          setUpdateMessage(error instanceof Error ? error.message : t('about.update.checkFailed'));
+          const message = error instanceof Error ? error.message : t('about.update.checkFailed');
+          setUpdateMessage(message);
+          setUpdateNotice({ tone: 'error', message });
         }
       }
     };
@@ -97,51 +158,81 @@ export const AboutPage: React.FC = () => {
   }, [t]);
 
   const handleCheckForUpdates = async () => {
+    hasActiveUpdateInteraction.current = true;
     setUpdateStatus('checking');
-    setUpdateMessage(null);
+    setUpdateMessage(t('about.update.checkingHint'));
     setAvailableVersion(null);
+    setUpdateNotice({
+      tone: 'info',
+      message: t('about.update.checkingHint'),
+    });
 
     try {
       const result = await checkForAppUpdate();
+      setLastCheckedAt(new Date().toLocaleString());
       if (!result.configured) {
         setUpdateStatus('unavailable');
         setUpdateMessage(t('about.update.unavailableHint'));
+        setUpdateNotice({
+          tone: 'info',
+          message: t('about.update.unavailableHint'),
+        });
         return;
       }
 
       if (!result.updateAvailable) {
         setUpdateStatus('up-to-date');
-        setUpdateMessage(t('about.update.upToDate', { version: result.currentVersion }));
+        const message = t('about.update.upToDate', { version: result.currentVersion });
+        setUpdateMessage(message);
+        setUpdateNotice({
+          tone: 'success',
+          message,
+        });
         return;
       }
 
       setUpdateStatus('available');
       setAvailableVersion(result.version);
-      setUpdateMessage(
+      const message =
         result.body?.trim()
           ? result.body
-          : t('about.update.availableHint', { version: result.version || t('about.unknown') })
-      );
+          : t('about.update.availableHint', { version: result.version || t('about.unknown') });
+      setUpdateMessage(message);
+      setUpdateNotice({
+        tone: 'success',
+        message: t('about.update.availableVersion', { version: result.version || t('about.unknown') }),
+      });
     } catch (error) {
       setUpdateStatus('error');
-      setUpdateMessage(error instanceof Error ? error.message : t('about.update.checkFailed'));
+      const message = error instanceof Error ? error.message : t('about.update.checkFailed');
+      setUpdateMessage(message);
+      setUpdateNotice({ tone: 'error', message });
     }
   };
 
   const handleInstallUpdate = async () => {
+    hasActiveUpdateInteraction.current = true;
     setUpdateStatus('installing');
     setUpdateMessage(t('about.update.installingHint'));
+    setUpdateNotice({
+      tone: 'info',
+      message: t('about.update.installingHint'),
+    });
 
     try {
       const result = await installAppUpdate();
       setUpdateStatus('idle');
-      setUpdateMessage(
-        t('about.update.installedHint', { version: result.version || availableVersion || t('about.unknown') })
-      );
+      const message = t('about.update.installedHint', {
+        version: result.version || availableVersion || t('about.unknown'),
+      });
+      setUpdateMessage(message);
+      setUpdateNotice({ tone: 'success', message });
       setAvailableVersion(null);
     } catch (error) {
       setUpdateStatus('error');
-      setUpdateMessage(error instanceof Error ? error.message : t('about.update.installFailed'));
+      const message = error instanceof Error ? error.message : t('about.update.installFailed');
+      setUpdateMessage(message);
+      setUpdateNotice({ tone: 'error', message });
     }
   };
 
@@ -214,12 +305,31 @@ export const AboutPage: React.FC = () => {
                 <div className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-400">
                   {t('about.update.title')}
                 </div>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${updateStatusClasses}`}>
+                    {updateStatusLabel}
+                  </span>
+                  {lastCheckedAt ? (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {t('about.update.lastChecked', { value: lastCheckedAt })}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="mt-2 text-sm text-gray-600 dark:text-gray-300">
                   {updateMessage || t('about.update.readyHint')}
                 </div>
                 {availableVersion ? (
                   <div className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
                     {t('about.update.availableVersion', { version: availableVersion })}
+                  </div>
+                ) : null}
+                {updateNotice ? (
+                  <div
+                    className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-medium ${updateNoticeClasses}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {updateNotice.message}
                   </div>
                 ) : null}
               </div>

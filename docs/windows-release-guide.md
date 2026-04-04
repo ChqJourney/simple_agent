@@ -5,11 +5,23 @@
 当前使用的工作流文件：
 
 - `.github/workflows/release-windows.yml`
+- `.github/workflows/build-windows-exe-quick.yml`
 
 当前工作流会产出两类内容：
 
 - portable ZIP
 - NSIS bundle 及 updater 相关文件
+
+另外还有一条简化版 workflow：
+
+- `build-windows-exe-quick`
+
+它只会构建并上传单个 `work agent.exe` artifact，适合快速验证 Tauri 主程序是否能成功编译。
+注意：
+
+- 这个 artifact 不是完整分发包
+- 它不会生成 installer、portable ZIP、GitHub Release 资产或 GitHub Pages 内容
+- 如果你想验证完整安装或自动更新，请继续使用 `release-windows-portable`
 
 当前 workflow 还会把 `bundle/` 自动部署到当前 repo 的 GitHub Pages。
 
@@ -30,6 +42,10 @@ artifacts/release/<version>/bundle/
 
 1. 手动触发 `Actions > release-windows-portable > Run workflow`
 2. 推送 tag，例如 `v0.1.1`
+
+快速 EXE 验证方式：
+
+1. 手动触发 `Actions > build-windows-exe-quick > Run workflow`
 
 推荐习惯：
 

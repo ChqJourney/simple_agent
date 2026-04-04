@@ -273,8 +273,8 @@ mod tests {
         )
         .expect("override skill");
 
-        let catalog =
-            build_catalog(vec![app_dir_root.clone(), app_data_root.clone()]).expect("skill catalog");
+        let catalog = build_catalog(vec![app_dir_root.clone(), app_data_root.clone()])
+            .expect("skill catalog");
 
         assert_eq!(
             catalog.root_paths,

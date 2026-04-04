@@ -28,7 +28,10 @@ describe("tauri.conf bundle configuration", () => {
     };
 
     expect(config.bundle?.resources).toEqual(
-      expect.arrayContaining(["resources/runtimes/python", "resources/runtimes/node"]),
+      expect.objectContaining({
+        "resources/runtimes/python": "runtimes/python",
+        "resources/runtimes/node": "runtimes/node",
+      }),
     );
   });
 

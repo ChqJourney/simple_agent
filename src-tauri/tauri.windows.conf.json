@@ -6,9 +6,9 @@
         "externalBin": [
             "binaries/core"
         ],
-        "resources": [
-            "resources/runtimes/python",
-            "resources/runtimes/node"
-        ]
+        "resources": {
+            "resources/runtimes/python": "runtimes/python",
+            "resources/runtimes/node": "runtimes/node"
+        }
     }
 }

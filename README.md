@@ -57,6 +57,7 @@ Workspace
 - FastAPI
 - WebSocket
 - `httpx` / `aiohttp`
+* `aiohttp` 计划移除
 
 ### 桌面层
 

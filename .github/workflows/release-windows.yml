@@ -390,7 +390,12 @@ jobs:
           }
 
           New-Item -ItemType Directory -Path $pagesRoot | Out-Null
-          Copy-Item -LiteralPath (Join-Path $bundleRoots[0].FullName "*") -Destination $pagesRoot -Recurse -Force
+          $bundleItems = @(Get-ChildItem -LiteralPath $bundleRoots[0].FullName -Force)
+          if ($bundleItems.Count -eq 0) {
+            throw "Bundle directory is empty: $($bundleRoots[0].FullName)"
+          }
+
+          Copy-Item -LiteralPath ($bundleItems | Select-Object -ExpandProperty FullName) -Destination $pagesRoot -Recurse -Force
 
           if (-not (Test-Path -LiteralPath (Join-Path $pagesRoot "latest.json"))) {
             Write-Host "latest.json was not generated; deploying bundle without updater manifest."

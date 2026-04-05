@@ -748,7 +748,14 @@ function Join-UrlPath {
 
     $normalizedBase = $BaseUrl.Trim().TrimEnd("/")
     $normalizedRelative = ($RelativePath -replace "[\\/]+", "/").TrimStart("/")
-    return "$normalizedBase/$normalizedRelative"
+    $encodedSegments = @(
+        $normalizedRelative -split "/" |
+        ForEach-Object {
+            [System.Uri]::EscapeDataString($_)
+        }
+    )
+    $encodedRelative = $encodedSegments -join "/"
+    return "$normalizedBase/$encodedRelative"
 }
 
 function Get-RelativePathNormalized {

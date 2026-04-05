@@ -362,6 +362,32 @@ jobs:
             }
           }
 
+      - name: Validate updater manifest URLs
+        shell: pwsh
+        run: |
+          $latestManifestFiles = @(Get-ChildItem -Path "artifacts/release/*/bundle/latest.json" -File -ErrorAction SilentlyContinue)
+          if ($latestManifestFiles.Count -eq 0) {
+            Write-Host "No latest.json manifest was generated; skipping updater manifest validation."
+            exit 0
+          }
+
+          if ($latestManifestFiles.Count -ne 1) {
+            throw "Expected exactly one latest.json manifest, found $($latestManifestFiles.Count)."
+          }
+
+          $manifest = Get-Content -Raw -LiteralPath $latestManifestFiles[0].FullName | ConvertFrom-Json
+          $installerUrl = $manifest.platforms.'windows-x86_64'.url
+
+          if ([string]::IsNullOrWhiteSpace($installerUrl)) {
+            throw "The updater manifest is missing platforms.windows-x86_64.url"
+          }
+
+          if (-not [System.Uri]::IsWellFormedUriString($installerUrl, [System.UriKind]::Absolute)) {
+            throw "The updater manifest contains an invalid installer URL: $installerUrl"
+          }
+
+          Write-Host "Validated updater manifest installer URL: $installerUrl"
+
       - name: Upload portable ZIP artifact
         uses: actions/upload-artifact@v4
         with:

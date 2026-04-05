@@ -66,6 +66,9 @@ Assert-Equal -Actual $bundleOutputRoot -Expected $expectedBundleOutputRoot -Mess
 $joinedUrl = Join-UrlPath -BaseUrl "https://updates.example.com/work-agent/" -RelativePath "nsis\\setup.exe"
 Assert-Equal -Actual $joinedUrl -Expected "https://updates.example.com/work-agent/nsis/setup.exe" -Message "Joined updater URLs should normalize separators."
 
+$joinedUrlWithSpaces = Join-UrlPath -BaseUrl "https://updates.example.com/work-agent/" -RelativePath "nsis\\work agent_1.0.2_x64-setup.exe"
+Assert-Equal -Actual $joinedUrlWithSpaces -Expected "https://updates.example.com/work-agent/nsis/work%20agent_1.0.2_x64-setup.exe" -Message "Joined updater URLs should percent-encode path segments."
+
 $relativePath = Get-RelativePathNormalized -Root "/tmp/work-agent" -Path "/tmp/work-agent/nsis/setup.exe"
 Assert-Equal -Actual $relativePath -Expected "nsis/setup.exe" -Message "Relative updater artifact paths should be normalized to forward slashes."
 

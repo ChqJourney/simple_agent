@@ -384,18 +384,37 @@ jobs:
             throw "Expected exactly one bundle directory for GitHub Pages deployment, found $($bundleRoots.Count)."
           }
 
+          $bundleRoot = $bundleRoots[0].FullName
           $pagesRoot = Join-Path $env:RUNNER_TEMP "github-pages"
           if (Test-Path -LiteralPath $pagesRoot) {
             Remove-Item -LiteralPath $pagesRoot -Recurse -Force
           }
 
           New-Item -ItemType Directory -Path $pagesRoot | Out-Null
-          $bundleItems = @(Get-ChildItem -LiteralPath $bundleRoots[0].FullName -Force)
-          if ($bundleItems.Count -eq 0) {
-            throw "Bundle directory is empty: $($bundleRoots[0].FullName)"
+
+          $latestManifestPath = Join-Path $bundleRoot "latest.json"
+          if (Test-Path -LiteralPath $latestManifestPath) {
+            Copy-Item -LiteralPath $latestManifestPath -Destination (Join-Path $pagesRoot "latest.json") -Force
           }
 
-          Copy-Item -LiteralPath ($bundleItems | Select-Object -ExpandProperty FullName) -Destination $pagesRoot -Recurse -Force
+          $nsisRoot = Join-Path $bundleRoot "nsis"
+          if (-not (Test-Path -LiteralPath $nsisRoot)) {
+            throw "Expected NSIS bundle directory was not found: $nsisRoot"
+          }
+
+          $installerFiles = @(Get-ChildItem -LiteralPath $nsisRoot -Recurse -File | Where-Object {
+            $_.Extension -ieq ".exe"
+          })
+
+          if ($installerFiles.Count -eq 0) {
+            throw "No installer executable was found under $nsisRoot"
+          }
+
+          $pagesNsisRoot = Join-Path $pagesRoot "nsis"
+          New-Item -ItemType Directory -Path $pagesNsisRoot | Out-Null
+          foreach ($installerFile in $installerFiles) {
+            Copy-Item -LiteralPath $installerFile.FullName -Destination (Join-Path $pagesNsisRoot $installerFile.Name) -Force
+          }
 
           $manifestLinks = @(
             Get-ChildItem -LiteralPath $pagesRoot -Filter "*.json" -File -ErrorAction SilentlyContinue |
@@ -520,21 +539,28 @@ jobs:
         run: |
           $tagName = $env:GITHUB_REF_NAME
           $bundleRoots = @(Get-ChildItem -Path "artifacts/release/*/bundle" -Directory)
-          $bundleFiles = @()
+          $installerFiles = @()
 
           foreach ($bundleRoot in $bundleRoots) {
-            $bundleFiles += @(Get-ChildItem -LiteralPath $bundleRoot.FullName -Recurse -File)
+            $nsisRoot = Join-Path $bundleRoot.FullName "nsis"
+            if (-not (Test-Path -LiteralPath $nsisRoot)) {
+              continue
+            }
+
+            $installerFiles += @(Get-ChildItem -LiteralPath $nsisRoot -Recurse -File | Where-Object {
+              $_.Extension -ieq ".exe"
+            })
           }
 
-          if ($bundleFiles.Count -eq 0) {
+          if ($installerFiles.Count -eq 0) {
             if (Test-Path -LiteralPath "artifacts/release") {
               Write-Host "Current artifacts/release contents:"
               Get-ChildItem -Path artifacts/release -Recurse | Select-Object FullName | Format-Table -HideTableHeaders | Out-String | Write-Host
             }
-            throw "No bundle artifacts were found for GitHub Release upload."
+            throw "No installer bundle artifacts were found for GitHub Release upload."
           }
 
-          gh release upload $tagName --repo $env:GITHUB_REPOSITORY --clobber $bundleFiles.FullName
+          gh release upload $tagName --repo $env:GITHUB_REPOSITORY --clobber $installerFiles.FullName
 
   deploy-gh-pages:
     runs-on: ubuntu-latest

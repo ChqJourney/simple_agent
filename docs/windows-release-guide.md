@@ -36,6 +36,12 @@ artifacts/release/<version>/bundle/
     <installer>.exe.sig
 ```
 
+说明：
+
+- 上面是构建阶段内部整理出的 `bundle/` 目录内容
+- GitHub Pages 对外只会发布 `latest.json` 和 `nsis/<installer>.exe`
+- GitHub Release 对外只会上传给用户直接下载的安装包 `.exe`，不会再额外上传 `latest.json`、`<version>.json` 或 `.sig`
+
 ## 1. 发布方式
 
 当前支持两种触发方式：

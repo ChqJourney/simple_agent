@@ -176,7 +176,7 @@ export const ChatContainer = () => {
   }, [answerQuestion, currentSessionId, pendingQuestion]);
 
   return (
-    <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_45%)] dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_35%)]">
+    <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_45%)] dark:bg-[radial-gradient(circle_at_top,_rgba(142,160,182,0.14),_transparent_38%)]">
       <MessageList
         messages={messages}
         currentStreamingContent={streamingContent}

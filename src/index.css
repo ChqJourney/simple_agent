@@ -6,6 +6,75 @@
   --font-sans: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
 
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at top, rgba(148, 163, 184, 0.08), transparent 40%),
+      linear-gradient(180deg, #f8fafc 0%, #f3f4f6 100%);
+    color: #111827;
+    transition: background-color 0.18s ease, color 0.18s ease;
+  }
+
+  .dark {
+    --color-gray-50: #f7f8fa;
+    --color-gray-100: #ebeff3;
+    --color-gray-200: #d8dde4;
+    --color-gray-300: #bcc3cc;
+    --color-gray-400: #96a0ad;
+    --color-gray-500: #687281;
+    --color-gray-600: #414954;
+    --color-gray-700: #2c3138;
+    --color-gray-800: #1e2127;
+    --color-gray-900: #16181c;
+    --color-gray-950: #0f1113;
+
+    --color-slate-50: #f5f7f9;
+    --color-slate-100: #eaf0f5;
+    --color-slate-200: #d6dee7;
+    --color-slate-300: #b3c0cf;
+    --color-slate-400: #8d9bb0;
+    --color-slate-500: #617085;
+    --color-slate-600: #3d4a5a;
+    --color-slate-700: #2a3440;
+    --color-slate-800: #1c242d;
+    --color-slate-900: #141a21;
+    --color-slate-950: #0d1116;
+
+    --color-blue-50: #f2f6f9;
+    --color-blue-100: #e7eef3;
+    --color-blue-200: #d1dde7;
+    --color-blue-300: #b3c6d4;
+    --color-blue-400: #8eaac0;
+    --color-blue-500: #6a8ba6;
+    --color-blue-600: #4d6f8d;
+    --color-blue-700: #35516c;
+    --color-blue-800: #20354b;
+    --color-blue-900: #142233;
+    --color-blue-950: #0d1520;
+  }
+
+  .dark body {
+    background:
+      radial-gradient(circle at top, rgba(142, 160, 182, 0.14), transparent 34%),
+      linear-gradient(180deg, #171a1f 0%, #12151a 52%, #0d1014 100%);
+    color: var(--color-gray-100);
+  }
+
+  ::selection {
+    background: rgba(100, 116, 139, 0.18);
+  }
+
+  .dark ::selection {
+    background: rgba(142, 160, 182, 0.28);
+  }
+}
+
 /* Custom scrollbar styles */
 ::-webkit-scrollbar {
   width: 8px;
@@ -27,15 +96,15 @@
 }
 
 .dark ::-webkit-scrollbar-track {
-  background: #27272a;
+  background: #171b20;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: #3d4754;
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: #546273;
 }
 
 /* Cursor blink animation */

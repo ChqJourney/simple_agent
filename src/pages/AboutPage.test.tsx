@@ -57,6 +57,9 @@ describe("AboutPage", () => {
     getAppUpdateConfigStateMock.mockResolvedValue({
       configured: true,
       reason: null,
+      endpoints: ["https://updates.example.com/latest.json"],
+      logPath: "C:\\Users\\runneradmin\\AppData\\Roaming\\photonee\\logs\\updater.log",
+      lastError: null,
     });
     installAppUpdateMock.mockResolvedValue({
       installed: true,
@@ -113,5 +116,20 @@ describe("AboutPage", () => {
     });
 
     expect(screen.getByRole("status").textContent).toContain("Available version: 0.2.0");
+  });
+
+  it("shows raw updater errors and diagnostics when the check fails", async () => {
+    checkForAppUpdateMock.mockRejectedValue("Failed to check for updates: None of the fallback platforms ['windows-x86_64-nsis', 'windows-x86_64'] were found in the response `platforms` object");
+
+    render(<AboutPage />);
+
+    await screen.findByText("https://updates.example.com/latest.json");
+    fireEvent.click(await screen.findByRole("button", { name: "Check for Updates" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/None of the fallback platforms/).length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getByText("C:\\Users\\runneradmin\\AppData\\Roaming\\photonee\\logs\\updater.log")).toBeTruthy();
   });
 });

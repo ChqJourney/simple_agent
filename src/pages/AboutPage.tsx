@@ -23,6 +23,18 @@ const FALLBACK_INFO: AboutInfo = {
   mode: import.meta.env.MODE,
 };
 
+function getErrorMessage(error: unknown, fallbackMessage: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+
+  return fallbackMessage;
+}
+
 export const AboutPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -32,6 +44,9 @@ export const AboutPage: React.FC = () => {
   const [availableVersion, setAvailableVersion] = useState<string | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [updateNotice, setUpdateNotice] = useState<{ tone: UpdateNoticeTone; message: string } | null>(null);
+  const [updaterEndpoints, setUpdaterEndpoints] = useState<string[]>([]);
+  const [updaterLogPath, setUpdaterLogPath] = useState<string | null>(null);
+  const [updaterLastError, setUpdaterLastError] = useState<string | null>(null);
   const hasActiveUpdateInteraction = useRef(false);
 
   const updateStatusLabel = (() => {
@@ -125,6 +140,10 @@ export const AboutPage: React.FC = () => {
           return;
         }
 
+        setUpdaterEndpoints(configState.endpoints || []);
+        setUpdaterLogPath(configState.logPath || null);
+        setUpdaterLastError(configState.lastError || null);
+
         if (!configState.configured) {
           setUpdateStatus('unavailable');
           setUpdateMessage(configState.reason || t('about.update.unavailableHint'));
@@ -144,7 +163,7 @@ export const AboutPage: React.FC = () => {
             return;
           }
           setUpdateStatus('error');
-          const message = error instanceof Error ? error.message : t('about.update.checkFailed');
+          const message = getErrorMessage(error, t('about.update.checkFailed'));
           setUpdateMessage(message);
           setUpdateNotice({ tone: 'error', message });
         }
@@ -170,6 +189,7 @@ export const AboutPage: React.FC = () => {
     try {
       const result = await checkForAppUpdate();
       setLastCheckedAt(new Date().toLocaleString());
+      setUpdaterLastError(null);
       if (!result.configured) {
         setUpdateStatus('unavailable');
         setUpdateMessage(t('about.update.unavailableHint'));
@@ -204,9 +224,10 @@ export const AboutPage: React.FC = () => {
       });
     } catch (error) {
       setUpdateStatus('error');
-      const message = error instanceof Error ? error.message : t('about.update.checkFailed');
+      const message = getErrorMessage(error, t('about.update.checkFailed'));
       setUpdateMessage(message);
       setUpdateNotice({ tone: 'error', message });
+      setUpdaterLastError(message);
     }
   };
 
@@ -230,9 +251,10 @@ export const AboutPage: React.FC = () => {
       setAvailableVersion(null);
     } catch (error) {
       setUpdateStatus('error');
-      const message = error instanceof Error ? error.message : t('about.update.installFailed');
+      const message = getErrorMessage(error, t('about.update.installFailed'));
       setUpdateMessage(message);
       setUpdateNotice({ tone: 'error', message });
+      setUpdaterLastError(message);
     }
   };
 
@@ -332,6 +354,32 @@ export const AboutPage: React.FC = () => {
                     {updateNotice.message}
                   </div>
                 ) : null}
+                <div className="mt-4 grid gap-3 rounded-2xl border border-gray-200/80 bg-slate-50/80 p-4 text-sm dark:border-gray-800 dark:bg-slate-950/40">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      {t('about.update.feed')}
+                    </div>
+                    <div className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-200">
+                      {updaterEndpoints.length > 0 ? updaterEndpoints.join('\n') : t('about.update.none')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      {t('about.update.logFile')}
+                    </div>
+                    <div className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-200">
+                      {updaterLogPath || t('about.update.none')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      {t('about.update.lastError')}
+                    </div>
+                    <div className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-200">
+                      {updaterLastError || t('about.update.none')}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-3">

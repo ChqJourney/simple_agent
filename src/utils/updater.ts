@@ -3,6 +3,9 @@ import { invoke } from '@tauri-apps/api/core';
 export interface AppUpdateConfigState {
   configured: boolean;
   reason: string | null;
+  endpoints: string[];
+  logPath: string | null;
+  lastError: string | null;
 }
 
 export interface AppUpdateCheckResult {

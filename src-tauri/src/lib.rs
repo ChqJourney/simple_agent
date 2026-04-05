@@ -23,6 +23,56 @@ const APP_DATA_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DATA_DIR";
 const APP_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DIR";
 const AUTH_TOKEN_ENV_VAR: &str = "TAURI_AGENT_AUTH_TOKEN";
 const OCR_SIDECAR_RELATIVE_DIR: &str = "ocr-sidecar/current";
+const UPDATER_LOG_FILE_NAME: &str = "updater.log";
+
+fn append_updater_log(app: &tauri::AppHandle, message: &str) {
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .or_else(|_| app.path().app_data_dir());
+
+    let Ok(log_dir) = log_dir else {
+        return;
+    };
+
+    if fs::create_dir_all(&log_dir).is_err() {
+        return;
+    }
+
+    let log_path = log_dir.join(UPDATER_LOG_FILE_NAME);
+    let timestamp = format!("{:?}", std::time::SystemTime::now());
+    let line = format!("[{timestamp}] {message}\n");
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()));
+}
+
+fn updater_log_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_log_dir()
+        .or_else(|_| app.path().app_data_dir())
+        .ok()
+        .map(|dir| dir.join(UPDATER_LOG_FILE_NAME))
+}
+
+fn configured_updater_endpoints(app: &tauri::AppHandle) -> Vec<String> {
+    app.config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|value| value.as_object())
+        .and_then(|object| object.get("endpoints"))
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
 
 #[tauri::command]
 fn prepare_workspace_path(
@@ -135,6 +185,7 @@ fn scan_workspace_skills(
 
 pub struct BackendAuthToken(Mutex<Option<String>>);
 pub struct PythonSidecar(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
+pub struct UpdaterDiagnostics(Mutex<Option<String>>);
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -150,6 +201,9 @@ struct OcrSidecarInstallPayload {
 struct AppUpdateConfigPayload {
     configured: bool,
     reason: Option<String>,
+    endpoints: Vec<String>,
+    log_path: Option<String>,
+    last_error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -288,14 +342,29 @@ fn inspect_ocr_sidecar_installation() -> Result<OcrSidecarInstallPayload, String
 
 #[tauri::command]
 fn get_app_update_config_state(app: tauri::AppHandle) -> AppUpdateConfigPayload {
+    let endpoints = configured_updater_endpoints(&app);
+    let log_path = updater_log_path(&app).map(|path| path.display().to_string());
+    let last_error = app
+        .state::<UpdaterDiagnostics>()
+        .0
+        .lock()
+        .ok()
+        .and_then(|value| value.clone());
+
     match app.updater() {
         Ok(_) => AppUpdateConfigPayload {
             configured: true,
             reason: None,
+            endpoints,
+            log_path,
+            last_error,
         },
         Err(error) => AppUpdateConfigPayload {
             configured: false,
             reason: Some(error.to_string()),
+            endpoints,
+            log_path,
+            last_error,
         },
     }
 }
@@ -303,6 +372,9 @@ fn get_app_update_config_state(app: tauri::AppHandle) -> AppUpdateConfigPayload 
 #[tauri::command]
 async fn check_for_app_update(app: tauri::AppHandle) -> Result<AppUpdateCheckPayload, String> {
     let current_version = app.package_info().version.to_string();
+    if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
+        *guard = None;
+    }
     let updater = match app.updater() {
         Ok(updater) => updater,
         Err(_error) => {
@@ -320,7 +392,17 @@ async fn check_for_app_update(app: tauri::AppHandle) -> Result<AppUpdateCheckPay
     let update = updater
         .check()
         .await
-        .map_err(|error| format!("Failed to check for updates: {error}"))?;
+        .map_err(|error| {
+            let message = format!("Failed to check for updates: {error}");
+            if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
+                *guard = Some(message.clone());
+            }
+            append_updater_log(
+                &app,
+                &format!("check_for_app_update failed for current version {current_version}: {message}"),
+            );
+            message
+        })?;
 
     Ok(match update {
         Some(update) => AppUpdateCheckPayload {
@@ -344,20 +426,37 @@ async fn check_for_app_update(app: tauri::AppHandle) -> Result<AppUpdateCheckPay
 
 #[tauri::command]
 async fn install_app_update(app: tauri::AppHandle) -> Result<AppUpdateInstallPayload, String> {
+    if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
+        *guard = None;
+    }
     let updater = app
         .updater()
         .map_err(|error| format!("Updater is not configured: {error}"))?;
     let update = updater
         .check()
         .await
-        .map_err(|error| format!("Failed to check for updates: {error}"))?
+        .map_err(|error| {
+            let message = format!("Failed to check for updates: {error}");
+            if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
+                *guard = Some(message.clone());
+            }
+            append_updater_log(&app, &format!("install_app_update preflight check failed: {message}"));
+            message
+        })?
         .ok_or_else(|| "No update is currently available.".to_string())?;
 
     let version = update.version.to_string();
     update
         .download_and_install(|_, _| {}, || {})
         .await
-        .map_err(|error| format!("Failed to install update {version}: {error}"))?;
+        .map_err(|error| {
+            let message = format!("Failed to install update {version}: {error}");
+            if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
+                *guard = Some(message.clone());
+            }
+            append_updater_log(&app, &message);
+            message
+        })?;
 
     Ok(AppUpdateInstallPayload {
         installed: true,
@@ -684,6 +783,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(BackendAuthToken(Mutex::new(initial_auth_token)))
         .manage(PythonSidecar(Mutex::new(None)))
+        .manage(UpdaterDiagnostics(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             prepare_workspace_path,
             authorize_workspace_path,

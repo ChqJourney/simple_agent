@@ -21,6 +21,11 @@ DEFAULT_PORT = 8790
 DEFAULT_LANGUAGE = "ch"
 SUPPORTED_DETAIL_LEVELS = {"text", "lines", "blocks"}
 DEFAULT_MODEL_SOURCE = "BOS"
+ENGINE_ARGUMENT_ERROR_MARKERS = (
+    "unknown argument",
+    "unexpected keyword argument",
+    "got an unexpected keyword argument",
+)
 
 
 class HealthResponse(BaseModel):
@@ -136,13 +141,23 @@ class PaddleOcrEngineCache:
             try:
                 logger.info("Initializing PaddleOCR engine with kwargs=%s", kwargs)
                 return PaddleOCR(**kwargs)
-            except TypeError as exc:
+            except Exception as exc:
+                if not _is_engine_argument_compat_error(exc):
+                    raise
                 last_error = exc
                 continue
 
         if last_error is not None:
             raise RuntimeError(f"Failed to initialize PaddleOCR for lang={lang}: {last_error}") from last_error
         raise RuntimeError(f"Failed to initialize PaddleOCR for lang={lang}")
+
+
+def _is_engine_argument_compat_error(exc: Exception) -> bool:
+    if isinstance(exc, TypeError):
+        return True
+
+    message = str(exc).strip().lower()
+    return any(marker in message for marker in ENGINE_ARGUMENT_ERROR_MARKERS)
 
 
 def _runtime_root() -> Path:

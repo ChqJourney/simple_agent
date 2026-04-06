@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -42,6 +44,35 @@ class OcrSidecarServerTests(unittest.TestCase):
 
             with patch.object(server, "_runtime_root", return_value=runtime_root):
                 self.assertEqual((None, None), server._find_local_model_dirs("en"))
+
+    def test_create_engine_falls_back_when_newer_paddle_kwargs_are_rejected(self) -> None:
+        observed_kwargs: list[dict[str, object]] = []
+
+        class FakePaddleOCR:
+            def __init__(self, **kwargs: object) -> None:
+                observed_kwargs.append(dict(kwargs))
+                if "use_doc_preprocessor" in kwargs:
+                    raise RuntimeError("Unknown argument: use_doc_preprocessor")
+                self.kwargs = kwargs
+
+        with patch.dict(sys.modules, {"paddleocr": types.SimpleNamespace(PaddleOCR=FakePaddleOCR)}):
+            with patch.object(server, "_find_local_model_dirs", return_value=(None, None)):
+                engine = server.PaddleOcrEngineCache._create_engine("ch")
+
+        self.assertIsInstance(engine, FakePaddleOCR)
+        self.assertEqual("ch", engine.kwargs["lang"])
+        self.assertNotIn("use_doc_preprocessor", engine.kwargs)
+        self.assertGreaterEqual(len(observed_kwargs), 2)
+
+    def test_create_engine_does_not_swallow_non_compat_errors(self) -> None:
+        class FakePaddleOCR:
+            def __init__(self, **kwargs: object) -> None:
+                raise RuntimeError("model files are missing")
+
+        with patch.dict(sys.modules, {"paddleocr": types.SimpleNamespace(PaddleOCR=FakePaddleOCR)}):
+            with patch.object(server, "_find_local_model_dirs", return_value=(None, None)):
+                with self.assertRaisesRegex(RuntimeError, "model files are missing"):
+                    server.PaddleOcrEngineCache._create_engine("ch")
 
 
 if __name__ == "__main__":

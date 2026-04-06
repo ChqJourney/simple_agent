@@ -1,8 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from importlib.metadata import PackageNotFoundError, requires
 from importlib.util import find_spec
 from pathlib import Path
+import re
 
+from packaging.requirements import Requirement
 from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 
@@ -10,6 +13,32 @@ if "__file__" in globals():
     project_root = Path(__file__).resolve().parent
 else:
     project_root = Path.cwd().resolve()
+
+_EXTRA_PATTERN = re.compile(r"(?:;|and)*[ \t]*extra[ \t]*==[ \t]*['\"]([a-z0-9]+(?:-[a-z0-9]+)*)['\"]")
+
+
+def _paddlex_extra_distribution_names(*extra_names: str) -> list[str]:
+    wanted = {name.strip().lower() for name in extra_names if name.strip()}
+    if not wanted:
+        return []
+
+    try:
+        dependency_specs = requires("paddlex") or []
+    except PackageNotFoundError:
+        return []
+
+    distributions = {"paddleocr", "paddlex", "paddlepaddle"}
+    for dependency_spec in dependency_specs:
+        match = _EXTRA_PATTERN.search(dependency_spec)
+        if match is None or match.group(1).lower() not in wanted:
+            continue
+
+        normalized_spec = (dependency_spec[: match.start()] + dependency_spec[match.end() :]).rstrip()
+        requirement = Requirement(normalized_spec)
+        distributions.add(requirement.name)
+
+    return sorted(distributions)
+
 
 binaries = []
 datas = [(str(project_root / "manifest.json"), ".")]
@@ -34,11 +63,7 @@ for package_name in [
     binaries += pkg_binaries
     hiddenimports += pkg_hiddenimports
 
-for distribution_name in [
-    "paddleocr",
-    "paddlex",
-    "paddlepaddle",
-]:
+for distribution_name in _paddlex_extra_distribution_names("ocr", "ocr-core"):
     datas += copy_metadata(distribution_name)
 
 # chardet 5+ may load mypyc-compiled pipeline helpers dynamically, so keep the

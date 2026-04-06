@@ -66,6 +66,15 @@ foreach ($importTarget in $criticalImports) {
 }
 Write-Host "All OCR sidecar dependencies verified."
 
+Write-Host "Verifying PaddleX OCR extras..."
+Invoke-CheckedCommand `
+    -FilePath $buildPython `
+    -Arguments @(
+        "-c",
+        "from paddlex.utils.deps import is_extra_available; import sys; ok = is_extra_available('ocr') or is_extra_available('ocr-core'); print(f'PaddleX OCR extras available: {ok}'); sys.exit(0 if ok else 1)"
+    ) `
+    -WorkingDirectory $sidecarRoot
+
 Write-Host "Preparing bundled OCR models..."
 Invoke-CheckedCommand `
     -FilePath $buildPython `

@@ -3,7 +3,7 @@
 from importlib.util import find_spec
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 
 if "__file__" in globals():
@@ -33,6 +33,13 @@ for package_name in [
     datas += pkg_datas
     binaries += pkg_binaries
     hiddenimports += pkg_hiddenimports
+
+for distribution_name in [
+    "paddleocr",
+    "paddlex",
+    "paddlepaddle",
+]:
+    datas += copy_metadata(distribution_name)
 
 # chardet 5+ may load mypyc-compiled pipeline helpers dynamically, so keep the
 # whole pipeline package visible to the frozen importer and pin the known

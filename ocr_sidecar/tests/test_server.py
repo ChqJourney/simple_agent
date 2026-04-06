@@ -74,6 +74,16 @@ class OcrSidecarServerTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "model files are missing"):
                     server.PaddleOcrEngineCache._create_engine("ch")
 
+    def test_format_exception_detail_includes_exception_chain(self) -> None:
+        root = RuntimeError("missing shapely")
+        wrapped = RuntimeError("pipeline creation failed")
+        wrapped.__cause__ = root
+
+        self.assertEqual(
+            "RuntimeError: pipeline creation failed <- RuntimeError: missing shapely",
+            server._format_exception_detail(wrapped),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

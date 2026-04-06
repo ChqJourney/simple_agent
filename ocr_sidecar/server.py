@@ -160,6 +160,23 @@ def _is_engine_argument_compat_error(exc: Exception) -> bool:
     return any(marker in message for marker in ENGINE_ARGUMENT_ERROR_MARKERS)
 
 
+def _format_exception_detail(exc: Exception) -> str:
+    parts: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        message = str(current).strip()
+        if message:
+            parts.append(f"{current.__class__.__name__}: {message}")
+        else:
+            parts.append(current.__class__.__name__)
+        current = current.__cause__ or current.__context__
+
+    return " <- ".join(parts)
+
+
 def _runtime_root() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
@@ -408,7 +425,7 @@ def create_app(auth_token: str | None = None, warmup_langs: list[str] | None = N
             raise
         except Exception as exc:
             logger.exception("OCR failed for image=%s lang=%s", image_path, request.lang)
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            raise HTTPException(status_code=500, detail=_format_exception_detail(exc)) from exc
 
         lines = [
             OcrLine(text=line["text"], bbox=line["bbox"], score=line.get("score"))

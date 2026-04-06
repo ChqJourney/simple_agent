@@ -18,6 +18,9 @@ class OcrSidecarBuildSpecTests(unittest.TestCase):
             source,
             re.compile(r'(["\'])chardet\.pipeline\.orchestrator__mypyc\1'),
         )
+        self.assertRegex(source, re.compile(r'(["\'])paddleocr\1'))
+        self.assertRegex(source, re.compile(r'(["\'])paddlex\1'))
+        self.assertRegex(source, re.compile(r'(["\'])paddlepaddle\1'))
 
 
 if __name__ == "__main__":

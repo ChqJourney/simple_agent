@@ -87,6 +87,18 @@ if (-not (Test-Path -LiteralPath $builtExe)) {
     throw "PyInstaller did not produce the expected OCR sidecar executable: $builtExe"
 }
 
+$requiredMetadataPatterns = @(
+    "paddleocr-*.dist-info",
+    "paddlex-*.dist-info",
+    "paddlepaddle-*.dist-info"
+)
+foreach ($pattern in $requiredMetadataPatterns) {
+    $metadataDir = Get-ChildItem -Path $builtDir -Directory -Filter $pattern | Select-Object -First 1
+    if ($null -eq $metadataDir) {
+        throw "PyInstaller output is missing required package metadata: $pattern"
+    }
+}
+
 if (-not (Test-Path -LiteralPath $manifestSource)) {
     throw "OCR sidecar manifest source file not found: $manifestSource"
 }

@@ -45,6 +45,14 @@ interface OcrInstallState {
 const APP_FONT_LABEL = 'Inter';
 const APP_FONT_STACK = "'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif";
 const CONNECTION_TEST_TIMEOUT_MS = 15000;
+const SETTINGS_PAGE_CLASS =
+  'min-h-screen bg-[linear-gradient(180deg,rgba(241,245,249,0.9),rgba(255,255,255,1))] dark:bg-[radial-gradient(circle_at_top,rgba(142,160,182,0.14),transparent_34%),linear-gradient(180deg,rgba(23,26,31,0.98),rgba(18,21,26,1)_52%,rgba(13,16,20,1)_100%)]';
+const SETTINGS_CARD_CLASS =
+  'rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700/80 dark:bg-gray-900/72 dark:shadow-black/10';
+const SETTINGS_PANEL_CLASS =
+  'rounded-2xl border border-slate-200/70 bg-slate-50/85 p-4 dark:border-slate-700/70 dark:bg-slate-900/35';
+const SETTINGS_ROW_CLASS =
+  'rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-700/80 dark:bg-gray-950/18';
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -677,7 +685,7 @@ export const SettingsPage: React.FC = () => {
     if (activeTab === 'model') {
       return (
         <div className="space-y-6">
-          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section className={SETTINGS_CARD_CLASS}>
             <div className="mb-4">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.model.title')}</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -702,7 +710,7 @@ export const SettingsPage: React.FC = () => {
                 testButtonVariant="primary"
               />
 
-              <div className="rounded-2xl border border-dashed border-gray-200 p-4 dark:border-gray-700">
+              <div className="rounded-2xl border border-dashed border-gray-200 p-4 dark:border-gray-700/80 dark:bg-gray-950/12">
                 <ProviderConfigForm
                   title={t('settings.model.background')}
                   config={backgroundProfile}
@@ -743,7 +751,7 @@ export const SettingsPage: React.FC = () => {
         return (
           <section
             key={sectionKey}
-            className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+            className={SETTINGS_CARD_CLASS}
           >
             <div className="mb-4">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h2>
@@ -816,7 +824,7 @@ export const SettingsPage: React.FC = () => {
             renderRuntimeSection(section.key, section.title, section.description, section.fields)
           )}
 
-          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section className={SETTINGS_CARD_CLASS}>
             <div className="mb-4">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.runtime.customPromptTitle')}</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -850,7 +858,7 @@ export const SettingsPage: React.FC = () => {
     if (activeTab === 'tools') {
       return (
         <div className="space-y-6">
-          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section className={SETTINGS_CARD_CLASS}>
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.tools.title')}</h2>
@@ -890,7 +898,7 @@ export const SettingsPage: React.FC = () => {
                 return (
                   <div
                     key={tool.name}
-                    className="flex items-center justify-between gap-4 rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-800"
+                  className={SETTINGS_ROW_CLASS}
                   >
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-gray-900 dark:text-white">{tool.name}</div>
@@ -917,7 +925,7 @@ export const SettingsPage: React.FC = () => {
     if (activeTab === 'skills') {
       return (
         <div className="space-y-6">
-          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section className={SETTINGS_CARD_CLASS}>
             <div className="mb-4">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.skills.title')}</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -925,7 +933,7 @@ export const SettingsPage: React.FC = () => {
               </p>
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
+            <div className={SETTINGS_PANEL_CLASS}>
               <div>
                 <label htmlFor="enable-local-skills" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {t('settings.skills.enableLocalSkills')}
@@ -957,7 +965,7 @@ export const SettingsPage: React.FC = () => {
             </div>
           </section>
 
-          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section className={SETTINGS_CARD_CLASS}>
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.skills.systemSkillsTitle')}</h2>
@@ -972,7 +980,7 @@ export const SettingsPage: React.FC = () => {
               )}
             </div>
 
-            <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
+            <div className={SETTINGS_PANEL_CLASS}>
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
                 {t('settings.skills.skillRoots')}
               </div>
@@ -1013,7 +1021,7 @@ export const SettingsPage: React.FC = () => {
               {!skillsLoading && !skillsError && systemSkills.map((skill) => (
                 <div
                   key={skill.path}
-                  className="rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-800"
+                  className={SETTINGS_ROW_CLASS}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="min-w-0">
@@ -1046,7 +1054,7 @@ export const SettingsPage: React.FC = () => {
     if (activeTab === 'ocr') {
       return (
         <div className="space-y-6">
-          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section className={SETTINGS_CARD_CLASS}>
             <div className="mb-4">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ocr.title')}</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -1054,7 +1062,7 @@ export const SettingsPage: React.FC = () => {
               </p>
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
+            <div className={SETTINGS_PANEL_CLASS}>
               <div>
                 <label htmlFor="enable-ocr" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {t('settings.ocr.enableTooling')}
@@ -1080,7 +1088,7 @@ export const SettingsPage: React.FC = () => {
             </div>
           </section>
 
-          <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section className={SETTINGS_CARD_CLASS}>
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ocr.installationTitle')}</h2>
@@ -1092,13 +1100,13 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={handleInstallOcr}
                 disabled={ocrInstallState.installing}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-slate-100"
               >
                 {ocrInstallState.installing ? t('settings.ocr.installing') : t('settings.ocr.installButton')}
               </button>
             </div>
 
-            <div className="space-y-3 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/60">
+            <div className={`${SETTINGS_PANEL_CLASS} space-y-3`}>
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
                   {t('settings.ocr.installStatus')}
@@ -1138,7 +1146,7 @@ export const SettingsPage: React.FC = () => {
 
     return (
       <div className="space-y-6">
-        <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <section className={SETTINGS_CARD_CLASS}>
           <div className="mb-4">
             <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ui.languageTitle')}</h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -1162,7 +1170,7 @@ export const SettingsPage: React.FC = () => {
           </div>
         </section>
 
-        <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <section className={SETTINGS_CARD_CLASS}>
           <div className="mb-4">
             <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ui.displayModeTitle')}</h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -1185,7 +1193,7 @@ export const SettingsPage: React.FC = () => {
           </div>
         </section>
 
-        <section className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <section className={SETTINGS_CARD_CLASS}>
           <div className="mb-4">
             <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ui.typographyTitle')}</h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -1194,7 +1202,7 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),220px]">
-            <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(14,165,233,0.08),rgba(99,102,241,0.08))] p-5 dark:bg-[linear-gradient(135deg,rgba(14,165,233,0.14),rgba(99,102,241,0.14))]">
+            <div className="rounded-2xl border border-slate-200/70 bg-[linear-gradient(135deg,rgba(148,163,184,0.14),rgba(226,232,240,0.5))] p-5 dark:border-slate-700/70 dark:bg-[linear-gradient(135deg,rgba(61,74,90,0.42),rgba(28,36,45,0.72))]">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
                 {t('settings.ui.currentFont')}
               </div>
@@ -1238,12 +1246,12 @@ export const SettingsPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,rgba(241,245,249,0.9),rgba(255,255,255,1))] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.98),rgba(15,23,42,1))]">
-      <header className="flex h-16 items-center justify-between border-b border-gray-200/70 px-4 dark:border-gray-800">
+    <div className={SETTINGS_PAGE_CLASS}>
+      <header className="flex h-16 items-center justify-between border-b border-gray-200/70 px-4 dark:border-gray-700/80 dark:bg-gray-950/18">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="rounded-xl p-2 text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+            className="rounded-xl p-2 text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800/80"
             aria-label={t('about.back')}
             title={t('about.back')}
           >
@@ -1260,7 +1268,7 @@ export const SettingsPage: React.FC = () => {
         <button
           type="button"
           onClick={() => navigate('/about')}
-          className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+          className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700/80 dark:text-gray-200 dark:hover:bg-gray-800/80"
         >
           {t('settings.about')}
         </button>
@@ -1268,7 +1276,7 @@ export const SettingsPage: React.FC = () => {
 
       <main className="mx-auto max-w-6xl p-6">
         <div className="flex items-start gap-6">
-          <aside className="w-60 shrink-0 rounded-[1.75rem] border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <aside className="w-60 shrink-0 rounded-[1.75rem] border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700/80 dark:bg-gray-900/72 dark:shadow-black/10">
             <div className="space-y-1.5">
               {settingsTabs.map((tab) => (
                 <button
@@ -1277,12 +1285,12 @@ export const SettingsPage: React.FC = () => {
                   onClick={() => setActiveTab(tab.value)}
                   className={`w-full rounded-2xl px-4 py-3 text-left transition-colors ${
                     activeTab === tab.value
-                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+                      ? 'bg-slate-900 text-white dark:bg-slate-700 dark:text-gray-50'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800/80'
                   }`}
                 >
                   <div className="text-sm font-semibold">{tab.label}</div>
-                  <div className={`mt-1 text-xs ${activeTab === tab.value ? 'text-white/80 dark:text-slate-700' : 'text-gray-500 dark:text-gray-400'}`}>
+                  <div className={`mt-1 text-xs ${activeTab === tab.value ? 'text-white/80 dark:text-slate-200/80' : 'text-gray-500 dark:text-gray-400'}`}>
                     {tab.description}
                   </div>
                 </button>
@@ -1293,7 +1301,7 @@ export const SettingsPage: React.FC = () => {
           <section className="min-w-0 flex-1 space-y-5">
             {renderTabContent()}
 
-            <div className="rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className={SETTINGS_CARD_CLASS}>
               {saveError && (
                 <p className="mb-4 text-sm text-red-500">{saveError}</p>
               )}

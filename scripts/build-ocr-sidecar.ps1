@@ -93,7 +93,7 @@ $requiredMetadataPatterns = @(
     "paddlepaddle-*.dist-info"
 )
 foreach ($pattern in $requiredMetadataPatterns) {
-    $metadataDir = Get-ChildItem -Path $builtDir -Directory -Filter $pattern | Select-Object -First 1
+    $metadataDir = Get-ChildItem -Path $builtDir -Directory -Filter $pattern -Recurse | Select-Object -First 1
     if ($null -eq $metadataDir) {
         throw "PyInstaller output is missing required package metadata: $pattern"
     }

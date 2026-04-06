@@ -104,6 +104,36 @@ describe("normalizeProviderConfig", () => {
     });
   });
 
+  it("drops legacy provider memory entries for unsupported providers", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+      provider_memory: {
+        openai: {
+          model: "gpt-4o-mini",
+          api_key: "test-key",
+          base_url: "https://api.openai.com/v1",
+        },
+        ollama: {
+          model: "llama3.2",
+          api_key: "",
+          base_url: "http://127.0.0.1:11434",
+        },
+      } as unknown as NonNullable<ReturnType<typeof normalizeProviderConfig>["provider_memory"]>,
+    });
+
+    expect(normalized.provider_memory).toEqual({
+      openai: {
+        model: "gpt-4o-mini",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+      },
+    });
+  });
+
   it("trims and preserves a custom system prompt", () => {
     const normalized = normalizeProviderConfig({
       provider: "openai",
@@ -169,16 +199,6 @@ describe("normalizeProviderConfig", () => {
       base_url: "https://api.openai.com/v1",
       enable_reasoning: false,
     })).toBe(false);
-  });
-
-  it("treats ollama models as runnable without an API key", () => {
-    expect(hasRunnableConversationProfile({
-      provider: "ollama",
-      model: "llama3.2",
-      api_key: "",
-      base_url: "http://127.0.0.1:11434",
-      enable_reasoning: false,
-    })).toBe(true);
   });
 
   it("resolves background-family roles to the background profile when configured", () => {

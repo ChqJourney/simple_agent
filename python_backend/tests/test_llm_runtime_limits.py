@@ -10,7 +10,6 @@ from llms.deepseek import DeepSeekLLM
 from llms.glm import GLMLLM
 from llms.kimi import KimiLLM
 from llms.minimax import MiniMaxLLM
-from llms.ollama import OllamaLLM
 from llms.openai import OpenAILLM
 from llms.qwen import QwenLLM
 
@@ -45,20 +44,6 @@ class LLMRuntimeLimitTests(unittest.TestCase):
         kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
 
         self.assertEqual(96, kwargs["max_tokens"])
-
-    def test_ollama_payload_includes_num_predict_limit(self) -> None:
-        llm = OllamaLLM(
-            {
-                "provider": "ollama",
-                "model": "qwen2.5-coder:7b",
-                "base_url": "http://127.0.0.1:11434",
-                "max_output_tokens": 64,
-            }
-        )
-
-        payload = llm._build_payload([{"role": "user", "content": "hello"}], None, False)
-
-        self.assertEqual(64, payload["options"]["num_predict"])
 
     def test_deepseek_request_includes_max_output_tokens(self) -> None:
         llm = DeepSeekLLM(

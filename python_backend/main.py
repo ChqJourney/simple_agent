@@ -22,7 +22,6 @@ from llms.glm import GLMLLM
 from llms.kimi import KimiLLM
 from llms.minimax import MiniMaxLLM
 from llms.openai import OpenAILLM
-from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 from llms.qwen import QwenLLM
 from ocr.manager import OcrSidecarManager
 from runtime.config import (
@@ -193,6 +192,7 @@ SESSION_TASK_RESERVED = object()
 TOOL_CONFIRM_DECISIONS: Set[str] = {"approve_once", "approve_always", "reject"}
 TOOL_CONFIRM_SCOPES: Set[str] = {"session", "workspace"}
 EXECUTION_MODES: Set[str] = {"regular", "free"}
+SUPPORTED_PROVIDERS: Set[str] = {"openai", "deepseek", "kimi", "glm", "minimax", "qwen"}
 
 
 def _build_ocr_status_payload(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -319,8 +319,6 @@ def create_llm_for_profile(
         return MiniMaxLLM(profile_config)
     if provider == "qwen":
         return QwenLLM(profile_config)
-    if provider == "ollama":
-        return OllamaLLM(profile_config)
     raise ValueError(f"Unknown provider: {provider}")
 
 
@@ -765,6 +763,9 @@ async def handle_message(
 async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> None:
     try:
         config = _normalize_provider_config(data)
+        provider = str(get_primary_profile_config(config).get("provider") or "").strip().lower()
+        if provider not in SUPPORTED_PROVIDERS:
+            raise ValueError(f"Unsupported provider: {provider or 'unknown'}")
         _apply_runtime_tool_policies(config)
 
         await cleanup_all_tasks()
@@ -1282,15 +1283,7 @@ async def test_config(request: Request, data: Dict[str, Any]):
             status_code=400, content={"ok": False, "error": "Missing provider"}
         )
 
-    if raw_provider not in (
-        "openai",
-        "deepseek",
-        "kimi",
-        "glm",
-        "minimax",
-        "qwen",
-        "ollama",
-    ):
+    if raw_provider not in SUPPORTED_PROVIDERS:
         return JSONResponse(
             status_code=400,
             content={"ok": False, "error": f"Unsupported provider: {raw_provider}"},
@@ -1302,7 +1295,7 @@ async def test_config(request: Request, data: Dict[str, Any]):
     model = config["model"]
     base_url = config["base_url"]
 
-    if provider != "ollama" and not api_key:
+    if not api_key:
         return JSONResponse(
             status_code=400, content={"ok": False, "error": "Missing api_key"}
         )
@@ -1313,25 +1306,10 @@ async def test_config(request: Request, data: Dict[str, Any]):
         )
 
     headers: Dict[str, str] = {}
-    if provider != "ollama":
-        headers["Authorization"] = f"Bearer {api_key}"
+    headers["Authorization"] = f"Bearer {api_key}"
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            if provider == "ollama":
-                target_url = f"{base_url}/api/tags"
-                response = await client.get(target_url, headers=headers)
-                if response.is_success:
-                    return {"ok": True}
-
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "ok": False,
-                        "error": f"Ollama probe failed with HTTP {response.status_code}",
-                    },
-                )
-
             models_url = f"{base_url.rstrip('/')}/models"
             response = await client.get(models_url, headers=headers)
             if response.is_success:

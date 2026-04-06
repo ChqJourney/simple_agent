@@ -29,7 +29,7 @@ class ModelCapabilitiesTests(unittest.TestCase):
         self.assertEqual(['text', 'image'], get_supported_input_types('glm', 'glm-4.6v'))
 
     def test_unknown_models_stay_text_only(self) -> None:
-        self.assertEqual(['text'], get_supported_input_types('ollama', 'llama3.1'))
+        self.assertEqual(['text'], get_supported_input_types('qwen', 'qwen-plus'))
         self.assertEqual(['text'], get_supported_input_types('minimax', 'MiniMax-M2.5'))
 
     def test_unsupported_models_are_coerced_off(self) -> None:

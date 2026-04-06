@@ -13,7 +13,6 @@ from llms.openai import OpenAILLM
 from llms.glm import GLMLLM
 from llms.kimi import KimiLLM
 from llms.minimax import MiniMaxLLM
-from llms.ollama import OllamaLLM
 from llms.qwen import QwenLLM
 
 
@@ -199,18 +198,6 @@ class ProviderReasoningRequestTests(unittest.IsolatedAsyncioTestCase):
         })
 
         self.assertEqual('step 1 + step 2', chunk['choices'][0]['delta']['reasoning_content'])
-
-    def test_ollama_reasoning_model_sets_think_flag(self) -> None:
-        llm = OllamaLLM({
-            'model': 'qwen3:8b',
-            'base_url': 'http://127.0.0.1:11434',
-            'enable_reasoning': True,
-        })
-
-        payload = llm._build_payload([{'role': 'user', 'content': 'hello'}], None, True)
-
-        self.assertTrue(payload['think'])
-
 
 if __name__ == '__main__':
     unittest.main()

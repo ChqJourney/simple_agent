@@ -21,7 +21,6 @@ export const ModelDisplay: React.FC = () => {
     glm: 'GLM',
     minimax: 'MiniMax',
     qwen: 'Qwen',
-    ollama: 'Ollama',
   };
 
   return (

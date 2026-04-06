@@ -418,7 +418,7 @@ export const SettingsPage: React.FC = () => {
     if (!profile.provider || !profile.model) {
       return false;
     }
-    return profile.provider === 'ollama' || Boolean(profile.api_key);
+    return Boolean(profile.api_key);
   };
 
   const updateProfile = (profileName: 'primary' | 'background', updates: Partial<ModelProfile>) => {
@@ -488,7 +488,7 @@ export const SettingsPage: React.FC = () => {
       return;
     }
 
-    if (profile.provider !== 'ollama' && !profile.api_key) {
+    if (!profile.api_key) {
       setConnectionTestState(profileName, 'error', t('settings.validation.apiKeyRequired'));
       return;
     }

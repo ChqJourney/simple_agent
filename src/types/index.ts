@@ -96,7 +96,7 @@ export interface RunEventRecord {
   timestamp: string;
 }
 
-export type ProviderType = 'openai' | 'deepseek' | 'kimi' | 'glm' | 'minimax' | 'qwen' | 'ollama';
+export type ProviderType = 'openai' | 'deepseek' | 'kimi' | 'glm' | 'minimax' | 'qwen';
 export type InputType = 'text' | 'image';
 export type ExecutionRole = 'conversation' | 'background' | 'compaction' | 'delegated_task';
 

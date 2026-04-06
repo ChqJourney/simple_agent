@@ -29,12 +29,6 @@ DEEPSEEK_REASONING_PREFIXES = (
     'deepseek-reasoner',
 )
 MINIMAX_REASONING_PREFIXES = tuple()
-OLLAMA_REASONING_PREFIXES = (
-    'qwen3',
-    'deepseek-r1',
-    'magistral',
-    'phi4-reasoning',
-)
 OPENAI_VISION_PREFIXES = (
     'gpt-4o',
     'gpt-4.1',
@@ -50,7 +44,6 @@ QWEN_VISION_PREFIXES = (
     'qvq','qwen3.5','qwen3.5-plus', 'qwen3.5-plus-2026-02-15',
 )
 MINIMAX_VISION_PREFIXES = tuple()
-OLLAMA_VISION_PREFIXES = tuple()
 DEFAULT_CONTEXT_LENGTH_PREFIXES = {
     'openai': {
         'gpt-4o': 128000,
@@ -116,8 +109,6 @@ def supports_reasoning(provider: str, model: str) -> bool:
         return _matches_prefix(normalized_model, MINIMAX_REASONING_PREFIXES)
     if normalized_provider == 'qwen':
         return _matches_prefix(normalized_model, QWEN_REASONING_PREFIXES)
-    if normalized_provider == 'ollama':
-        return _matches_prefix(normalized_model, OLLAMA_REASONING_PREFIXES)
     return False
 
 
@@ -138,8 +129,6 @@ def get_supported_input_types(provider: str, model: str) -> List[str]:
             return IMAGE_AND_TEXT_INPUT_TYPES.copy()
         return TEXT_ONLY_INPUT_TYPES.copy()
     if normalized_provider == 'qwen' and _matches_prefix(normalized_model, QWEN_VISION_PREFIXES):
-        return IMAGE_AND_TEXT_INPUT_TYPES.copy()
-    if normalized_provider == 'ollama' and _matches_prefix(normalized_model, OLLAMA_VISION_PREFIXES):
         return IMAGE_AND_TEXT_INPUT_TYPES.copy()
     return TEXT_ONLY_INPUT_TYPES.copy()
 

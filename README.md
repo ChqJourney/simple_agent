@@ -1,178 +1,98 @@
-# AI Agent
+# work agent
 
-> 📖 **新手入门？** 请先阅读 [**用户指南 (User Guide)**](./USER_GUIDE.md) — 三步上手，快速了解对话、工具确认、设置等核心功能。
+> 普通用户请先看 [用户指南](./USER_GUIDE.md)  
+> 实现细节请看 [architecture.md](./architecture.md)
 
-基于 `Tauri + React + TypeScript + Python(FastAPI/WebSocket)` 的桌面 Agent 应用。
+`work agent` 是一个基于 `Tauri + React + TypeScript + Python(FastAPI/WebSocket)` 的桌面 Agent 应用。  
+仓库包名仍是 `tauri_agent`，桌面应用标题和产品名是 `work agent`。
 
-项目现在已经从“单一聊天壳子”演进到一套可扩展的 Agent 平台，重点能力包括：
+它的定位不是“只会聊天的壳子”，而是一个围绕本地工作区协作的桌面 Agent：
 
-- 结构化运行日志与可观测 agent loop
-- 多模型 profile、session 级模型锁定
-- 可扩展工具系统，含统一文档工具、PDF 专家工具与高级 fallback 执行工具
-- 本地 skill metadata catalog 注入与 `skill_loader` 按需加载
-- 图片输入与工作区拖拽交互
-- settings 中的 tools / system skills 真实开关控制
-- 会话标题生成与会话元数据持久化
-- session memory / compaction 与长会话上下文治理
-- delegated background subtasks 与消息流内 worker 卡片
-- 可选安装的 Paddle OCR sidecar、图片/PDF OCR 与前端 OCR 状态控制
-- 前端 `locale` 支持，当前内置 `zh-CN / en-US` 两种界面语言
+- 以工作区为边界进行文件读取、写入、搜索和命令执行
+- 支持流式回复、reasoning 展示、运行时间线和 token 用量显示
+- 支持主模型 / 后台模型双 profile
+- 支持工具审批、交互式追问、会话级执行模式切换
+- 支持本地 skills catalog 与按需 `skill_loader`
+- 支持图片附件、文件树拖拽路径引用、任务面板
+- 支持可选安装的 OCR sidecar，用于图片和扫描版 PDF OCR
+- 支持中英文界面、主题切换和基础字号调整
 
-## 架构概览
+## 当前实现概览
 
-```text
-React UI
-  -> Zustand stores
-  -> WebSocket context
-  -> Tauri desktop shell
+### 用户可见能力
 
-Python Backend (FastAPI / WebSocket)
-  -> Runtime config + router
-  -> Agent loop
-  -> Tool registry
-  -> OCR manager + OCR tool
-  -> Skill providers
-  -> Run-event logging
+- Welcome / Workspace / Settings / About 四个页面
+- 工作区列表与最近工作区
+- 每个工作区独立的会话列表、会话删除、新建会话
+- 流式聊天、错误重试、消息复制、Markdown/GFM 渲染
+- assistant 详细过程面板：
+  - reasoning
+  - tool call
+  - tool result
+  - delegated worker 卡片
+- 右侧文件树与任务面板
+- 顶栏状态：
+  - token usage
+  - OCR 状态
+  - WebSocket 状态
+  - 当前模型
+  - 会话 compaction 状态
+  - run timeline 入口
+- 设置页六个标签：
+  - `Model`
+  - `Runtime`
+  - `Tools`
+  - `Skills`
+  - `OCR`
+  - `UI`
+- About 页版本信息与更新检查界面
 
-Workspace
-  -> .agent/sessions/*.jsonl
-  -> .agent/sessions/*.meta.json
-  -> .agent/sessions/*.memory.json
-  -> .agent/sessions/*.compactions.jsonl
-  -> .agent/logs/*.jsonl
-```
+### 模型与 Provider
 
-### 前端
+前端当前内置以下 provider 选择：
 
-- React 19
-- TypeScript
-- Zustand
-- Tailwind CSS v4
-- React Router
-- 轻量前端 i18n 字典层（内置 `zh-CN / en-US`）
+- OpenAI
+- DeepSeek
+- Kimi (Moonshot)
+- GLM (Zhipu)
+- MiniMax
+- Qwen (Tongyi Qianwen)
 
-### 后端
+配置模型时支持：
 
-- Python 3.13
-- FastAPI
-- WebSocket
-- `httpx` / `aiohttp`
-* `aiohttp` 计划移除
+- `primary` profile：主对话
+- `background` profile：会话标题、delegated task、compaction 等后台任务
+- 连通性测试
+- provider 级已保存配置记忆
+- 根据模型能力自动约束 reasoning 开关和图片输入能力
 
-### 桌面层
+当前前端预置模型选项：
 
-- Tauri 2
-- Rust
-- Tauri Plugin FS / Dialog / Shell / Opener
-- 主应用由 Tauri 直接管理 `core` backend；OCR 作为安装目录下的可选 sidecar，由 Python backend 按需拉起
+- OpenAI: `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `o1-preview`, `o1-mini`
+- DeepSeek: `deepseek-chat`, `deepseek-reasoner`
+- Kimi: `kimi-k2.5`, `kimi-k2-thinking`
+- GLM: `glm-5`, `glm-4.7`, `glm-4.6`, `glm-4.6v`
+- MiniMax: `MiniMax-M2.5`, `MiniMax-M2.7`
+- Qwen: `qwen3-max-2026-01-23`, `qwen3.5-plus-2026-02-15`, `qwen3.5-plus`, `qwen3-coder-next`
 
-## 当前能力
+注意：
 
-### Agent 与运行态
+- 会话第一次真正发送消息后会锁定到当时的对话模型
+- 若当前会话已锁模，再切到别的 provider/model，会收到锁定错误
+- 图片输入是否可用，取决于当前对话模型能力
 
-- 流式聊天响应
-- reasoning 内容展示
-- assistant 正文支持 GFM Markdown，包括表格、任务列表、删除线与单换行
-- 代码块与行内代码在 light / dark mode 下使用与整体界面协调的配色
-- 中断生成并保留已输出内容
-- 可观测 run timeline
-- 结构化 run event 落盘到 `.agent/logs/`
-- session title generation
-- session compaction：
-  - 独立 memory artifact 与 compaction 审计日志
-  - `>=60%` 上一轮真实 prompt usage 时后台预压缩
-  - `>75%` 上一轮真实 prompt usage 时发送前强制压缩
-  - `background` profile 优先，未配置时回退 `primary`
-  - 原始 transcript 永远保留
-- delegated task：
-  - `delegate_task` 会调用 background model 执行只读子任务
-  - 同一轮 tool fan-out 内支持多个 delegated workers 并行
-  - 消息流中会以单行 worker 卡片展示任务名、状态与耗时
-  - 点击卡片可打开 detail modal 查看 summary、structured data、worker model 与错误信息
-- workspace 离开保护：
-  - 主回复 `streaming` 或 session `compacting` 时离开 workspace 会弹确认
-  - 确认后中断对应运行；取消则留在当前 workspace
-- session 切换保护：
-  - 当前 session 正在主回复时，切换到另一 session 会弹确认
-  - 确认后中断当前回复再切换
-  - `compacting` 不阻止 session 切换
-- workspace 侧栏：
-  - session list 默认只显示最近 5 个，并提供跟在列表下方的 `Show more / Show less` 文字入口
-  - 左侧面板会显示当前启用工具数，并可打开 tools modal 查看 `tool name + description`
-  - `Open workspace folder` 按钮已移动到 file tree tab header
-- user message 展示：
-  - workspace message list 中的用户消息按左对齐气泡展示
-  - light / dark mode 下都带柔和底色与圆角
-- 前端 locale：
-  - 当前所有核心页面与高频组件都已接入中英文文案，包括 Welcome / Workspace / Settings / About、聊天区、工具卡片、文件树、task list、run timeline、OCR/UI 设置
-  - 时间格式展示会跟随应用 locale，而不再直接依赖系统默认语言
-- OCR 状态展示：
-  - 当 `ocr.enabled = true` 时，workspace 顶栏会显示 `OCR: available / unavailable / starting`
-  - 当 `ocr.enabled = false` 时，顶栏不显示 OCR 状态，LLM 也看不到 OCR 工具
+### Agent 运行时
 
-### 模型与配置
+- WebSocket 实时通信
+- `started / token / reasoning_token / tool_call / tool_result / completed` 事件流
+- 每次运行会把结构化 `run_event` 同步到前端和磁盘
+- 会话标题会在首条文本消息后由后台模型生成
+- 支持中断当前回复
+- 支持离开工作区保护与切换会话保护
 
-- OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama provider
-- `primary` / `background` 多 profile 配置
-- Settings 页面会按 provider 记住最近一次保存的 `model / api_key / base_url`
-- provider 下拉会对已保存配置的 provider 标记 `Saved`
-- Settings `UI` tab 支持切换界面语言，当前提供 `中文 / English`
-- `uiStore.locale` 会持久化保存，并在应用启动时按 `navigator.language` 在中英文之间自动选择默认值
-- session 级 locked model 元数据
-- runtime 配置结构已统一到 `runtime.shared + role overrides`
-- 当前实际生效情况：
-  - `conversation` role 使用 `primary` profile
-  - `background` / `compaction` / `delegated_task` role 优先使用 `background` profile；未配置时回退到 `primary`
-  - `context_length` / `max_output_tokens` / `max_tool_rounds` / `max_retries` 都支持 shared 与 role-specific override
-  - `delegated_task.timeout_seconds` 已支持在 Settings 页单独配置
-  - `max_tool_rounds` / `max_retries` 已接入后端 `Agent` 的实际执行限制
-  - `max_output_tokens` 已接入 OpenAI / DeepSeek / Kimi / GLM / MiniMax / Qwen / Ollama provider 的请求参数
-- `locked model` 仍会持久化到 session metadata，但不再在 workspace chat UI 顶部单独展示
-- `provider_memory` 仅用于前端设置页恢复 provider 对应的已保存配置，后端运行时不会依赖该字段
-- context provider 配置：
-  - Settings `Tools` tab 会列出后端当前可用工具，并允许逐项 enable / disable
-  - Settings `Skill` tab 会列出 system-level skills，并允许逐项 enable / disable
-  - workspace skills 默认启用，不在 settings 中单独 toggle
-  - `context_providers.tools.disabled` 和 `context_providers.skills.system.disabled` 都是后端真实禁用，不只是前端隐藏
-- OCR 配置：
-  - 设置页支持安装 OCR 插件与启用/停用 OCR
-  - `ocr.enabled` 控制前端是否展示 OCR 状态，以及 Agent 是否可能向 LLM 暴露 `ocr_extract`
-  - `ocr_extract` 只有在 `ocr.enabled = true` 且 OCR sidecar 实际已安装时才会出现在 tools 列表里，并暴露给 LLM
+### 工具系统
 
-### Provider Notes
-
-- `Kimi`
-  - 当前设置页默认提供 `kimi-k2.5`
-  - `kimi-k2.5` 会保留 `reasoning_content`，并在多轮对话中继续带回 assistant message
-  - `kimi-k2.5` 温度值不是自由配置：
-    - 思考模式：固定 `1.0`
-    - 非思考模式：固定 `0.6`
-- `GLM`
-  - 当前设置页默认提供 `glm-5` / `glm-4.7` / `glm-4.6` / `glm-4.6v`
-  - 图片输入当前按 `glm-4.6v` 开启
-- `MiniMax`
-  - 当前设置页默认提供 `MiniMax-M2.5` / `MiniMax-M2.7`
-  - 后端会把 provider 返回的 `reasoning_details` 归一化为现有系统使用的 `reasoning_content`
-  - 当前按文本模型处理，设置页不会为 MiniMax 打开 image input
-
-### Token Usage
-
-- provider 完成响应后会统一回传标准化 usage
-- 后端会兼容不同 provider 的 usage 字段别名，例如 `prompt_tokens/input_tokens`、`completion_tokens/output_tokens`
-- 当前 usage 结构包含：
-  - `prompt_tokens`
-  - `completion_tokens`
-  - `total_tokens`
-  - 可选 `reasoning_tokens`
-  - 可选 `context_length`
-- workspace 顶部右上角会显示一个圆形 token usage widget
-- widget 使用“当前 session 最近一次完成请求”的 `prompt_tokens / context_length` 计算百分比
-- hover 会显示实际 token 数值，便于判断是否接近 context length limit
-- 当后台或强制 compaction 完成时，widget 会立即切换为当前上下文估算值，而不必等下一轮对话结束
-
-### 工具平台
-
-内置工具：
+后端当前实际注册的工具如下：
 
 - `list_directory_tree`
 - `search_documents`
@@ -188,621 +108,238 @@ Workspace
 - `shell_execute`
 - `python_execute`
 - `node_execute`
+- `ocr_extract`
 - `todo_task`
 - `ask_question`
+- `web_fetch`
 - `delegate_task`
 - `skill_loader`
-- `ocr_extract`
 
-工具结果会被统一序列化，并映射到前端任务面板、工具摘要、delegated worker 卡片和待回答问题卡片。
+其中：
 
-Settings / 运行时过滤补充：
+- `file_write`、`shell_execute`、`python_execute`、`node_execute` 需要审批
+- `ocr_extract` 只有在 OCR sidecar 已安装且设置中启用 OCR 时才会出现
+- `skill_loader` 只有本地 skill provider 启用时才真正有意义
 
-- Settings 页通过后端 `/tools` 目录接口拉取当前可见工具清单
-- `context_providers.tools.disabled` 中出现的工具，不会暴露给 LLM
-- `ocr_extract` 额外受 OCR sidecar 安装状态约束；未安装时既不会显示在 settings tools 中，也不会暴露给 LLM
+### 文档能力
 
-OCR 工具补充：
-
-- `ocr_extract`
-  - 支持图片 OCR
-  - 支持扫描版 PDF 指定页 OCR
-  - 结果支持 `text / lines / blocks`
-  - 工作区级缓存位于 `<workspace>/.agent/cache/ocr/`
-  - 仅当 `ocr.enabled = true` 且 OCR sidecar 可用时才会实际提供给 LLM
-
-当前工具系统的设计原则：
-
-- 优先使用统一文档工具完成“看目录、搜内容、读局部、理解结构”
-- 对 `pdf/docx/xlsx/pptx` 采用“底层按文件类型拆 reader，对外按功能收口主工具”的设计
-- `pdf_get_*` 工具作为格式专属专家能力保留，用于更稳定的 PDF 视觉行和 outline 读取
-- `shell_execute`、`python_execute`、`node_execute` 继续保留，作为 LLM 的最后兜底能力
-- 认证/文档/条款判断等更强业务语义，优先放在 skill 层组合实现，而不是堆进底层工具
-- 工具 descriptor 已补充元数据，既帮助 LLM 选工具，也帮助前端更好地解释工具行为
-
-当前文档工具主链路：
+统一文档主链路：
 
 - `get_document_structure`
-  - 支持 `md/txt/rst`
-  - 支持 `pdf`
-  - 支持 `docx`
-  - 支持 `xlsx`
-  - 支持 `pptx`
 - `search_documents`
-  - 支持文本文件逐行搜索
-  - 支持 PDF 视觉行搜索
-  - 支持 Word 段落与表格单元格搜索
-  - 支持 Excel 单元格搜索
-  - 支持 PPTX slide 文本与 notes 搜索
 - `read_document_segment`
-  - 支持文本按行/字符读取
-  - 支持 PDF 按页/视觉行读取
-  - 支持 Word 按段落/表格范围读取
-  - 支持 Excel 按 sheet 区域读取
-  - 支持 PPTX 按 slide 范围读取
 
-工具 descriptor 当前包含：
+当前覆盖范围：
 
-- `display_name`
-- `read_only`
-- `risk_level`
-- `preferred_order`
-- `use_when`
-- `avoid_when`
-- `user_summary_template`
-- `result_preview_fields`
-- `tags`
+- 文本/代码类文件：`md`, `txt`, `rst`，以及搜索工具支持的常见源码与配置文本格式
+- PDF：结构、页内容、视觉行、搜索
+- Word：`docx`
+- Excel：`xlsx`
+- PowerPoint：`pptx`
 
-后端在对外 function schema 中，会把这些扩展信息通过 `x-tool-meta` 一并带给模型侧和前端消费层。
+### Skills
 
-### Context Providers
+本地 skills 来自两类目录：
 
-- Local Skills
-  - 默认扫描：
-    - `<app data>/<product>/skills`
-    - `<workspace>/.agent/skills`
-  - system prompt 注入的是每个 skill 的 YAML frontmatter catalog
-  - 完整 skill 正文通过 `skill_loader` 工具按需加载
-  - settings 只管理 system-level skills 的 disable 列表；workspace skills 默认保持启用
-  - `context_providers.skills.system.disabled` 中的 skill 不会进入 system prompt catalog，也不能再由 `skill_loader` 加载
+- 应用级 skills 根目录
+- 工作区级 `.agent/skills/`
 
-### Session Persistence
+当前实现支持：
 
-- `.agent/sessions/<session-id>.jsonl`
-  - 原始 transcript，保留完整 user / assistant / tool 历史
-- `.agent/sessions/<session-id>.meta.json`
-  - session 元数据，包含标题与 locked model
-- `.agent/sessions/<session-id>.memory.json`
-  - 压缩后的结构化 session memory snapshot
-- `.agent/sessions/<session-id>.compactions.jsonl`
-  - 每次 background / forced compaction 的审计记录
-- `.agent/logs/<session-id>.jsonl`
-  - run timeline 与 compaction run event
-
-### 输入与工作区交互
-
-- 文本消息
-- 图片附件消息
-- 应用内 file tree 的图片如果拖到输入框光标处，会按路径引用插入，和普通文件拖拽一致
-- 文件/文件夹从 file tree 拖到输入框时自动插入路径
-- 图片拖入附件区域时加入消息附件
-- 输入框中的路径 token 使用更明显的柔和底色、圆角和高亮边框
-- `file_write` 产出的新建/修改文件会在 file tree 中高亮
-
-### OCR 模块
-
-- OCR 引擎采用 Paddle，并以独立 `ocr sidecar` 分发
-- sidecar 形态为“单独目录 + `ocr-server.exe`”，不依赖部署端 Python
-- 默认安装位置在 `work agent` 安装目录下：
-
-```text
-<work-agent-install-root>\
-  ocr-sidecar\
-    current\
-      ocr-server.exe
-      manifest.json
-      models\
-```
-
-- sidecar 由主 backend 在运行时发现和按需启动，Tauri 不直接管理其生命周期
-- 构建产物会预打包 `ch`、`en` 的 Paddle OCR 模型，部署端首次使用不依赖联网下载
-- 前端设置页可以安装 sidecar 目录，并启用/停用 OCR
-- 当 OCR 未安装或不可用时，不影响主聊天链路和其他工具
-
-## 运行时配置结构
-
-前后端共享的配置结构已经统一为 profile-based + role-based runtime 形态。
-
-```json
-{
-  "provider": "openai",
-  "model": "gpt-4o-mini",
-  "api_key": "YOUR_KEY",
-  "base_url": "https://api.openai.com/v1",
-  "enable_reasoning": false,
-  "profiles": {
-    "primary": {
-      "profile_name": "primary",
-      "provider": "openai",
-      "model": "gpt-4o-mini",
-      "api_key": "YOUR_KEY",
-      "base_url": "https://api.openai.com/v1",
-      "enable_reasoning": false
-    },
-    "background": {
-      "profile_name": "background",
-      "provider": "openai",
-      "model": "gpt-4.1-mini",
-      "api_key": "YOUR_KEY",
-      "base_url": "https://api.openai.com/v1",
-      "enable_reasoning": false
-    }
-  },
-  "provider_memory": {
-    "openai": {
-      "model": "gpt-4o-mini",
-      "api_key": "YOUR_KEY",
-      "base_url": "https://api.openai.com/v1"
-    },
-    "kimi": {
-      "model": "kimi-k2.5",
-      "api_key": "YOUR_KIMI_KEY",
-      "base_url": "https://api.moonshot.cn/v1"
-    }
-  },
-  "runtime": {
-    "shared": {
-      "context_length": 64000,
-      "max_output_tokens": 4000,
-      "max_tool_rounds": 20,
-      "max_retries": 3,
-      "timeout_seconds": 120
-    },
-    "background": {
-      "max_output_tokens": 2048
-    },
-    "delegated_task": {
-      "timeout_seconds": 180
-    }
-  },
-  "appearance": {
-    "base_font_size": 16
-  },
-  "context_providers": {
-    "tools": {
-      "disabled": []
-    },
-    "skills": {
-      "local": {
-        "enabled": true
-      },
-      "system": {
-        "disabled": []
-      }
-    }
-  },
-  "ocr": {
-    "enabled": false
-  }
-}
-```
+- 在 system prompt 中注入 skill catalog 元数据
+- 由模型按需调用 `skill_loader` 读取完整技能说明
+- Settings 中开启/关闭本地 skills provider
+- Settings 中逐项禁用 system-level skills
 
 说明：
 
-- `profiles.primary/background` 决定各 execution role 真正参与运行的模型
-- `runtime.shared` 是默认值，`runtime.conversation/background/compaction/delegated_task` 是按 role 的 override
-- `provider_memory` 只用于前端设置页在切换 provider 时恢复该 provider 最近一次保存的 `model / api_key / base_url`
-- 后端收到 `config` 时会忽略 `provider_memory`
-- `context_providers.tools.disabled` 是后端真实工具禁用列表
-- `context_providers.skills.system.disabled` 是 system-level skill 的真实禁用列表
+- workspace skills 不在设置页逐条开关
+- 当本地 skills provider 被整体关闭时，system skills 和 workspace skills 都不会参与运行时注入
 
-### DeepSeek 配置示例
+### OCR
 
-```json
-{
-  "provider": "deepseek",
-  "model": "deepseek-chat",
-  "api_key": "YOUR_KEY",
-  "base_url": "https://api.deepseek.com",
-  "enable_reasoning": false,
-  "profiles": {
-    "primary": {
-      "profile_name": "primary",
-      "provider": "deepseek",
-      "model": "deepseek-chat",
-      "api_key": "YOUR_KEY",
-      "base_url": "https://api.deepseek.com",
-      "enable_reasoning": false
-    },
-    "background": {
-      "profile_name": "background",
-      "provider": "deepseek",
-      "model": "deepseek-reasoner",
-      "api_key": "YOUR_KEY",
-      "base_url": "https://api.deepseek.com",
-      "enable_reasoning": true
-    }
-  },
-  "runtime": {
-    "shared": {
-      "context_length": 128000,
-      "max_output_tokens": 4000,
-      "max_tool_rounds": 20,
-      "max_retries": 3,
-      "timeout_seconds": 120
-    },
-    "delegated_task": {
-      "timeout_seconds": 240
-    }
-  },
-  "appearance": {
-    "base_font_size": 16
-  }
-}
-```
+OCR 是可选能力，不是默认内置可用功能。
 
-## Settings And Workspace Updates (2026-03-31)
+当前实现：
 
-- Settings 页面新增 `Tools` tab，列出后端当前可用工具并支持逐项启停。
-- Settings `Skill` tab 现在区分：
-  - `Enable Local Skills` 控制本地 skill catalog 注入与 `skill_loader`
-  - `System Skills` 列表支持逐项 enable / disable
-- `ocr_extract` 只有在 OCR sidecar 已安装时才会出现在 settings 的 tools 列表里。
-- workspace 左侧面板新增 tools 入口，点击可查看当前启用工具的名称和说明。
-- session list 默认只展示最近 5 个，并在列表下方提供轻量的 `Show more / Show less` 入口。
-- workspace 中的用户消息现在使用左对齐气泡样式。
+- Settings `OCR` 标签中可启用/停用 OCR 功能
+- 通过选择本地 OCR sidecar 目录进行安装
+- 顶栏会显示 `available / unavailable / starting`
+- 支持图片 OCR
+- 支持扫描版 PDF 按页 OCR
+- OCR 结果会缓存到 `<workspace>/.agent/cache/ocr/`
 
-## Settings Updates (2026-03-29)
+## 执行模式与审批
 
-- `Test Connection` is split by profile: `Test Primary Connection` and `Test Background Connection`.
-- `Runtime` 页面现在按 role 展示：
-  - `Shared Runtime`
-  - `Conversation Overrides`
-  - `Background Overrides`
-  - `Compaction Overrides`
-  - `Delegated Task Overrides`
-- `Delegated Task Overrides` 当前提供 `Timeout Seconds`，用于 background 子任务 `delegate_task`。
-- `Runtime` 默认值现在也包含 `timeout_seconds=120`，并会按 role 解析 effective runtime。
-- `Appearance` now includes `Base Font Size`, persisted via `appearance.base_font_size` and applied globally in the frontend runtime.
+每个会话都有两种执行模式：
 
-## Tool System Updates (2026-03-18)
+- `regular`
+  - 高风险工具先审批
+  - 可选择 `Approve Once`
+  - 可选择 `Always This Session`
+  - 可选择 `Always This Workspace`
+- `free`
+  - 跳过需要审批的工具确认
 
-- Added execution mode selector near chat composer: `Regular` and `Free`.
-- `Regular` mode keeps confirmation flow for tools with `require_confirmation=true`.
-- `Free` mode bypasses confirmation for all tool executions within the current session.
-- Tool confirmation modal now supports:
-  - `Approve Once`
-  - `Always This Session`
-  - `Always This Workspace`
-  - `Reject`
-- Tool auto-approval policies are now persisted to `~/.agent/tool-policies.json` and reloaded on backend startup.
-- Execution tools (`shell_execute`, `python_execute`, `node_execute`) now return bounded output metadata:
-  - `stdout_truncated`
-  - `stderr_truncated`
-  - `captured_output`
-- `output_max_bytes`
-- Tool argument validation now runs before tool execution for required fields and enum constraints.
-- See also: `docs/tool-system-current-state.md`.
+审批策略由后端持久化，工作区级自动批准会按工作区路径记住。
 
-## Tool System Updates (2026-03-26)
+## 本地数据与文件布局
 
-- 文档工具主链路已统一为：
-  - `list_directory_tree`
-  - `search_documents`
-  - `read_document_segment`
-  - `get_document_structure`
-- PDF 专家工具保留为：
-  - `pdf_get_info`
-  - `pdf_get_outline`
-  - `pdf_read_pages`
-  - `pdf_read_lines`
-  - `pdf_search`
-- 工具元数据从基础 `name/description/parameters` 扩展为更适合 LLM 与前端消费的 descriptor：
-  - `read_only`
-  - `risk_level`
-  - `preferred_order`
-  - `use_when`
-  - `avoid_when`
-  - `user_summary_template`
-  - `result_preview_fields`
-  - `tags`
-- `shell_execute`、`python_execute`、`node_execute` 被明确标记为高级 fallback 执行工具：
-  - 仍然保留
-  - 排序靠后
-  - 更高风险提示
-  - 仅在专用工具不足时优先考虑
-- 文件工具统一复用了共享路径解析逻辑，路径安全与 workspace 边界处理更一致。
-- 前端工具调用展示从“原始 JSON 调试视角”调整为“业务动作 + 技术详情折叠”的展示方式：
-  - 默认显示正在做什么
-  - 默认显示风险类型，如 `只读`、`会修改文件`、`高级执行`
-  - 参数和原始输出降级到技术详情区域
-- 聊天消息中的 tool decision / tool result 也统一走业务化摘要，不再只显示原始字段。
+### 工作区内
 
-## Reliability Updates (2026-03-19)
-
-- Workspace loading now ignores stale authorization results after the active workspace changes, preventing old async responses from resetting the wrong session list.
-- Session list scanning and history reload now go through Tauri Rust commands for authorized `.agent/sessions` access, instead of direct frontend `plugin-fs` reads.
-- Session deletion now clears associated chat, run-timeline, and task-panel state in the frontend instead of leaving stale per-session UI data behind.
-- Backend runtime cleanup now closes title-generation LLM clients, closes per-session agent LLM clients when runs finish, and performs task + LLM shutdown cleanup during FastAPI lifespan teardown.
-- File tree async directory loads are now guarded against workspace switches, so delayed child-directory responses from an old workspace cannot pollute the current tree.
-- Tauri sidecar process monitoring now logs `Terminated` and `Error` events instead of silently ignoring abnormal process exits.
-- Workspace path authorization intentionally remains cumulative across opened workspaces; this release does not change that permission model.
-
-## Run Event 模型
-
-agent loop 的关键阶段会通过 websocket 发给前端，也会写入 `.agent/logs/`。
-
-常见事件包括：
-
-- `run_started`
-- `skill_catalog_prepared`
-- `skill_loaded`
-- `tool_call_requested`
-- `tool_execution_started`
-- `tool_execution_completed`
-- `delegated_task_started`
-- `delegated_task_completed`
-- `question_requested`
-- `question_answered`
-- `retry_scheduled`
-- `run_completed`
-- `run_interrupted`
-- `run_failed`
-- `run_max_rounds_reached`
-
-前端会把这些事件渲染为 run timeline。
-
-## Markdown 渲染
-
-- 聊天正文通过 `react-markdown` 渲染
-- 已启用 `remark-gfm` 与 `remark-breaks`
-- 前端会对部分 LLM 常见输出做轻量规范化，例如：
-  - 兼容 JSON-escaped Markdown 内容
-  - 尽量补齐列表/标题前缺失的空行
-- Markdown 表格使用自定义 table 组件渲染，带边框、表头底色与横向滚动容器
-- `pre` 与 `code` 在 light / dark mode 下都使用与环境协调的中性色卡片样式，不再固定为黑底高对比配色
-
-## 会话与工作区持久化
-
-每个 workspace 下会生成：
+应用会在工作区下创建 `.agent/`，当前实际会用到：
 
 ```text
-.agent/
+<workspace>/.agent/
   sessions/
     <session-id>.jsonl
     <session-id>.meta.json
+    <session-id>.memory.json
+    <session-id>.compactions.jsonl
   logs/
     <session-id>.jsonl
-```
-
-- `*.jsonl` 保存消息历史
-- assistant 消息会在有数据时持久化 `usage`，用于重新加载后恢复 chat token 信息和 header widget
-- `*.meta.json` 保存 title、locked model 等会话元数据
-- `logs/*.jsonl` 保存结构化 run event
-- 桌面端恢复 session list / history 时，会先通过 Tauri Rust 命令复用当前 workspace 授权，再读取 `.agent/sessions`
-
-## 本地开发
-
-### 依赖
-
-- Node.js 18+
-- Python 3.13
-- Rust / Cargo
-
-### 启动 Python 后端
-
-```bash
-cd python_backend
-pip install -r requirements.txt
-python main.py
-```
-
-### 启动桌面应用
-
-```bash
-npm install
-npm run tauri dev
-```
-
-开发模式下，前端默认连接 `http://127.0.0.1:8765`。
-macOS 本地开发使用基础 Tauri 配置 `src-tauri/tauri.conf.json`，不会要求存在 Windows sidecar。
-Windows 发布专用的 sidecar / embedded runtime 打包配置放在 `src-tauri/tauri.windows.conf.json`。
-
-## 构建
-
-### 前端
-
-```bash
-npm run build
-```
-
-### Tauri
-
-```bash
-npm run tauri build
-```
-
-### Python Sidecar
-
-```bash
-cd python_backend
-pyinstaller --onefile --name core main.py
-```
-
-## 验证命令
-
-### 后端全量
-
-```bash
-python -m unittest discover -s python_backend/tests -v
-```
-
-### 前端全量
-
-```bash
-npm run test
-npm run build
-```
-
-### Diff Hygiene
-
-```bash
-git diff --check
-```
-
-## Windows Portable Release
-
-- GitHub Actions 工作流位于 `.github/workflows/release-windows.yml`
-- 工作流会从当前仓库的 release asset 下载 vendor bundle，再调用 `scripts/release.ps1`
-- vendor bundle release tag 默认是 `vendor-202603`，也可以在手动触发 workflow 时覆盖
-- 发布会只生成一份 ZIP：`*_windows_x64.zip`，包含 embedded Python / Node runtime
-- 手动触发 `workflow_dispatch` 默认只上传 Actions artifact，不自动创建应用 release
-- 推送 `v*` tag 时，workflow 会自动创建或更新同名 GitHub Release，并把单个 ZIP 作为 release asset 上传
-
-### 发布前提
-
-- 当前仓库远端：`git@github.com:ChqJourney/simple_agent.git`
-- vendor bundle 需要先上传到当前仓库 release，例如 `vendor-202603`
-- 当前 workflow 产物始终会出现在 GitHub Actions artifact `windows-portable-zip` 中
-- 只有 `v*` tag 触发的 workflow 才会自动附加到应用 release
-
-### 维护 vendor bundle
-
-查看当前 vendor release：
-
-```bash
-gh release view vendor-202603 --repo ChqJourney/simple_agent
-```
-
-首次创建 vendor release：
-
-```bash
-gh release create vendor-202603 \
-  --repo ChqJourney/simple_agent \
-  --title "vendor-202603" \
-  --notes "Windows runtime bundle for portable packaging"
-```
-
-上传或覆盖 vendor zip：
-
-```bash
-gh release upload vendor-202603 /ABSOLUTE/PATH/vendor-windows-x64-202603.zip \
-  --repo ChqJourney/simple_agent \
-  --clobber
-```
-
-### 手动触发 GitHub Actions 发布
-
-指定分支、应用版本、vendor release tag：
-
-```bash
-gh workflow run release-windows.yml \
-  --repo ChqJourney/simple_agent \
-  --ref main \
-  -f release_version=0.1.0 \
-  -f vendor_release_tag=vendor-202603
-```
-
-如果只想沿用 `package.json` 当前版本，可以省略 `release_version`：
-
-```bash
-gh workflow run release-windows.yml \
-  --repo ChqJourney/simple_agent \
-  --ref main \
-  -f vendor_release_tag=vendor-202603
-```
-
-### 通过 Git tag 触发发布
-
-先确认工作区无脏改动：
-
-```bash
-git status
-```
-
-创建并推送版本 tag：
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
+  cache/
+    ocr/
+  skills/
 ```
 
 说明：
 
-- 推送 `v*` tag 会自动触发 `release-windows.yml`
-- workflow 会把 `v0.1.0` 解析为应用版本 `0.1.0`
-- tag 触发时默认使用 `vendor-202603`
-- tag 触发成功后，会创建或更新名为 `v0.1.0` 的 GitHub Release，并上传单个 ZIP
+- `jsonl`：原始对话与工具消息
+- `meta.json`：标题、锁模等元数据
+- `memory.json`：会话压缩后的 memory snapshot
+- `compactions.jsonl`：压缩审计记录
+- `logs/*.jsonl`：run timeline 事件日志
 
-### 查看执行状态
+### 前端本地持久化
 
-列出最近的发布工作流运行：
+前端通过 Zustand persist 持久化：
+
+- 工作区列表
+- 当前工作区
+- 设置配置
+- UI 偏好
+- 会话元数据缓存
+
+## 开发运行
+
+### 前置依赖
+
+- Node.js
+- npm
+- Rust / Cargo
+- Python
+
+Python 依赖：
+
+- `python_backend/requirements.txt`
+- 可选 OCR 依赖：`ocr_sidecar/requirements.txt`
+
+### 安装
 
 ```bash
-gh run list --repo ChqJourney/simple_agent --workflow release-windows.yml
+npm install
+pip install -r python_backend/requirements.txt
 ```
 
-观察某次运行：
+如需开发 OCR sidecar，再安装：
 
 ```bash
-gh run watch <run-id> --repo ChqJourney/simple_agent
+pip install -r ocr_sidecar/requirements.txt
 ```
 
-查看某次运行日志：
+### 启动开发环境
+
+项目当前最直接的开发启动方式是：
 
 ```bash
-gh run view <run-id> --repo ChqJourney/simple_agent --log
+./dev.sh
 ```
 
-### 下载发布产物
+它会：
 
-下载某次运行的 artifact：
+1. 启动 `python_backend/main.py`
+2. 等待后端启动
+3. 执行 `npm run tauri dev`
+
+也可以手动分开启动：
 
 ```bash
-gh run download <run-id> \
-  --repo ChqJourney/simple_agent \
-  --name windows-portable-zip \
-  --dir ./artifacts-gh
+cd python_backend
+python main.py
 ```
 
-下载后应能看到一份 ZIP：
+另开一个终端：
+
+```bash
+npm run tauri dev
+```
+
+### 常用命令
+
+```bash
+npm run build
+npm test
+pytest python_backend/tests
+pytest ocr_sidecar/tests
+```
+
+## 仓库结构
 
 ```text
-*_windows_x64.zip
+src/                React 前端
+src-tauri/          Tauri / Rust 宿主层
+python_backend/     FastAPI/WebSocket Agent 后端
+ocr_sidecar/        可选 OCR sidecar
+docs/               设计文档与计划
+scripts/            打包与发布脚本
 ```
 
-## 关键目录
+## 技术栈
 
-```text
-tauri_agent/
-├─ src/
-│  ├─ components/
-│  ├─ contexts/
-│  ├─ hooks/
-│  ├─ pages/
-│  ├─ stores/
-│  ├─ types/
-│  └─ utils/
-├─ python_backend/
-│  ├─ core/
-│  ├─ llms/
-│  ├─ runtime/
-│  ├─ skills/
-│  ├─ tools/
-│  └─ tests/
-├─ src-tauri/
-└─ docs/plans/
-```
+### 前端
 
-相关设计文档：
+- React 19
+- TypeScript
+- Zustand
+- React Router 7
+- Tailwind CSS v4
+- react-markdown
 
-- `docs/plans/session-compaction-design.md`：session 压缩 / memory 分层设计与实施计划
+### 桌面层
 
-## 注意事项
+- Tauri 2
+- Rust
+- tauri plugin:
+  - dialog
+  - fs
+  - opener
+  - shell
+  - updater
 
-- Tauri `plugin-fs` 权限由 `src-tauri/capabilities/default.json` 控制
-- 如果修改 capability，通常需要重启桌面应用
-- 同一 session 内不允许切换已锁定模型
-- 当前图片多模态只支持图片，不支持音频/视频
-- session title 会在“session 还没有 title 且本次发送的是文本消息”时异步生成一次；纯图片消息不会触发
-- token usage widget 依赖 provider 返回 usage；如果上游不返回 usage，则 widget 会显示为空态
+### 后端
+
+- FastAPI
+- WebSocket
+- httpx
+- pydantic v2
+
+### 文档 / OCR
+
+- PyMuPDF
+- python-docx
+- openpyxl
+- python-pptx
+- PaddleOCR sidecar
+
+## 额外说明
+
+- `About` 页的更新检查界面已经实现
+- 但当前仓库里的 `src-tauri/tauri.conf.json` 默认没有配置 updater endpoints，所以默认构建会显示更新不可用
+- 后端 HTTP 默认监听 `127.0.0.1:8765`
+- WebSocket 连接和 `/tools`、`/test-config` 等接口都要求先完成 auth token 握手
+
+## 参考文档
+
+- [用户指南](./USER_GUIDE.md)
+- [架构说明](./architecture.md)

@@ -20,7 +20,6 @@ export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
   glm: 'https://open.bigmodel.cn/api/paas/v4',
   minimax: 'https://api.minimaxi.com/v1',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  ollama: 'http://127.0.0.1:11434',
 };
 
 export const DEFAULT_RUNTIME_POLICY: Required<RuntimePolicy> = {
@@ -45,6 +44,16 @@ export const DEFAULT_APPEARANCE_CONFIG: Required<AppearanceConfig> = {
 export const DEFAULT_OCR_CONFIG: Required<OcrConfig> = {
   enabled: false,
 };
+
+const SUPPORTED_PROVIDERS: ProviderType[] = ['openai', 'deepseek', 'kimi', 'glm', 'minimax', 'qwen'];
+
+export function isProviderType(value: unknown): value is ProviderType {
+  return typeof value === 'string' && SUPPORTED_PROVIDERS.includes(value as ProviderType);
+}
+
+function normalizeProviderType(value: unknown, fallback: ProviderType = 'openai'): ProviderType {
+  return isProviderType(value) ? value : fallback;
+}
 
 function getDefaultBaseUrl(provider: ProviderType): string {
   return DEFAULT_BASE_URLS[provider];
@@ -105,20 +114,25 @@ export function normalizeProviderMemory(
   }
 
   const normalized = {} as Partial<Record<ProviderType, ProviderMemoryEntry>>;
-  (Object.keys(providerMemory) as ProviderType[]).forEach((provider) => {
+  Object.keys(providerMemory).forEach((provider) => {
+    if (!isProviderType(provider)) {
+      return;
+    }
     normalized[provider] = normalizeProviderMemoryEntry(providerMemory[provider]);
   });
   return normalized;
 }
 
 function normalizeProfileConfig(profile: ModelProfile, profileName: string): ModelProfile {
+  const provider = normalizeProviderType(profile.provider);
   const inputType = profile.input_type || 'text';
-  const supportedInputTypes = getSupportedInputTypes(profile.provider, profile.model);
+  const supportedInputTypes = getSupportedInputTypes(provider, profile.model);
 
   return {
     ...profile,
-    base_url: normalizeBaseUrl(profile.provider, profile.base_url),
-    enable_reasoning: Boolean(profile.enable_reasoning) && supportsReasoning(profile.provider, profile.model),
+    provider,
+    base_url: normalizeBaseUrl(provider, profile.base_url),
+    enable_reasoning: Boolean(profile.enable_reasoning) && supportsReasoning(provider, profile.model),
     input_type: supportedInputTypes.includes(inputType) ? inputType : 'text',
     profile_name: profile.profile_name || profileName,
   };
@@ -129,8 +143,7 @@ export function hasConfiguredModelProfile(
 ): profile is ModelProfile {
   return Boolean(
     profile
-    && typeof profile.provider === 'string'
-    && profile.provider.trim()
+    && isProviderType(profile.provider)
     && typeof profile.model === 'string'
     && profile.model.trim()
   );
@@ -146,7 +159,7 @@ export function hasRunnableConversationProfile(config?: ProviderConfig | null): 
     return false;
   }
 
-  return primaryProfile.provider === 'ollama' || Boolean(primaryProfile.api_key?.trim());
+  return Boolean(primaryProfile.api_key?.trim());
 }
 
 export function resolveProfileForRole(

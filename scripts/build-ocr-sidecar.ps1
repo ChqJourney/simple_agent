@@ -20,20 +20,23 @@ $manifestSource = Join-Path $sidecarRoot "manifest.json"
 $builtManifest = Join-Path $builtDir "manifest.json"
 $modelsSource = Join-Path $sidecarRoot "models"
 $builtModels = Join-Path $builtDir "models"
+$hasVenvPython = Test-Path -LiteralPath $venvPython
+$hasStagedPython = Test-Path -LiteralPath $stagedPython
 
-if (-not $SkipRuntimePrepare -and -not (Test-Path -LiteralPath $stagedPython)) {
+if (-not $SkipRuntimePrepare -and -not $hasVenvPython -and -not $hasStagedPython) {
     $prepareArgs = @("-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "prepare-runtimes.ps1"))
     if (-not [string]::IsNullOrWhiteSpace($VendorRoot)) {
         $prepareArgs += @("-VendorRoot", $VendorRoot)
     }
 
     Invoke-CheckedCommand -FilePath "powershell" -Arguments $prepareArgs
+    $hasStagedPython = Test-Path -LiteralPath $stagedPython
 }
 
-if (Test-Path -LiteralPath $venvPython) {
+if ($hasVenvPython) {
     $buildPython = $venvPython
 }
-elseif (Test-Path -LiteralPath $stagedPython) {
+elseif ($hasStagedPython) {
     $buildPython = $stagedPython
 }
 else {
@@ -45,10 +48,21 @@ Write-Host "Using build interpreter: $buildPython"
 Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt", "pyinstaller") -WorkingDirectory $sidecarRoot
 
 Write-Host "Verifying OCR sidecar build dependencies..."
-$criticalModules = @("fastapi", "uvicorn", "pydantic", "numpy", "PIL", "paddle", "paddleocr", "paddlex")
-foreach ($mod in $criticalModules) {
-    Write-Host "  Checking $mod..."
-    Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-c", "import $mod; print('OK: $mod')") -WorkingDirectory $sidecarRoot
+$criticalImports = @(
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "numpy",
+    "PIL",
+    "paddle",
+    "paddleocr",
+    "paddlex",
+    "chardet",
+    "chardet.pipeline.orchestrator__mypyc"
+)
+foreach ($importTarget in $criticalImports) {
+    Write-Host "  Checking $importTarget..."
+    Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-c", "import $importTarget; print('OK: $importTarget')") -WorkingDirectory $sidecarRoot
 }
 Write-Host "All OCR sidecar dependencies verified."
 

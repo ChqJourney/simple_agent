@@ -111,23 +111,11 @@ file_path, resolve_error = resolve_workspace_path(
 
 ---
 
-### P1-3: `OllamaLLM` 使用 `aiohttp`，其他 Provider 使用 `httpx`
+### P1-3: 历史上曾混用多套 HTTP 客户端
 **位置**:
-- `llms/ollama.py` - 使用 `aiohttp`
-- 其他 `llms/*.py` - 使用 `httpx`
+- `llms/*.py`
 
-**问题**: 不一致的 HTTP 客户端使用增加了维护成本和潜在的不一致行为。
-
-```python
-# ollama.py
-import aiohttp
-async def _get_session(self) -> aiohttp.ClientSession:
-    ...
-
-# openai.py, deepseek.py 等
-import httpx
-self.http_client = httpx.AsyncClient(...)
-```
+**问题**: 如果不同 Provider 使用不同的异步 HTTP 客户端，会增加维护成本和潜在的不一致行为。
 
 ---
 
@@ -356,7 +344,7 @@ class HTTPBasedLLM(BaseLLM):
 ---
 
 ### 建议 2: 统一 HTTP 客户端
-将所有 LLM Provider 统一使用 `httpx`（或统一使用 `aiohttp`），避免维护两套异步 HTTP 逻辑。
+将所有 LLM Provider 统一使用同一套异步 HTTP 客户端，避免维护多套请求逻辑。
 
 ---
 

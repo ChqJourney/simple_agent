@@ -7,7 +7,6 @@ const GLM_REASONING_PREFIXES = ['glm-5', 'glm-4.7', 'glm-4.6'];
 const DEEPSEEK_REASONING_PREFIXES = ['deepseek-reasoner'];
 const MINIMAX_REASONING_PREFIXES: string[] = [];
 const QWEN_REASONING_PREFIXES = ['qwen3', 'qwq'];
-const OLLAMA_REASONING_PREFIXES = ['qwen3', 'deepseek-r1', 'magistral', 'phi4-reasoning'];
 
 const OPENAI_IMAGE_SUPPORTED_PREFIXES = ['gpt-4o', 'gpt-4.1', 'gpt-5'];
 const OPENAI_IMAGE_UNSUPPORTED_PREFIXES = ['o1', 'o3', 'o4'];
@@ -20,8 +19,6 @@ const MINIMAX_IMAGE_SUPPORTED_PREFIXES: string[] = [];
 const MINIMAX_IMAGE_UNSUPPORTED_PREFIXES = ['minimax-m2'];
 const QWEN_IMAGE_SUPPORTED_PREFIXES = ['qvq','qwen3.5','qwen3.5-plus', 'qwen3.5-plus-2026-02-15'];
 const QWEN_IMAGE_UNSUPPORTED_PREFIXES = ['qwq','qwen3-max-2026-01-23', 'qwen3-coder-next'];
-const OLLAMA_IMAGE_SUPPORTED_PREFIXES: string[] = [];
-const OLLAMA_IMAGE_UNSUPPORTED_PREFIXES: string[] = [];
 const DEFAULT_CONTEXT_LENGTH_PREFIXES: Partial<Record<ProviderType, Record<string, number>>> = {
   openai: {
     'gpt-4o': 128000,
@@ -84,8 +81,6 @@ export function supportsReasoning(provider: ProviderType, model: string): boolea
       return matchesPrefix(normalizedModel, MINIMAX_REASONING_PREFIXES);
     case 'qwen':
       return matchesPrefix(normalizedModel, QWEN_REASONING_PREFIXES);
-    case 'ollama':
-      return matchesPrefix(normalizedModel, OLLAMA_REASONING_PREFIXES);
     default:
       return false;
   }
@@ -139,14 +134,6 @@ export function getImageSupportStatus(provider: ProviderType, model: string): Im
         return 'supported';
       }
       if (matchesPrefix(normalizedModel, QWEN_IMAGE_UNSUPPORTED_PREFIXES)) {
-        return 'unsupported';
-      }
-      return 'unknown';
-    case 'ollama':
-      if (matchesPrefix(normalizedModel, OLLAMA_IMAGE_SUPPORTED_PREFIXES)) {
-        return 'supported';
-      }
-      if (matchesPrefix(normalizedModel, OLLAMA_IMAGE_UNSUPPORTED_PREFIXES)) {
         return 'unsupported';
       }
       return 'unknown';

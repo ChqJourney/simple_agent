@@ -1,8 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from importlib.util import find_spec
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 
 if "__file__" in globals():
@@ -16,6 +17,7 @@ hiddenimports = []
 
 for package_name in [
     "annotated_types",
+    "chardet",
     "fastapi",
     "numpy",
     "paddle",
@@ -31,6 +33,13 @@ for package_name in [
     datas += pkg_datas
     binaries += pkg_binaries
     hiddenimports += pkg_hiddenimports
+
+# chardet 5+ may load mypyc-compiled pipeline helpers dynamically, so keep the
+# whole pipeline package visible to the frozen importer and pin the known
+# runtime-only module that broke deployed OCR builds.
+hiddenimports += collect_submodules("chardet.pipeline")
+if find_spec("chardet.pipeline.orchestrator__mypyc") is not None:
+    hiddenimports.append("chardet.pipeline.orchestrator__mypyc")
 
 a = Analysis(
     ["server.py"],

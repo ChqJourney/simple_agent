@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed workspace retrieval scanning to bounded `os.walk` with file-count and file-size limits
 - Changed local skill loading to skip oversized files and gracefully handle decode/read errors
 - Changed Tauri CSP from `null` to an explicit restrictive policy with local backend connect targets
-- Changed Python dependency specs to pinned direct versions for `openai` and `aiohttp`
+- Changed Python dependency specs to pinned direct versions for core backend client libraries
 - Changed frontend websocket config sending to require auth token before sending `config` payload
 - Changed completion websocket payloads to forward latest-request usage snapshots to the frontend
 - Reworked backend websocket routing from a single global callback to per-connection routing
@@ -82,7 +82,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restricted each `session_id` to a single active run and added task registry cleanup on disconnect / config switch
 - Centralized backend runtime tracking for active tasks, session run slots, and connection workspaces
 - Normalized provider config handling across frontend and backend
-- Unified Ollama base URL behavior, including blank URL fallback and `/v1` suffix normalization
 - Changed settings save flow to immediately send the just-saved config to the backend
 - Simplified `configStore` so it only owns provider config; workspace state now lives in `workspaceStore`
 - Applied theme changes to the DOM instead of only persisting them in UI state
@@ -114,7 +113,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed frontend interrupt handling dropping already streamed assistant text
 - Fixed Pydantic protected namespace warning for `Message.model_label`
 - Fixed stale config remaining active after saving settings
-- Fixed Ollama test-pass / runtime-fail mismatch caused by inconsistent base URL handling
 - Fixed session deletion resurrecting after reload because disk history was not deleted
 - Fixed invalid `currentSessionId` assignment after deleting the active session
 - Fixed retry messages being rendered as terminal chat errors
@@ -142,4 +140,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace management and persistence
 - Session list and chat layout
 - File tree and task list panels
-- Provider configuration for OpenAI / Qwen / Ollama
+- Provider configuration for OpenAI / Qwen

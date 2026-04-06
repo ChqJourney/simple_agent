@@ -13,7 +13,6 @@ from llms.deepseek import DeepSeekLLM
 from llms.glm import GLMLLM
 from llms.kimi import KimiLLM
 from llms.minimax import MiniMaxLLM
-from llms.ollama import OLLAMA_DEFAULT_BASE_URL, OllamaLLM
 
 
 class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
@@ -159,46 +158,6 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
             backend_main.create_llm = original_create_llm
             backend_main.runtime_state = original_runtime_state
 
-    async def test_handle_config_normalizes_ollama_v1_suffix(self) -> None:
-        captured_configs = []
-        original_create_llm = backend_main.create_llm
-        original_runtime_state = backend_main.runtime_state
-
-        try:
-            def fake_create_llm(config):
-                captured_configs.append(config)
-                return object()
-
-            async def send_callback(_message):
-                return None
-
-            backend_main.create_llm = fake_create_llm
-            backend_main.runtime_state = backend_main.BackendRuntimeState()
-
-            await backend_main.handle_config(
-                {
-                    'provider': 'ollama',
-                    'model': 'qwen3:8b',
-                    'api_key': '',
-                    'base_url': 'http://127.0.0.1:11434/v1/',
-                    'enable_reasoning': False,
-                },
-                send_callback,
-            )
-
-            self.assertEqual(1, len(captured_configs))
-            self.assertEqual(
-                'http://127.0.0.1:11434',
-                captured_configs[0]['base_url'],
-            )
-            self.assertEqual(
-                'http://127.0.0.1:11434',
-                backend_main.runtime_state.current_config['base_url'],
-            )
-        finally:
-            backend_main.create_llm = original_create_llm
-            backend_main.runtime_state = original_runtime_state
-
     async def test_handle_config_coerces_unsupported_reasoning_off_and_defaults_input_type(self) -> None:
         captured_configs = []
         original_create_llm = backend_main.create_llm
@@ -291,13 +250,6 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 backend_main.runtime_state = original_runtime_state
                 backend_main.user_manager = original_user_manager
                 backend_main.get_or_create_agent = original_get_or_create_agent
-
-    def test_ollama_llm_normalizes_blank_and_v1_base_urls(self) -> None:
-        blank = OllamaLLM({'model': 'qwen3:8b', 'base_url': '   '})
-        with_v1 = OllamaLLM({'model': 'qwen3:8b', 'base_url': 'http://localhost:11434/v1'})
-
-        self.assertEqual(OLLAMA_DEFAULT_BASE_URL, blank.base_url)
-        self.assertEqual('http://localhost:11434', with_v1.base_url)
 
     def test_create_llm_for_profile_supports_deepseek(self) -> None:
         llm = backend_main.create_llm_for_profile(

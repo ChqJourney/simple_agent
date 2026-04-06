@@ -5,7 +5,6 @@ from llms.glm import GLM_DEFAULT_BASE_URL
 from llms.kimi import KIMI_DEFAULT_BASE_URL
 from llms.minimax import MINIMAX_DEFAULT_BASE_URL
 from llms.capabilities import coerce_reasoning_enabled
-from llms.ollama import OLLAMA_DEFAULT_BASE_URL, normalize_ollama_base_url
 
 DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
@@ -14,7 +13,6 @@ DEFAULT_BASE_URLS = {
     "glm": GLM_DEFAULT_BASE_URL,
     "minimax": MINIMAX_DEFAULT_BASE_URL,
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "ollama": OLLAMA_DEFAULT_BASE_URL,
 }
 
 DEFAULT_RUNTIME_POLICY = {
@@ -32,6 +30,8 @@ DEFAULT_APPEARANCE = {
 DEFAULT_OCR_CONFIG = {
     "enabled": False,
 }
+
+SUPPORTED_PROVIDERS = {"openai", "deepseek", "kimi", "glm", "minimax", "qwen"}
 
 MIN_BASE_FONT_SIZE = 12
 MAX_BASE_FONT_SIZE = 20
@@ -181,14 +181,14 @@ def _normalize_profile(
     provider = str(data.get("provider") or fallback_provider or "openai").strip().lower() or "openai"
     model = str(data.get("model") or "").strip()
 
+    if provider not in SUPPORTED_PROVIDERS:
+        raise ValueError(f"Unsupported provider: {provider}")
+
     if not model:
         return None
 
     api_key = str(data.get("api_key") or "").strip()
     base_url = str(data.get("base_url") or "").strip() or _default_base_url(provider)
-
-    if provider == "ollama":
-        base_url = normalize_ollama_base_url(base_url)
 
     normalized = coerce_reasoning_enabled(
         {

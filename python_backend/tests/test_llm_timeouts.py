@@ -11,7 +11,6 @@ from llms.deepseek import DeepSeekLLM
 from llms.glm import GLMLLM
 from llms.kimi import KimiLLM
 from llms.minimax import MiniMaxLLM
-from llms.ollama import OllamaLLM
 from llms.openai import OpenAILLM
 from llms.qwen import QwenLLM
 
@@ -70,15 +69,8 @@ class LLMTimeoutTests(unittest.TestCase):
             "base_url": "https://api.openai.com/v1",
             "runtime": {"timeout_seconds": 15},
         })
-        ollama_llm = OllamaLLM({
-            "provider": "ollama",
-            "model": "qwen3:8b",
-            "base_url": "http://127.0.0.1:11434",
-            "runtime": {"timeout_seconds": 15},
-        })
 
         self.assertEqual(15, openai_llm.client._client.timeout.read)
-        self.assertEqual(15, ollama_llm.request_timeout.total)
 
 
 if __name__ == "__main__":

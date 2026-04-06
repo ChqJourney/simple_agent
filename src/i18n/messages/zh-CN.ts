@@ -97,7 +97,7 @@ export const zhCNMessages: MessageDictionary = {
   'welcome.settings': '设置',
   'welcome.workspaces': '工作区',
   'welcome.title': 'Work Agent',
-  'welcome.subtitle': '你的 AI 文件系统任务助手，不只回答问题，也会替你执行操作。',
+  'welcome.subtitle': '你的 AI 文件系统任务助手，不只回答问题，也会替你执行文档操作、数据整理，知识管理。',
   'welcome.createWorkspace': '+ 新建工作区',
   'welcome.creatingWorkspace': '创建中...',
   'welcome.recentWorkspaces': '最近工作区',

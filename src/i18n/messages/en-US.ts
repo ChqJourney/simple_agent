@@ -95,7 +95,7 @@ export const enUSMessages = {
   'welcome.workspaces': 'Workspaces',
   'welcome.title': 'Work Agent',
   'welcome.subtitle':
-    'Your AI Assistant for File System Tasks and Beyond, not just answering questions but also taking actions on your behalf.',
+    'Your AI Assistant for File System Tasks and Beyond, not just answering questions but also taking actions on your behalf, as well as documents operations and data management.',
   'welcome.createWorkspace': '+ New Workspace',
   'welcome.creatingWorkspace': 'Creating...',
   'welcome.recentWorkspaces': 'Recent Workspaces',

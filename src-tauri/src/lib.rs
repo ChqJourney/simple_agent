@@ -3,6 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
+    time::Duration,
 };
 use serde::Serialize;
 use tauri::Manager;
@@ -25,6 +26,8 @@ const APP_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DIR";
 const AUTH_TOKEN_ENV_VAR: &str = "TAURI_AGENT_AUTH_TOKEN";
 const OCR_SIDECAR_RELATIVE_DIR: &str = "ocr-sidecar/current";
 const UPDATER_LOG_FILE_NAME: &str = "updater.log";
+const UPDATER_CHECK_TIMEOUT: Duration = Duration::from_secs(20);
+const UPDATER_CHECK_ATTEMPTS: usize = 3;
 
 fn append_updater_log(app: &tauri::AppHandle, message: &str) {
     let log_dir = app
@@ -84,6 +87,62 @@ fn configured_updater_endpoints(app: &tauri::AppHandle) -> Vec<String> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default()
+}
+
+fn set_last_updater_error(app: &tauri::AppHandle, message: Option<String>) {
+    if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
+        *guard = message;
+    }
+}
+
+fn clear_last_updater_error(app: &tauri::AppHandle) {
+    set_last_updater_error(app, None);
+}
+
+fn build_resilient_updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    let builder = app.updater_builder().timeout(UPDATER_CHECK_TIMEOUT);
+    let builder = builder
+        .header("Cache-Control", "no-cache, no-store, must-revalidate")
+        .map_err(|error| format!("Failed to prepare updater request headers: {error}"))?;
+    let builder = builder
+        .header("Pragma", "no-cache")
+        .map_err(|error| format!("Failed to prepare updater request headers: {error}"))?;
+    let builder = builder
+        .header("Expires", "0")
+        .map_err(|error| format!("Failed to prepare updater request headers: {error}"))?;
+
+    builder
+        .build()
+        .map_err(|error| format!("Updater is not configured: {error}"))
+}
+
+async fn check_for_update_with_retry(
+    app: &tauri::AppHandle,
+    current_version: &str,
+    context: &str,
+) -> Result<Option<tauri_plugin_updater::Update>, String> {
+    let mut last_message: Option<String> = None;
+
+    for attempt in 1..=UPDATER_CHECK_ATTEMPTS {
+        let updater = build_resilient_updater(app)?;
+        match updater.check().await {
+            Ok(update) => return Ok(update),
+            Err(error) => {
+                let message = format!("Failed to check for updates: {}", format_error_chain(&error));
+                append_updater_log(
+                    app,
+                    &format!(
+                        "{context} attempt {attempt}/{UPDATER_CHECK_ATTEMPTS} failed for current version {current_version}: {message}"
+                    ),
+                );
+                last_message = Some(message);
+            }
+        }
+    }
+
+    let final_message = last_message.unwrap_or_else(|| "Failed to check for updates.".to_string());
+    set_last_updater_error(app, Some(final_message.clone()));
+    Err(final_message)
 }
 
 #[tauri::command]
@@ -384,11 +443,9 @@ fn get_app_update_config_state(app: tauri::AppHandle) -> AppUpdateConfigPayload 
 #[tauri::command]
 async fn check_for_app_update(app: tauri::AppHandle) -> Result<AppUpdateCheckPayload, String> {
     let current_version = app.package_info().version.to_string();
-    if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
-        *guard = None;
-    }
-    let updater = match app.updater() {
-        Ok(updater) => updater,
+    clear_last_updater_error(&app);
+    match build_resilient_updater(&app) {
+        Ok(_) => {}
         Err(_error) => {
             return Ok(AppUpdateCheckPayload {
                 configured: false,
@@ -399,22 +456,9 @@ async fn check_for_app_update(app: tauri::AppHandle) -> Result<AppUpdateCheckPay
                 date: None,
             })
         }
-    };
+    }
 
-    let update = updater
-        .check()
-        .await
-        .map_err(|error| {
-            let message = format!("Failed to check for updates: {}", format_error_chain(&error));
-            if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
-                *guard = Some(message.clone());
-            }
-            append_updater_log(
-                &app,
-                &format!("check_for_app_update failed for current version {current_version}: {message}"),
-            );
-            message
-        })?;
+    let update = check_for_update_with_retry(&app, &current_version, "check_for_app_update").await?;
 
     Ok(match update {
         Some(update) => AppUpdateCheckPayload {
@@ -438,23 +482,9 @@ async fn check_for_app_update(app: tauri::AppHandle) -> Result<AppUpdateCheckPay
 
 #[tauri::command]
 async fn install_app_update(app: tauri::AppHandle) -> Result<AppUpdateInstallPayload, String> {
-    if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
-        *guard = None;
-    }
-    let updater = app
-        .updater()
-        .map_err(|error| format!("Updater is not configured: {error}"))?;
-    let update = updater
-        .check()
-        .await
-        .map_err(|error| {
-            let message = format!("Failed to check for updates: {}", format_error_chain(&error));
-            if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
-                *guard = Some(message.clone());
-            }
-            append_updater_log(&app, &format!("install_app_update preflight check failed: {message}"));
-            message
-        })?
+    clear_last_updater_error(&app);
+    let update = check_for_update_with_retry(&app, &app.package_info().version.to_string(), "install_app_update preflight")
+        .await?
         .ok_or_else(|| "No update is currently available.".to_string())?;
 
     let version = update.version.to_string();

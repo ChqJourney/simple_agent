@@ -1,4 +1,5 @@
 use std::{
+    error::Error as StdError,
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -47,6 +48,17 @@ fn append_updater_log(app: &tauri::AppHandle, message: &str) {
         .append(true)
         .open(log_path)
         .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()));
+}
+
+fn format_error_chain(error: &dyn StdError) -> String {
+    let mut parts = vec![error.to_string()];
+    let mut current = error.source();
+    while let Some(source) = current {
+        parts.push(source.to_string());
+        current = source.source();
+    }
+
+    parts.join(" | caused by: ")
 }
 
 fn updater_log_path(app: &tauri::AppHandle) -> Option<PathBuf> {
@@ -393,7 +405,7 @@ async fn check_for_app_update(app: tauri::AppHandle) -> Result<AppUpdateCheckPay
         .check()
         .await
         .map_err(|error| {
-            let message = format!("Failed to check for updates: {error}");
+            let message = format!("Failed to check for updates: {}", format_error_chain(&error));
             if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
                 *guard = Some(message.clone());
             }
@@ -436,7 +448,7 @@ async fn install_app_update(app: tauri::AppHandle) -> Result<AppUpdateInstallPay
         .check()
         .await
         .map_err(|error| {
-            let message = format!("Failed to check for updates: {error}");
+            let message = format!("Failed to check for updates: {}", format_error_chain(&error));
             if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
                 *guard = Some(message.clone());
             }
@@ -450,7 +462,10 @@ async fn install_app_update(app: tauri::AppHandle) -> Result<AppUpdateInstallPay
         .download_and_install(|_, _| {}, || {})
         .await
         .map_err(|error| {
-            let message = format!("Failed to install update {version}: {error}");
+            let message = format!(
+                "Failed to install update {version}: {}",
+                format_error_chain(&error)
+            );
             if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
                 *guard = Some(message.clone());
             }

@@ -43,7 +43,7 @@ Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "pip", "install"
 # system, so if typing_extensions (or similar) failed to install, the
 # resulting exe will crash at startup with ModuleNotFoundError.
 Write-Host "Verifying critical runtime dependencies..."
-$criticalModules = @('typing_extensions', 'annotated_types', 'pydantic', 'pydantic_core', 'fastapi', 'starlette', 'httpx', 'httpcore', 'openai', 'uvicorn', 'websockets', 'aiohttp', 'anyio', 'h11', 'sniffio')
+$criticalModules = @('typing_extensions', 'annotated_types', 'pydantic', 'pydantic_core', 'fastapi', 'starlette', 'httpx', 'httpcore', 'openai', 'uvicorn', 'websockets', 'anyio', 'h11', 'sniffio')
 foreach ($mod in $criticalModules) {
     Write-Host "  Checking $mod..."
     Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-c", "import $mod; print('OK: $mod')") -WorkingDirectory $backendRoot

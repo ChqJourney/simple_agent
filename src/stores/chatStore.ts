@@ -25,6 +25,7 @@ interface ChatState {
   sessions: Record<string, SessionState>;
   addToken: (sessionId: string, token: string) => void;
   addReasoningToken: (sessionId: string, token: string) => void;
+  markStreamWaiting: (sessionId: string) => void;
   setReasoningComplete: (sessionId: string) => void;
   setToolCall: (sessionId: string, toolCall: ToolCall) => void;
   setPendingToolConfirm: (sessionId: string, toolCall: ToolCall) => void;
@@ -107,6 +108,21 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: true,
           assistantStatus: 'thinking',
           currentReasoningContent: session.currentReasoningContent + token,
+        },
+      },
+    };
+  }),
+
+  markStreamWaiting: (sessionId) => set((state) => {
+    const session = state.sessions[sessionId] || createEmptySession();
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          isStreaming: true,
+          assistantStatus: 'waiting',
+          currentToolName: undefined,
         },
       },
     };

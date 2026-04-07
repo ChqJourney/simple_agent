@@ -2,8 +2,9 @@ import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useI18n } from '../../i18n';
 import { Message, AssistantStatus, RunEventRecord } from '../../types';
 import { MessageItem } from './MessageItem';
-import { AssistantTurn } from './AssistantTurn';
+import { AssistantTurn, RuntimeNoticeViewModel } from './AssistantTurn';
 import { DelegatedWorkerViewModel } from './DelegatedWorkerCards';
+import { formatRunEventDetails } from '../../utils/runTimeline';
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 32;
 
@@ -64,6 +65,7 @@ interface DelegatedWorkerAccumulator {
 }
 
 const TERMINAL_RUN_EVENT_TYPES = new Set(['run_completed', 'run_failed', 'run_interrupted']);
+const CHAT_NOTICE_EVENT_TYPES = new Set(['retry_scheduled', 'run_failed', 'run_max_rounds_reached']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -364,6 +366,48 @@ function getGroupElapsedMs(group: MessageGroup): number | undefined {
   return endedAt >= startedAt ? endedAt - startedAt : undefined;
 }
 
+function buildConversationRunIds(runEvents: RunEventRecord[]): string[] {
+  const ids: string[] = [];
+
+  runEvents.forEach((event) => {
+    if (event.event_type !== 'run_started') {
+      return;
+    }
+    ids.push(event.run_id);
+  });
+
+  return ids;
+}
+
+function buildRuntimeNotices(
+  runId: string | undefined,
+  runEvents: RunEventRecord[],
+  t: ReturnType<typeof useI18n>['t'],
+): RuntimeNoticeViewModel[] {
+  if (!runId) {
+    return [];
+  }
+
+  return runEvents
+    .filter((event) => event.run_id === runId && CHAT_NOTICE_EVENT_TYPES.has(event.event_type))
+    .map((event) => {
+      const label = t(`timeline.event.${event.event_type}` as const);
+      const details = formatRunEventDetails(event, t) || undefined;
+      const tone: RuntimeNoticeViewModel['tone'] = event.event_type === 'run_failed'
+        ? 'error'
+        : event.event_type === 'retry_scheduled'
+          ? 'warning'
+          : 'default';
+
+      return {
+        id: `${event.run_id}-${event.timestamp}-${event.event_type}`,
+        label,
+        details,
+        tone,
+      };
+    });
+}
+
 export const MessageList = memo<MessageListProps>(({
   messages,
   currentStreamingContent = '',
@@ -432,6 +476,15 @@ export const MessageList = memo<MessageListProps>(({
   }
 
   const delegatedWorkersByGroup = groups.map((group) => buildDelegatedWorkers(group.assistantMessages, runEvents, now, t));
+  const conversationRunIds = useMemo(() => buildConversationRunIds(runEvents), [runEvents]);
+  const groupRunIds = useMemo(() => {
+    const offset = Math.max(groups.length - conversationRunIds.length, 0);
+    return groups.map((_group, index) => (index >= offset ? conversationRunIds[index - offset] : undefined));
+  }, [conversationRunIds, groups]);
+  const runtimeNoticesByGroup = useMemo(
+    () => groupRunIds.map((runId) => buildRuntimeNotices(runId, runEvents, t)),
+    [groupRunIds, runEvents, t],
+  );
 
   return (
     <div
@@ -449,6 +502,7 @@ export const MessageList = memo<MessageListProps>(({
       <div className="space-y-5">
         {groups.map((group, index) => {
           const delegatedWorkers = delegatedWorkersByGroup[index] || [];
+          const runtimeNotices = runtimeNoticesByGroup[index] || [];
           const isLastGroup = index === groups.length - 1;
           const isActiveTurn = isLastGroup && (isStreaming || assistantStatus === 'completed');
           const historicalElapsedLabel = formatElapsedLabel(getGroupElapsedMs(group) ?? Number.NaN);
@@ -470,6 +524,7 @@ export const MessageList = memo<MessageListProps>(({
                 <AssistantTurn
                   messages={group.assistantMessages}
                   delegatedWorkers={delegatedWorkers}
+                  runtimeNotices={runtimeNotices}
                   isStreaming={isStreaming && isLastGroup}
                   streamingContent={isActiveTurn ? currentStreamingContent : ''}
                   currentReasoningContent={isActiveTurn ? currentReasoningContent : ''}

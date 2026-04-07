@@ -133,4 +133,29 @@ describe("RunTimeline", () => {
     expect(screen.getByText("Summarize unresolved risks")).toBeTruthy();
     expect(screen.getByText("openai/gpt-4o-mini")).toBeTruthy();
   });
+
+  it("renders retry events with attempt and stall reason details", () => {
+    useRunStore.getState().addEvent("session-a", {
+      event_type: "run_started",
+      session_id: "session-a",
+      run_id: "run-1",
+      payload: {},
+      timestamp: "2026-03-13T09:00:00.000Z",
+    });
+    useRunStore.getState().addEvent("session-a", {
+      event_type: "retry_scheduled",
+      session_id: "session-a",
+      run_id: "run-1",
+      payload: {
+        attempt: 2,
+        details: "LLM stream stalled before completion.",
+      },
+      timestamp: "2026-03-13T09:00:01.000Z",
+    });
+
+    render(<RunTimeline sessionId="session-a" />);
+
+    expect(screen.getAllByText("Retry scheduled").length).toBeGreaterThan(0);
+    expect(screen.getByText("attempt 2 - LLM stream stalled before completion.")).toBeTruthy();
+  });
 });

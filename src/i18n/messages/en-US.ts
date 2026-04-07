@@ -214,6 +214,7 @@ export const enUSMessages = {
   'chat.assistant.toolCallsCount': 'tool calls {count}',
   'chat.assistant.toolResultsCount': 'tool results {count}',
   'chat.assistant.userActionsCount': 'user actions {count}',
+  'chat.assistant.runtimeNoticesCount': 'runtime notices {count}',
   'chat.assistant.tokens': '{count} tokens',
   'chat.assistant.failed': 'Failed',
   'chat.assistant.resend': 'Resend message',

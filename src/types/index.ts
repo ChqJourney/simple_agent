@@ -353,6 +353,7 @@ export interface ServerError {
   session_id?: string;
   error: string;
   details?: string;
+  preserve_partial?: boolean;
 }
 
 export interface ServerCompleted {

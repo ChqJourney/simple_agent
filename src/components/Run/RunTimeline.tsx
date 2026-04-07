@@ -3,6 +3,7 @@ import { useI18n } from '../../i18n';
 import { useShallow } from 'zustand/react/shallow';
 import { useRunStore } from '../../stores/runStore';
 import { RunEventRecord } from '../../types';
+import { formatRunEventDetails } from '../../utils/runTimeline';
 
 interface RunTimelineProps {
   sessionId?: string | null;
@@ -13,66 +14,6 @@ const EMPTY_RUN_SESSION = {
   currentRunId: undefined,
   status: 'idle' as const,
 };
-
-function formatEventDetails(event: RunEventRecord, t: ReturnType<typeof useI18n>['t']): string | null {
-  const toolName = typeof event.payload.tool_name === 'string' ? event.payload.tool_name : null;
-  const attempt = typeof event.payload.attempt === 'number' ? event.payload.attempt : null;
-  const hitCount = typeof event.payload.hit_count === 'number' ? event.payload.hit_count : null;
-  const skillName = typeof event.payload.skill_name === 'string' ? event.payload.skill_name : null;
-  const strategy = typeof event.payload.strategy === 'string' ? event.payload.strategy : null;
-  const reason = typeof event.payload.reason === 'string' ? event.payload.reason : null;
-  const task = typeof event.payload.task === 'string' ? event.payload.task : null;
-  const workerModel = typeof event.payload.worker_model === 'string' ? event.payload.worker_model : null;
-  const workerProvider = typeof event.payload.worker_provider === 'string' ? event.payload.worker_provider : null;
-  const postTokensEstimate = typeof event.payload.post_tokens_estimate === 'number'
-    ? event.payload.post_tokens_estimate
-    : null;
-  const skillNames = Array.isArray(event.payload.skill_names)
-    ? event.payload.skill_names.filter((value): value is string => typeof value === 'string')
-    : [];
-
-  if (event.event_type.startsWith('session_compaction_')) {
-    const details: string[] = [];
-    if (strategy) {
-      details.push(strategy);
-    }
-    if (postTokensEstimate !== null && event.event_type === 'session_compaction_completed') {
-      details.push(t('timeline.details.tokens', { count: postTokensEstimate }));
-    }
-    if (reason && event.event_type === 'session_compaction_skipped') {
-      details.push(reason);
-    }
-    return details.length > 0 ? details.join(' - ') : null;
-  }
-
-  if (event.event_type === 'delegated_task_started') {
-    return task;
-  }
-
-  if (event.event_type === 'delegated_task_completed') {
-    if (workerProvider && workerModel) {
-      return `${workerProvider}/${workerModel}`;
-    }
-    return workerModel;
-  }
-
-  if (toolName) {
-    return toolName;
-  }
-  if (skillName) {
-    return skillName;
-  }
-  if (skillNames.length > 0) {
-    return skillNames.join(', ');
-  }
-  if (attempt !== null) {
-    return t('timeline.details.attempt', { count: attempt });
-  }
-  if (hitCount !== null) {
-    return hitCount === 1 ? t('timeline.details.hitOne') : t('timeline.details.hitMany', { count: hitCount });
-  }
-  return null;
-}
 
 function eventTone(eventType: string): string {
   if (eventType === 'run_failed' || eventType === 'run_interrupted' || eventType === 'session_compaction_failed') {
@@ -119,7 +60,7 @@ export const RunTimeline: React.FC<RunTimelineProps> = ({ sessionId }) => {
 
   const latestEvent = session.events[session.events.length - 1];
   const latestLabel = t(`timeline.event.${latestEvent.event_type}` as const);
-  const latestDetails = formatEventDetails(latestEvent, t);
+  const latestDetails = formatRunEventDetails(latestEvent, t);
 
   return (
     <div className="rounded-[1.5rem] border border-gray-200/80 bg-gray-50/80 p-5 dark:border-gray-700/80 dark:bg-gray-950/40">
@@ -144,7 +85,7 @@ export const RunTimeline: React.FC<RunTimelineProps> = ({ sessionId }) => {
         <div className="space-y-3">
           {timelineEvents.map((event) => {
             const label = t(`timeline.event.${event.event_type}` as const);
-            const details = formatEventDetails(event, t);
+            const details = formatRunEventDetails(event, t);
 
             return (
               <div

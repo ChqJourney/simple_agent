@@ -129,13 +129,16 @@ class MiniMaxLLM(BaseLLM):
     async def stream(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> AsyncIterator[Dict[str, Any]]:
         self.reset_latest_usage()
         stream = await self.client.chat.completions.create(**self._build_request_kwargs(messages, tools, True))
-        async for chunk in stream:
-            raw_usage = getattr(chunk, "usage", None)
-            if raw_usage is None:
-                raw_usage = self._to_dict(chunk).get("usage")
-            if raw_usage is not None:
-                self._set_latest_usage(raw_usage)
-            yield self._normalize_chunk(chunk)
+        try:
+            async for chunk in stream:
+                raw_usage = getattr(chunk, "usage", None)
+                if raw_usage is None:
+                    raw_usage = self._to_dict(chunk).get("usage")
+                if raw_usage is not None:
+                    self._set_latest_usage(raw_usage)
+                yield self._normalize_chunk(chunk)
+        finally:
+            await self._close_stream_handle(stream)
 
     async def complete(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
         self.reset_latest_usage()

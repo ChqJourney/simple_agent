@@ -61,10 +61,13 @@ class GLMLLM(BaseLLM):
     async def stream(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> AsyncIterator[ChatCompletionChunk]:
         self.reset_latest_usage()
         stream = await self.client.chat.completions.create(**self._build_request_kwargs(messages, tools, True))
-        async for chunk in stream:
-            if getattr(chunk, "usage", None) is not None:
-                self._set_latest_usage(chunk.usage)
-            yield chunk
+        try:
+            async for chunk in stream:
+                if getattr(chunk, "usage", None) is not None:
+                    self._set_latest_usage(chunk.usage)
+                yield chunk
+        finally:
+            await self._close_stream_handle(stream)
 
     async def complete(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> ChatCompletion:
         self.reset_latest_usage()

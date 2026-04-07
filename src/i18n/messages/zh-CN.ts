@@ -212,6 +212,7 @@ export const zhCNMessages: MessageDictionary = {
   'chat.assistant.toolCallsCount': '工具调用 {count}',
   'chat.assistant.toolResultsCount': '工具结果 {count}',
   'chat.assistant.userActionsCount': '用户操作 {count}',
+  'chat.assistant.runtimeNoticesCount': '运行提示 {count}',
   'chat.assistant.tokens': '{count} tokens',
   'chat.assistant.failed': '失败',
   'chat.assistant.resend': '重新发送消息',

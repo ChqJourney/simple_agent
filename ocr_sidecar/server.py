@@ -21,6 +21,7 @@ DEFAULT_PORT = 8790
 DEFAULT_LANGUAGE = "ch"
 SUPPORTED_DETAIL_LEVELS = {"text", "lines", "blocks"}
 DEFAULT_MODEL_SOURCE = "BOS"
+DEFAULT_CPU_DEVICE = "cpu"
 ENGINE_ARGUMENT_ERROR_MARKERS = (
     "unknown argument",
     "unexpected keyword argument",
@@ -93,12 +94,15 @@ class PaddleOcrEngineCache:
             ) from exc
 
         os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", DEFAULT_MODEL_SOURCE)
+        os.environ.setdefault("FLAGS_enable_pir_api", "0")
 
         local_det_dir, local_rec_dir = _find_local_model_dirs(lang)
 
         candidate_kwargs: list[dict[str, Any]] = [
             {
                 "lang": lang,
+                "device": DEFAULT_CPU_DEVICE,
+                "enable_mkldnn": False,
                 "use_doc_preprocessor": False,
                 "text_detection_model_dir": str(local_det_dir),
                 "text_recognition_model_dir": str(local_rec_dir),
@@ -110,6 +114,8 @@ class PaddleOcrEngineCache:
             else {},
             {
                 "lang": lang,
+                "device": DEFAULT_CPU_DEVICE,
+                "enable_mkldnn": False,
                 "det_model_dir": str(local_det_dir),
                 "rec_model_dir": str(local_rec_dir),
                 "use_angle_cls": False,
@@ -119,6 +125,8 @@ class PaddleOcrEngineCache:
             else {},
             {
                 "lang": lang,
+                "device": DEFAULT_CPU_DEVICE,
+                "enable_mkldnn": False,
                 "use_doc_preprocessor": False,
                 "use_doc_orientation_classify": False,
                 "use_doc_unwarping": False,
@@ -126,8 +134,19 @@ class PaddleOcrEngineCache:
             },
             {
                 "lang": lang,
+                "device": DEFAULT_CPU_DEVICE,
+                "enable_mkldnn": False,
                 "use_angle_cls": False,
                 "show_log": False,
+            },
+            {
+                "lang": lang,
+                "device": DEFAULT_CPU_DEVICE,
+                "enable_mkldnn": False,
+            },
+            {
+                "lang": lang,
+                "device": DEFAULT_CPU_DEVICE,
             },
             {
                 "lang": lang,

@@ -1,3 +1,4 @@
+import inspect
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Dict, Any, List, Optional
 from .capabilities import get_default_context_length
@@ -40,6 +41,28 @@ class BaseLLM(ABC):
 
     def close(self) -> None:
         return None
+
+    @staticmethod
+    async def _close_stream_handle(stream: Any) -> None:
+        close_candidates = [
+            getattr(stream, "aclose", None),
+            getattr(stream, "close", None),
+        ]
+        attempted: set[int] = set()
+
+        for close_fn in close_candidates:
+            if not callable(close_fn):
+                continue
+            fn_id = id(close_fn)
+            if fn_id in attempted:
+                continue
+            attempted.add(fn_id)
+            try:
+                result = close_fn()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:
+                continue
 
     def _build_tool_schemas(self, tools: List[Any]) -> Optional[List[Dict]]:
         """Convert tool registry to OpenAI function calling format.

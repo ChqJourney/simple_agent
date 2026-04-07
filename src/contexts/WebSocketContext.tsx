@@ -336,6 +336,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           const fallbackSessionId = useSessionStore.getState().currentSessionId || undefined;
           const targetSessionId = data.session_id || fallbackSessionId;
           if (targetSessionId) {
+            if (data.preserve_partial) {
+              store.setInterrupted(targetSessionId);
+            }
             store.setError(targetSessionId, data.error, data.details);
           } else {
             console.error('Unhandled backend error without session_id:', data.error, data.details);
@@ -343,6 +346,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           break;
         }
         case 'retry':
+          store.markStreamWaiting(data.session_id);
           console.info('Retrying agent run:', data.session_id, data.attempt, data.max_retries, data.error);
           break;
         case 'interrupted':

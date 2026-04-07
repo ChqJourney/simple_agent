@@ -337,6 +337,89 @@ describe("WebSocketProvider", () => {
     });
   });
 
+  it("marks the active session as waiting when the backend schedules a retry", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    useChatStore.getState().startStreaming("session-a");
+    useChatStore.getState().addToken("session-a", "partial answer");
+
+    websocketMockState.messageHandler?.({
+      type: "retry",
+      session_id: "session-a",
+      attempt: 1,
+      max_retries: 3,
+      error: "LLM request failed",
+    });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().sessions["session-a"]?.assistantStatus).toBe("waiting");
+      expect(useChatStore.getState().sessions["session-a"]?.currentStreamingContent).toBe("partial answer");
+    });
+  });
+
+  it("preserves partial content before surfacing backend errors marked with preserve_partial", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [],
+          latestUsage: undefined,
+          currentStreamingContent: "partial answer",
+          currentReasoningContent: "partial reasoning",
+          isStreaming: true,
+          assistantStatus: "streaming",
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
+        },
+      },
+    });
+
+    websocketMockState.messageHandler?.({
+      type: "error",
+      session_id: "session-a",
+      error: "LLM response stopped before completion. Partial response was preserved.",
+      details: "LLM stream stalled before completion.",
+      preserve_partial: true,
+    });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().sessions["session-a"]?.messages).toEqual([
+        {
+          id: expect.any(String),
+          role: "reasoning",
+          content: "partial reasoning",
+          timestamp: expect.any(String),
+          status: "completed",
+        },
+        {
+          id: expect.any(String),
+          role: "assistant",
+          content: "partial answer",
+          timestamp: expect.any(String),
+          status: "completed",
+        },
+        {
+          id: expect.any(String),
+          role: "assistant",
+          content: "Error: LLM response stopped before completion. Partial response was preserved.\nLLM stream stalled before completion.",
+          timestamp: expect.any(String),
+          status: "error",
+        },
+      ]);
+      expect(useChatStore.getState().sessions["session-a"]?.isStreaming).toBe(false);
+    });
+  });
+
   it("applies todo_task tool results into the task store", async () => {
     render(
       <WebSocketProvider>

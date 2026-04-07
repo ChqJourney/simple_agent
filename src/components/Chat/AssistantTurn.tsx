@@ -10,9 +10,17 @@ import { AssistantStatusIndicator } from './AssistantStatusIndicator';
 import { CopyMessageButton } from './CopyMessageButton';
 import { DelegatedWorkerCards, DelegatedWorkerViewModel } from './DelegatedWorkerCards';
 
+export interface RuntimeNoticeViewModel {
+  id: string;
+  label: string;
+  details?: string;
+  tone: 'default' | 'warning' | 'error';
+}
+
 interface AssistantTurnProps {
   messages: Message[];
   delegatedWorkers?: DelegatedWorkerViewModel[];
+  runtimeNotices?: RuntimeNoticeViewModel[];
   isStreaming?: boolean;
   streamingContent?: string;
   currentReasoningContent?: string;
@@ -54,6 +62,7 @@ function getRoundDetailsLabel(
   messages: Message[],
   hasStreamingReasoning: boolean,
   hiddenToolCallIds: Set<string>,
+  runtimeNoticeCount: number,
   t: ReturnType<typeof useI18n>['t'],
 ): string {
   let reasoningCount = hasStreamingReasoning ? 1 : 0;
@@ -96,6 +105,9 @@ function getRoundDetailsLabel(
   }
   if (userActionCount > 0) {
     parts.push(t('chat.assistant.userActionsCount', { count: userActionCount }));
+  }
+  if (runtimeNoticeCount > 0) {
+    parts.push(t('chat.assistant.runtimeNoticesCount', { count: runtimeNoticeCount }));
   }
 
   return parts.length > 0 ? parts.join(' · ') : t('chat.assistant.roundDetails');
@@ -165,6 +177,7 @@ function renderDetailMessage(
 export const AssistantTurn = ({
   messages,
   delegatedWorkers = [],
+  runtimeNotices = [],
   isStreaming = false,
   streamingContent = '',
   currentReasoningContent = '',
@@ -203,7 +216,7 @@ export const AssistantTurn = ({
   const hasFormalContent = Boolean(formalAssistantMessage) || Boolean(streamingContent);
   const hasDelegatedWorkers = delegatedWorkers.length > 0;
   const hasHeader = hasFormalContent || hasDelegatedWorkers;
-  const hasDetails = visibleDetailMessages.length > 0 || Boolean(currentReasoningContent);
+  const hasDetails = visibleDetailMessages.length > 0 || Boolean(currentReasoningContent) || runtimeNotices.length > 0;
   const copyableContent = streamingContent.trim() || formalAssistantMessage?.content?.trim() || '';
   const isFailedTurn = formalAssistantMessage?.status === 'error';
   const [isExpanded, setIsExpanded] = useState(isStreaming);
@@ -222,6 +235,7 @@ export const AssistantTurn = ({
     detailMessages,
     Boolean(currentReasoningContent),
     hiddenDelegatedToolCallIds,
+    runtimeNotices.length,
     t,
   );
 
@@ -270,6 +284,30 @@ export const AssistantTurn = ({
 
           {isExpanded && (
             <div className="mt-4 space-y-3 border-t border-gray-200/80 pt-4 dark:border-gray-700/80">
+              {runtimeNotices.map((notice) => {
+                const toneClasses = notice.tone === 'error'
+                  ? 'border-red-200/80 bg-red-50/80 text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-200'
+                  : notice.tone === 'warning'
+                    ? 'border-amber-200/80 bg-amber-50/80 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200'
+                    : 'border-gray-200/80 bg-white/70 text-gray-800 dark:border-gray-700/80 dark:bg-gray-900/50 dark:text-gray-100';
+
+                return (
+                  <div
+                    key={notice.id}
+                    className={`rounded-2xl border p-4 ${toneClasses}`}
+                  >
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-80">
+                      {notice.label}
+                    </div>
+                    {notice.details && (
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">
+                        {notice.details}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
               {visibleDetailMessages.map((message) => {
                 const content = renderDetailMessage(message, hiddenDelegatedToolCallIds, t);
                 if (!content) {

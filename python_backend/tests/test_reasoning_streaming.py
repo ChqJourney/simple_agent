@@ -71,6 +71,49 @@ class HangingStreamingLLM(BaseLLM):
         return {}
 
 
+class TimeoutBeforeFirstChunkLLM(BaseLLM):
+    def __init__(self):
+        super().__init__({
+            'model': 'timeout-before-first-chunk',
+            'runtime': {'timeout_seconds': 0.05},
+        })
+        self.stream_attempts = 0
+        self.closed = 0
+
+    async def stream(self, messages, tools=None):
+        self.stream_attempts += 1
+        try:
+            await asyncio.Future()
+        finally:
+            self.closed += 1
+        if False:
+            yield {}
+
+    async def complete(self, messages, tools=None):
+        return {}
+
+
+class TimeoutAfterPartialChunkLLM(BaseLLM):
+    def __init__(self):
+        super().__init__({
+            'model': 'timeout-after-partial-chunk',
+            'runtime': {'timeout_seconds': 0.05},
+        })
+        self.closed = 0
+
+    async def stream(self, messages, tools=None):
+        try:
+            yield {
+                'choices': [{'delta': {'content': 'partial answer'}}]
+            }
+            await asyncio.Future()
+        finally:
+            self.closed += 1
+
+    async def complete(self, messages, tools=None):
+        return {}
+
+
 class UsageReportingLLM(BaseLLM):
     def __init__(self):
         super().__init__({
@@ -278,6 +321,62 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('interrupted', event_types)
         self.assertNotIn('completed', event_types)
         self.assertEqual(['user'], [message.role for message in session.messages])
+
+        temp_dir.cleanup()
+
+    async def test_stream_timeout_before_first_chunk_retries_and_finishes_with_error(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+        llm = TimeoutBeforeFirstChunkLLM()
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-timeout-first')
+        await user_manager.bind_session_to_connection('session-timeout-first', 'conn-1')
+
+        agent = Agent(llm, ToolRegistry(), user_manager, max_retries=2)
+        await asyncio.wait_for(agent.run('hello', session), timeout=5)
+
+        retry_messages = [message for message in sent_messages if message.get('type') == 'retry']
+        error_messages = [message for message in sent_messages if message.get('type') == 'error']
+
+        self.assertEqual(2, llm.stream_attempts)
+        self.assertEqual(2, llm.closed)
+        self.assertEqual(1, len(retry_messages))
+        self.assertEqual(1, len(error_messages))
+        self.assertFalse(error_messages[0].get('preserve_partial'))
+        self.assertEqual(['user'], [message.role for message in session.messages])
+
+        temp_dir.cleanup()
+
+    async def test_stream_timeout_after_partial_chunk_preserves_partial_without_retrying(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+        llm = TimeoutAfterPartialChunkLLM()
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-timeout-partial')
+        await user_manager.bind_session_to_connection('session-timeout-partial', 'conn-1')
+
+        agent = Agent(llm, ToolRegistry(), user_manager, max_retries=2)
+        await asyncio.wait_for(agent.run('hello', session), timeout=3)
+
+        retry_messages = [message for message in sent_messages if message.get('type') == 'retry']
+        error_messages = [message for message in sent_messages if message.get('type') == 'error']
+
+        self.assertEqual(1, llm.closed)
+        self.assertEqual([], retry_messages)
+        self.assertEqual(1, len(error_messages))
+        self.assertTrue(error_messages[0].get('preserve_partial'))
+        self.assertEqual(['user', 'assistant'], [message.role for message in session.messages])
+        self.assertEqual('partial answer', session.messages[-1].content)
 
         temp_dir.cleanup()
 

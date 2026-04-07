@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import logging
 import platform
@@ -32,6 +33,22 @@ class RunInterruptedWithPartial(RunInterrupted):
     def __init__(self, partial_message: Optional[Message] = None):
         super().__init__()
         self.partial_message = partial_message
+
+
+class LLMStreamInactivityTimeout(Exception):
+    pass
+
+
+class LLMStreamFailedWithPartial(Exception):
+    def __init__(
+        self,
+        partial_message: Optional[Message] = None,
+        *,
+        details: Optional[str] = None,
+    ):
+        super().__init__(details or "LLM response stopped before completion.")
+        self.partial_message = partial_message
+        self.details = details or "LLM response stopped before completion."
 
 
 class Agent:
@@ -195,6 +212,28 @@ class Agent:
                 "type": "interrupted",
                 "session_id": session.session_id
             })
+        except LLMStreamFailedWithPartial as partial_failure:
+            if partial_failure.partial_message is not None:
+                await session.add_message_async(partial_failure.partial_message)
+            partial_preserved = partial_failure.partial_message is not None
+            safe_error = (
+                "LLM response stopped before completion. Partial response was preserved."
+                if partial_preserved
+                else "LLM response stopped before completion."
+            )
+            await self._emit_run_event(
+                session,
+                run_id,
+                "run_failed",
+                {"error": safe_error, "details": partial_failure.details},
+            )
+            await self.user_manager.send_to_frontend({
+                "type": "error",
+                "session_id": session.session_id,
+                "error": safe_error,
+                "details": partial_failure.details,
+                "preserve_partial": partial_preserved,
+            })
         except Exception as e:
             logger.exception(f"Agent run failed: {e}")
             safe_error = "Agent run failed. Check backend logs."
@@ -227,36 +266,94 @@ class Agent:
                 return await self._stream_llm_response(messages, tools, session, run_id)
             except RunInterrupted:
                 raise
+            except LLMStreamFailedWithPartial as e:
+                if e.partial_message is not None:
+                    raise
+                last_error = e
+                logger.warning(f"LLM call failed (attempt {attempt + 1}/{self.max_retries}): {e}")
+                if attempt < self.max_retries - 1:
+                    safe_error = "LLM request failed"
+                    await self._emit_run_event(
+                        session,
+                        run_id,
+                        "retry_scheduled",
+                        {
+                            "attempt": attempt + 1,
+                            "max_retries": self.max_retries,
+                            "error": safe_error,
+                            "details": e.details,
+                        },
+                    )
+
+                    await self.user_manager.send_to_frontend({
+                        "type": "retry",
+                        "session_id": session.session_id,
+                        "attempt": attempt + 1,
+                        "max_retries": self.max_retries,
+                        "error": safe_error
+                    })
+
+                    backoff = 2 ** attempt
+                    await asyncio.sleep(backoff)
             except Exception as e:
                 last_error = e
                 logger.warning(f"LLM call failed (attempt {attempt + 1}/{self.max_retries}): {e}")
-                safe_error = "LLM request failed"
-                await self._emit_run_event(
-                    session,
-                    run_id,
-                    "retry_scheduled",
-                    {
+                if attempt < self.max_retries - 1:
+                    safe_error = "LLM request failed"
+                    await self._emit_run_event(
+                        session,
+                        run_id,
+                        "retry_scheduled",
+                        {
+                            "attempt": attempt + 1,
+                            "max_retries": self.max_retries,
+                            "error": safe_error,
+                            "details": str(e),
+                        },
+                    )
+
+                    await self.user_manager.send_to_frontend({
+                        "type": "retry",
+                        "session_id": session.session_id,
                         "attempt": attempt + 1,
                         "max_retries": self.max_retries,
-                        "error": safe_error,
-                    },
-                )
+                        "error": safe_error
+                    })
 
-                await self.user_manager.send_to_frontend({
-                    "type": "retry",
-                    "session_id": session.session_id,
-                    "attempt": attempt + 1,
-                    "max_retries": self.max_retries,
-                    "error": safe_error
-                })
-
-                if attempt < self.max_retries - 1:
                     backoff = 2 ** attempt
                     await asyncio.sleep(backoff)
 
         if last_error:
             raise last_error
         return None
+
+    def _get_stream_inactivity_timeout_seconds(self) -> float:
+        get_timeout_seconds = getattr(self.llm, "_get_timeout_seconds", None)
+        if callable(get_timeout_seconds):
+            return max(1.0, float(get_timeout_seconds(60.0)))
+        return 60.0
+
+    @staticmethod
+    async def _close_async_iterator(iterator: Any) -> None:
+        close_candidates = [
+            getattr(iterator, "aclose", None),
+            getattr(iterator, "close", None),
+        ]
+        attempted: set[int] = set()
+
+        for close_fn in close_candidates:
+            if not callable(close_fn):
+                continue
+            fn_id = id(close_fn)
+            if fn_id in attempted:
+                continue
+            attempted.add(fn_id)
+            try:
+                result = close_fn()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as exc:
+                logger.debug("Failed to close LLM stream iterator cleanly: %s", exc)
 
     @staticmethod
     def _get_chunk_choices(chunk: Any) -> List[Any]:
@@ -409,6 +506,7 @@ class Agent:
         content_chunks: List[str] = []
         reasoning_chunks: List[str] = []
         tool_calls_data: Dict[int, Dict[str, Any]] = {}
+        stream_timeout_seconds = self._get_stream_inactivity_timeout_seconds()
 
         def interrupted_with_partial() -> RunInterrupted:
             partial_message = self._build_interrupted_assistant_message(
@@ -419,8 +517,30 @@ class Agent:
                 return RunInterruptedWithPartial(partial_message)
             return RunInterrupted()
 
+        def failed_with_partial(details: str) -> LLMStreamFailedWithPartial:
+            partial_message = self._build_interrupted_assistant_message(
+                content_chunks,
+                reasoning_chunks,
+            )
+            return LLMStreamFailedWithPartial(partial_message, details=details)
+
+        stream_iterator = self.llm.stream(messages, tools).__aiter__()
+
         try:
-            async for chunk in self.llm.stream(messages, tools):
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(
+                        stream_iterator.__anext__(),
+                        timeout=stream_timeout_seconds,
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError as exc:
+                    await self._close_async_iterator(stream_iterator)
+                    raise LLMStreamInactivityTimeout(
+                        f"LLM stream produced no chunks for {stream_timeout_seconds:.0f}s"
+                    ) from exc
+
                 if self._interrupt_event.is_set():
                     raise interrupted_with_partial()
 
@@ -480,6 +600,15 @@ class Agent:
                                 tool_calls_data[idx]["function"]["arguments"] += function_args
         except asyncio.CancelledError as exc:
             raise interrupted_with_partial() from exc
+        except RunInterrupted:
+            raise
+        except Exception as exc:
+            details = str(exc).strip() or "LLM response stopped before completion."
+            if isinstance(exc, LLMStreamInactivityTimeout):
+                details = "LLM stream stalled before completion."
+            raise failed_with_partial(details) from exc
+        finally:
+            await self._close_async_iterator(stream_iterator)
 
         if reasoning_chunks:
             await self.user_manager.send_to_frontend({

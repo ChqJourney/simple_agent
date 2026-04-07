@@ -9,6 +9,7 @@ from typing import Any
 
 DEFAULT_LANGUAGES = ("ch", "en")
 DEFAULT_MODEL_SOURCE = "BOS"
+DEFAULT_CPU_DEVICE = "cpu"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -201,9 +202,13 @@ def _resolve_model_dirs(engine: Any) -> tuple[Path, Path]:
 def _build_engine(lang: str) -> Any:
     from paddleocr import PaddleOCR  # type: ignore
 
+    os.environ.setdefault("FLAGS_enable_pir_api", "0")
+
     candidate_kwargs: list[dict[str, object]] = [
         {
             "lang": lang,
+            "device": DEFAULT_CPU_DEVICE,
+            "enable_mkldnn": False,
             "use_doc_preprocessor": False,
             "use_doc_orientation_classify": False,
             "use_doc_unwarping": False,
@@ -211,8 +216,19 @@ def _build_engine(lang: str) -> Any:
         },
         {
             "lang": lang,
+            "device": DEFAULT_CPU_DEVICE,
+            "enable_mkldnn": False,
             "use_angle_cls": False,
             "show_log": False,
+        },
+        {
+            "lang": lang,
+            "device": DEFAULT_CPU_DEVICE,
+            "enable_mkldnn": False,
+        },
+        {
+            "lang": lang,
+            "device": DEFAULT_CPU_DEVICE,
         },
         {
             "lang": lang,

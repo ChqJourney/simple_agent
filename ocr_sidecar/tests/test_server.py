@@ -62,6 +62,7 @@ class OcrSidecarServerTests(unittest.TestCase):
         self.assertIsInstance(engine, FakePaddleOCR)
         self.assertEqual("ch", engine.kwargs["lang"])
         self.assertNotIn("use_doc_preprocessor", engine.kwargs)
+        self.assertEqual("cpu", engine.kwargs["device"])
         self.assertGreaterEqual(len(observed_kwargs), 2)
 
     def test_create_engine_does_not_swallow_non_compat_errors(self) -> None:
@@ -83,6 +84,18 @@ class OcrSidecarServerTests(unittest.TestCase):
             "RuntimeError: pipeline creation failed <- RuntimeError: missing shapely",
             server._format_exception_detail(wrapped),
         )
+
+    def test_create_engine_disables_pir_api_by_default(self) -> None:
+        class FakePaddleOCR:
+            def __init__(self, **kwargs: object) -> None:
+                self.kwargs = kwargs
+
+        with patch.dict(sys.modules, {"paddleocr": types.SimpleNamespace(PaddleOCR=FakePaddleOCR)}):
+            with patch.object(server, "_find_local_model_dirs", return_value=(None, None)):
+                with patch.dict(server.os.environ, {}, clear=True):
+                    engine = server.PaddleOcrEngineCache._create_engine("ch")
+                    self.assertEqual("0", server.os.environ["FLAGS_enable_pir_api"])
+                    self.assertEqual("cpu", engine.kwargs["device"])
 
 
 if __name__ == "__main__":

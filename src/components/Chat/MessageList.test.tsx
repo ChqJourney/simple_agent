@@ -539,6 +539,53 @@ describe("MessageList", () => {
     expect(onRetryMessage).toHaveBeenCalledWith(messages[0]);
   });
 
+  it("shows retry notices and stall reasons inside the assistant turn details", () => {
+    const messages: Message[] = [
+      {
+        id: "user-1",
+        role: "user",
+        content: "Please continue",
+        status: "completed",
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "Partial answer that eventually completed.",
+        status: "completed",
+      },
+    ];
+
+    render(
+      <MessageList
+        messages={messages}
+        runEvents={[
+          {
+            event_type: "run_started",
+            session_id: "session-1",
+            run_id: "run-1",
+            payload: {},
+            timestamp: "2026-03-28T10:00:00.000Z",
+          },
+          {
+            event_type: "retry_scheduled",
+            session_id: "session-1",
+            run_id: "run-1",
+            payload: {
+              attempt: 2,
+              details: "LLM stream stalled before completion.",
+            },
+            timestamp: "2026-03-28T10:00:01.000Z",
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /runtime notices 1/i }));
+
+    expect(screen.getByText("Retry scheduled")).toBeTruthy();
+    expect(screen.getByText("attempt 2 - LLM stream stalled before completion.")).toBeTruthy();
+  });
+
   it("renders delegated worker cards in the message flow and opens a detail modal", async () => {
     const delegatedOutput = {
       event: "delegated_task",

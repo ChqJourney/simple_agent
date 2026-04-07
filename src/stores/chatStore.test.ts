@@ -61,6 +61,17 @@ describe("chatStore run events", () => {
     expect(useChatStore.getState().sessions["session-a"]?.latestUsageUpdatedAt).toEqual(expect.any(String));
   });
 
+  it("keeps partial streamed output visible while a retry is pending", () => {
+    useChatStore.getState().startStreaming("session-a");
+    useChatStore.getState().addToken("session-a", "partial answer");
+
+    useChatStore.getState().markStreamWaiting("session-a");
+
+    expect(useChatStore.getState().sessions["session-a"]?.assistantStatus).toBe("waiting");
+    expect(useChatStore.getState().sessions["session-a"]?.isStreaming).toBe(true);
+    expect(useChatStore.getState().sessions["session-a"]?.currentStreamingContent).toBe("partial answer");
+  });
+
   it("stores context estimates independently from the latest request usage", () => {
     useChatStore.getState().startStreaming("session-a");
     useChatStore.getState().setCompleted("session-a", {

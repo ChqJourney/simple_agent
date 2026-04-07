@@ -40,6 +40,14 @@ def _paddlex_extra_distribution_names(*extra_names: str) -> list[str]:
     return sorted(distributions)
 
 
+def _copy_metadata_if_installed(distribution_name: str) -> list[tuple[str, str]]:
+    try:
+        return copy_metadata(distribution_name)
+    except PackageNotFoundError:
+        print(f"[ocr_sidecar.spec] Skipping metadata for missing distribution: {distribution_name}")
+        return []
+
+
 binaries = []
 datas = [(str(project_root / "manifest.json"), ".")]
 hiddenimports = []
@@ -64,7 +72,7 @@ for package_name in [
     hiddenimports += pkg_hiddenimports
 
 for distribution_name in _paddlex_extra_distribution_names("ocr", "ocr-core"):
-    datas += copy_metadata(distribution_name)
+    datas += _copy_metadata_if_installed(distribution_name)
 
 # chardet 5+ may load mypyc-compiled pipeline helpers dynamically, so keep the
 # whole pipeline package visible to the frozen importer and pin the known

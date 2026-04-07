@@ -24,6 +24,8 @@ class OcrSidecarBuildSpecTests(unittest.TestCase):
         self.assertRegex(source, re.compile(r'(["\'])paddlepaddle\1'))
         self.assertRegex(source, re.compile(r'requires\((["\'])paddlex\1\)'))
         self.assertRegex(source, re.compile(r'(["\'])ocr-core\1'))
+        self.assertRegex(source, re.compile(r'def _copy_metadata_if_installed'))
+        self.assertRegex(source, re.compile(r'Skipping metadata for missing distribution'))
 
     def test_requires_paddlex_ocr_extra(self) -> None:
         requirements = REQUIREMENTS_PATH.read_text(encoding="utf-8")

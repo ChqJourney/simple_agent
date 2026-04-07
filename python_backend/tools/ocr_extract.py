@@ -12,6 +12,7 @@ from document_readers.pdf_reader import render_pdf_pages_to_images
 
 from .base import BaseTool, ToolResult
 from .path_utils import resolve_workspace_path
+from .policies import ToolExecutionPolicy
 
 IMAGE_EXTENSIONS = {
     ".png",
@@ -28,6 +29,7 @@ PDF_EXTENSIONS = {".pdf"}
 
 class OcrExtractTool(BaseTool):
     name = "ocr_extract"
+    policy = ToolExecutionPolicy(timeout_seconds=120)
     description = (
         "Extract text from image files and scanned PDFs using the optional Paddle OCR sidecar. "
         "Use pages='all' or selectors like '1', '3-5', or '1-3,8' when OCRing PDFs."

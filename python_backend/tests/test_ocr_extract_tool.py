@@ -52,7 +52,7 @@ class FakeClient:
         *,
         lang: str,
         detail_level: str,
-        timeout_seconds: int = 60,
+        timeout_seconds: int = 120,
     ) -> OcrImageResponse:
         self.call_count += 1
         return OcrImageResponse(
@@ -69,6 +69,10 @@ class FakeClient:
 
 
 class OcrExtractToolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_uses_extended_tool_timeout_policy(self) -> None:
+        tool = OcrExtractTool(manager=FakeManager(), client=FakeClient())
+        self.assertEqual(120, tool.policy.timeout_seconds)
+
     async def test_extracts_text_from_image_via_sidecar(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

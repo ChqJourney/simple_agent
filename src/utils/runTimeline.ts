@@ -1,6 +1,7 @@
 import { RunEventRecord } from '../types';
+import type { TranslationKey, TranslationParams } from '../i18n';
 
-type Translator = (key: string, values?: Record<string, unknown>) => string;
+type Translator = (key: TranslationKey, values?: TranslationParams) => string;
 
 function nonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') {

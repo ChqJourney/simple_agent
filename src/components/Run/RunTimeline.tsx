@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import { useI18n } from '../../i18n';
 import { useShallow } from 'zustand/react/shallow';
 import { useRunStore } from '../../stores/runStore';
-import { RunEventRecord } from '../../types';
 import { formatRunEventDetails } from '../../utils/runTimeline';
 
 interface RunTimelineProps {

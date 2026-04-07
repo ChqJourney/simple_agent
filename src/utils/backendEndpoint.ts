@@ -47,4 +47,5 @@ export const backendWsUrl = `${configuredWsBase}/ws`;
 export const backendAuthTokenUrl = `${configuredHttpBase}/auth-token`;
 export const backendHealthUrl = `${configuredHttpBase}/health`;
 export const backendToolsUrl = `${configuredHttpBase}/tools`;
+export const backendProviderModelsUrl = `${configuredHttpBase}/provider-models`;
 export const backendTestConfigUrl = `${configuredHttpBase}/test-config`;

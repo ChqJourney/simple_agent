@@ -562,19 +562,25 @@ class PdfReader:
         *,
         top_k: int = 5,
         search_mode: str = "page",
+        max_pages: int | None = None,
         options: ExtractionOptions | None = None,
     ) -> dict[str, Any]:
         if not query or not query.strip():
             raise ValueError("query cannot be empty")
         if top_k < 1:
             raise ValueError("top_k must be >= 1")
+        if max_pages is not None and max_pages < 1:
+            raise ValueError("max_pages must be >= 1")
 
         options = options or ExtractionOptions()
         query_normalized = query.casefold().strip()
         items: list[dict[str, Any]] = []
+        page_numbers = list(range(1, self.page_count + 1))
+        if max_pages is not None:
+            page_numbers = page_numbers[:max_pages]
 
         if search_mode == "page":
-            for page_number in range(1, self.page_count + 1):
+            for page_number in page_numbers:
                 content = self._get_page_content(page_number, options)
                 text = content["text"]
                 match_count = text.casefold().count(query_normalized)
@@ -591,7 +597,7 @@ class PdfReader:
                 )
             items.sort(key=lambda item: (-item["match_count"], item["page_number"]))
         elif search_mode == "line":
-            for page_number in range(1, self.page_count + 1):
+            for page_number in page_numbers:
                 content = self._get_page_content(page_number, options)
                 for line in content["lines"]:
                     if query_normalized in line["text"].casefold():
@@ -603,15 +609,21 @@ class PdfReader:
                                 "bbox": line["bbox"],
                             }
                         )
+                        if len(items) >= top_k:
+                            break
+                if len(items) >= top_k:
+                    break
         else:
             raise ValueError("search_mode must be 'page' or 'line'")
 
         return {
             "pdf_path": str(self.pdf_path),
             "page_count": self.page_count,
+            "scanned_pages": len(page_numbers),
             "query": query,
             "search_mode": search_mode,
             "top_k": top_k,
+            "max_pages": max_pages,
             "filters": asdict(options),
             "items": items[:top_k],
         }
@@ -738,6 +750,7 @@ def search_pdf(
     *,
     top_k: int = 5,
     search_mode: str = "page",
+    max_pages: int | None = None,
     exclude_header_footer: bool = True,
     header_ratio: float = 0.05,
     footer_ratio: float = 0.05,
@@ -756,7 +769,13 @@ def search_pdf(
         y_tolerance=y_tolerance,
     )
     with PdfReader(pdf_path) as reader:
-        return reader.search(query, top_k=top_k, search_mode=search_mode, options=options)
+        return reader.search(
+            query,
+            top_k=top_k,
+            search_mode=search_mode,
+            max_pages=max_pages,
+            options=options,
+        )
 
 
 def render_pdf_pages_to_images(

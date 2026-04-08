@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
@@ -455,6 +456,10 @@ class PdfSearchTool(PdfToolMixin, BaseTool):
                 "default": "page",
                 "description": "Result granularity: 'page' returns broader page matches, 'line' returns precise visual-line hits.",
             },
+            "max_pages": {
+                "type": "integer",
+                "description": "Optional upper bound on how many pages to scan from the start of the PDF.",
+            },
             **_filter_properties(),
         },
         "required": ["path", "query"],
@@ -467,6 +472,7 @@ class PdfSearchTool(PdfToolMixin, BaseTool):
         query: str,
         top_k: int = 5,
         search_mode: str = "page",
+        max_pages: Optional[int] = None,
         exclude_header_footer: bool = True,
         header_ratio: float = 0.05,
         footer_ratio: float = 0.05,
@@ -483,11 +489,13 @@ class PdfSearchTool(PdfToolMixin, BaseTool):
             return failure
 
         try:
-            result = search_pdf(
+            result = await asyncio.to_thread(
+                search_pdf,
                 file_path,
                 query=query,
                 top_k=top_k,
                 search_mode=search_mode,
+                max_pages=max_pages,
                 exclude_header_footer=exclude_header_footer,
                 header_ratio=header_ratio,
                 footer_ratio=footer_ratio,
@@ -510,6 +518,7 @@ class PdfSearchTool(PdfToolMixin, BaseTool):
                     "query": result["query"],
                     "search_mode": result["search_mode"],
                     "result_count": len(result["items"]),
+                    "scanned_pages": result.get("scanned_pages"),
                 },
                 **result,
             },

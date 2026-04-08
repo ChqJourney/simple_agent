@@ -1,5 +1,7 @@
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -16,6 +18,13 @@ from tools.pdf_tools import (
     PdfSearchTool,
 )
 from document_readers.pdf_reader import parse_page_spec
+from core.agent import Agent
+from core.user import UserManager
+from tools.base import ToolRegistry
+
+
+class DummyLLM:
+    pass
 
 
 class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
@@ -180,6 +189,104 @@ class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("pdf_search", result.output["event"])
             self.assertEqual("line", result.output["summary"]["search_mode"])
             self.assertEqual(1, result.output["summary"]["result_count"])
+
+    async def test_pdf_search_tool_runs_search_in_background_thread(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "manual.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7")
+            main_thread_id = threading.get_ident()
+            observed_thread_ids: list[int] = []
+
+            def fake_search_pdf(*args, **kwargs):
+                observed_thread_ids.append(threading.get_ident())
+                return {
+                    "pdf_path": str(pdf_path),
+                    "page_count": 12,
+                    "scanned_pages": 12,
+                    "query": "scope",
+                    "search_mode": "page",
+                    "top_k": 5,
+                    "max_pages": None,
+                    "filters": {},
+                    "items": [],
+                }
+
+            with patch("tools.pdf_tools.search_pdf", side_effect=fake_search_pdf):
+                result = await PdfSearchTool().execute(
+                    tool_call_id="pdf-search-thread",
+                    workspace_path=temp_dir,
+                    path="manual.pdf",
+                    query="scope",
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual(1, len(observed_thread_ids))
+            self.assertNotEqual(main_thread_id, observed_thread_ids[0])
+
+    async def test_pdf_search_tool_forwards_max_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "manual.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7")
+
+            with patch(
+                "tools.pdf_tools.search_pdf",
+                return_value={
+                    "pdf_path": str(pdf_path),
+                    "page_count": 12,
+                    "scanned_pages": 3,
+                    "query": "scope",
+                    "search_mode": "page",
+                    "top_k": 5,
+                    "max_pages": 3,
+                    "filters": {},
+                    "items": [{"page_number": 3, "match_count": 1, "snippet": "scope"}],
+                },
+            ) as mocked:
+                result = await PdfSearchTool().execute(
+                    tool_call_id="pdf-search-max-pages",
+                    workspace_path=temp_dir,
+                    path="manual.pdf",
+                    query="scope",
+                    max_pages=3,
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual(3, mocked.call_args.kwargs["max_pages"])
+            self.assertEqual(3, result.output["summary"]["scanned_pages"])
+
+    async def test_pdf_search_tool_timeout_can_interrupt_slow_search(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "manual.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7")
+
+            def fake_search_pdf(*args, **kwargs):
+                time.sleep(1.5)
+                return {
+                    "pdf_path": str(pdf_path),
+                    "page_count": 12,
+                    "scanned_pages": 12,
+                    "query": "scope",
+                    "search_mode": "page",
+                    "top_k": 5,
+                    "max_pages": None,
+                    "filters": {},
+                    "items": [],
+                }
+
+            agent = Agent(DummyLLM(), ToolRegistry(), UserManager())
+
+            with patch("tools.pdf_tools.search_pdf", side_effect=fake_search_pdf):
+                with self.assertRaises(TimeoutError):
+                    await agent._execute_tool_with_interrupt_timeout(
+                        tool=PdfSearchTool(),
+                        tool_call_id="pdf-search-timeout",
+                        workspace_path=temp_dir,
+                        timeout_seconds=1,
+                        arguments={
+                            "path": "manual.pdf",
+                            "query": "scope",
+                        },
+                    )
 
     async def test_pdf_tools_reject_non_pdf_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

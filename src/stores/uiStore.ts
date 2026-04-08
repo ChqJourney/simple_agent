@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { AppLocale, resolveAppLocale } from '../i18n/locale';
 import { normalizeBaseFontSize } from '../utils/config';
 
-type RightPanelTab = 'filetree' | 'tasklist';
+export type RightPanelTab = 'filetree' | 'tasklist';
 
 export const DEFAULT_LEFT_PANEL_WIDTH = 256;
 export const DEFAULT_RIGHT_PANEL_WIDTH = 288;

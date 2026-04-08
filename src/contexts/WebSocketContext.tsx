@@ -141,6 +141,17 @@ function applyTodoToolResult(sessionId: string, output: unknown) {
   taskStore.upsertTask(nextTask);
 }
 
+function reconcileTaskTabVisibility(sessionId: string) {
+  const taskStore = useTaskStore.getState();
+  if (!taskStore.isTaskTabVisible(sessionId)) {
+    return;
+  }
+
+  if (!taskStore.hasActiveTasksBySession(sessionId)) {
+    taskStore.hideTaskTab(sessionId);
+  }
+}
+
 function applyFileWriteToolResult(output: unknown) {
   if (!isRecord(output) || output.event !== 'file_write' || typeof output.path !== 'string') {
     return;
@@ -253,6 +264,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
                 }
               : current);
           }
+          if (data.name === 'todo_task') {
+            useTaskStore.getState().markTaskTabVisible(data.session_id);
+          }
           const toolCall: ToolCall = {
             tool_call_id: data.tool_call_id,
             name: data.name,
@@ -305,8 +319,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           if (data.success && data.tool_name === 'file_write') {
             applyFileWriteToolResult(data.output);
           }
-          if (data.success && data.tool_name === 'todo_task') {
-            applyTodoToolResult(data.session_id, data.output);
+          if (data.tool_name === 'todo_task') {
+            if (data.success) {
+              applyTodoToolResult(data.session_id, data.output);
+            }
+            reconcileTaskTabVisibility(data.session_id);
           }
           store.setToolResult(
             data.session_id,
@@ -318,9 +335,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           );
           break;
         case 'completed':
+          reconcileTaskTabVisibility(data.session_id);
           store.setCompleted(data.session_id, data.usage);
           break;
         case 'max_rounds_reached':
+          reconcileTaskTabVisibility(data.session_id);
           store.setError(data.session_id, data.error || 'Agent reached max tool-call rounds');
           break;
         case 'error': {
@@ -336,6 +355,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           const fallbackSessionId = useSessionStore.getState().currentSessionId || undefined;
           const targetSessionId = data.session_id || fallbackSessionId;
           if (targetSessionId) {
+            reconcileTaskTabVisibility(targetSessionId);
             if (data.preserve_partial) {
               store.setInterrupted(targetSessionId);
             }
@@ -350,6 +370,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           console.info('Retrying agent run:', data.session_id, data.attempt, data.max_retries, data.error);
           break;
         case 'interrupted':
+          reconcileTaskTabVisibility(data.session_id);
           store.setInterrupted(data.session_id);
           break;
         case 'config_updated':

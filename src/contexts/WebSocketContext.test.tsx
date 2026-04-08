@@ -160,7 +160,7 @@ describe("WebSocketProvider", () => {
       ...state,
       config: testConfig,
     }));
-    useTaskStore.setState({ tasks: [] });
+    useTaskStore.setState({ tasks: [], visibleTaskTabSessionIds: {} });
     useWorkspaceStore.setState((state) => ({
       ...state,
       changedFiles: {},
@@ -428,6 +428,16 @@ describe("WebSocketProvider", () => {
     );
 
     websocketMockState.messageHandler?.({
+      type: "tool_call",
+      session_id: "session-a",
+      tool_call_id: "todo-1",
+      name: "todo_task",
+      arguments: { action: "create", content: "Ship Task 5" },
+    });
+
+    expect(useTaskStore.getState().isTaskTabVisible("session-a")).toBe(true);
+
+    websocketMockState.messageHandler?.({
       type: "tool_result",
       session_id: "session-a",
       tool_call_id: "todo-1",
@@ -456,6 +466,29 @@ describe("WebSocketProvider", () => {
       expect(tasks).toHaveLength(1);
       expect(tasks[0]?.content).toBe("Ship Task 5");
       expect(tasks[0]?.subTasks?.[0]?.content).toBe("Wire frontend");
+    });
+
+    expect(useTaskStore.getState().isTaskTabVisible("session-a")).toBe(true);
+
+    websocketMockState.messageHandler?.({
+      type: "tool_result",
+      session_id: "session-a",
+      tool_call_id: "todo-1",
+      tool_name: "todo_task",
+      success: true,
+      output: {
+        event: "todo_task",
+        action: "complete",
+        task: {
+          id: "task-1",
+          content: "Ship Task 5",
+          status: "completed",
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(useTaskStore.getState().isTaskTabVisible("session-a")).toBe(false);
     });
   });
 

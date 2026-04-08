@@ -125,6 +125,10 @@ describe("useSession", () => {
           createdAt: "2026-03-19T12:11:00.000Z",
         },
       ],
+      visibleTaskTabSessionIds: {
+        "session-a": true,
+        "session-b": true,
+      },
     });
   });
 
@@ -139,9 +143,11 @@ describe("useSession", () => {
     expect(useChatStore.getState().sessions["session-a"]).toBeUndefined();
     expect(useRunStore.getState().sessions["session-a"]).toBeUndefined();
     expect(useTaskStore.getState().getTasksBySession("session-a")).toHaveLength(0);
+    expect(useTaskStore.getState().isTaskTabVisible("session-a")).toBe(false);
     expect(useChatStore.getState().sessions["session-b"]).toBeDefined();
     expect(useRunStore.getState().sessions["session-b"]).toBeDefined();
     expect(useTaskStore.getState().getTasksBySession("session-b")).toHaveLength(1);
+    expect(useTaskStore.getState().isTaskTabVisible("session-b")).toBe(true);
   });
 
   it("releases the previous chat session when switching sessions", async () => {

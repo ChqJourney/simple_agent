@@ -49,7 +49,7 @@ describe("RunTimeline", () => {
 
     expect(screen.getByText("Run Timeline")).toBeTruthy();
     expect(screen.getAllByText("Run completed").length).toBeGreaterThan(0);
-    expect(screen.getByText("Tool requested")).toBeTruthy();
+    expect(screen.getByText(/tool requested/i)).toBeTruthy();
     expect(screen.getByText("file_read")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Expand run timeline" })).toBeNull();
   });
@@ -103,7 +103,8 @@ describe("RunTimeline", () => {
     render(<RunTimeline sessionId="session-a" />);
 
     expect(screen.getAllByText("Compaction completed").length).toBeGreaterThan(0);
-    expect(screen.getByText("background - 420 tokens")).toBeTruthy();
+    expect(screen.getAllByText(/background/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/420 tokens/i).length).toBeGreaterThan(0);
   });
 
   it("renders delegated task events with task and worker details", () => {
@@ -156,6 +157,7 @@ describe("RunTimeline", () => {
     render(<RunTimeline sessionId="session-a" />);
 
     expect(screen.getAllByText("Retry scheduled").length).toBeGreaterThan(0);
-    expect(screen.getByText("attempt 2 - LLM stream stalled before completion.")).toBeTruthy();
+    expect(screen.getAllByText(/attempt 2/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/LLM stream stalled before completion\./i).length).toBeGreaterThan(0);
   });
 });

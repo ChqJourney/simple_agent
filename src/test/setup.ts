@@ -2,8 +2,13 @@ import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 function ensureStorage(name: "localStorage" | "sessionStorage") {
-  const existing = globalThis[name];
-  if (existing && typeof existing.getItem === "function" && typeof existing.setItem === "function") {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+  const existingValue = descriptor && "value" in descriptor ? descriptor.value : undefined;
+  if (
+    existingValue
+    && typeof existingValue.getItem === "function"
+    && typeof existingValue.setItem === "function"
+  ) {
     return;
   }
 
@@ -41,9 +46,9 @@ ensureStorage("sessionStorage");
 afterEach(async () => {
   cleanup();
   globalThis.localStorage?.clear?.();
-  const { useUIStore } = await import("../stores/uiStore");
-  useUIStore.setState((state) => ({
-    ...state,
-    locale: "en-US",
-  }));
+  globalThis.sessionStorage?.clear?.();
+  if (typeof document !== "undefined") {
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }
 });

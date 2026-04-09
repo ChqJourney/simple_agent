@@ -2,6 +2,12 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TopBar } from "./TopBar";
 import { useChatStore, useRunStore, useSessionStore, useUIStore, useWorkspaceStore } from "../../stores";
+import {
+  createChatSessionFixture,
+  createWorkspaceFixture,
+  resetFrontendTestState,
+} from "../../test/frontendTestState";
+import { resetMocks } from "../../test/mockUtils";
 
 const navigateMock = vi.hoisted(() => vi.fn());
 const tokenUsageWidgetMock = vi.hoisted(() => vi.fn<(props: unknown) => unknown>(() => <div>Tokens</div>));
@@ -23,17 +29,16 @@ vi.mock("../common", () => ({
 
 describe("TopBar", () => {
   beforeEach(() => {
-    navigateMock.mockReset();
-    tokenUsageWidgetMock.mockClear();
+    resetFrontendTestState();
+    resetMocks(navigateMock, tokenUsageWidgetMock);
     useWorkspaceStore.setState((state) => ({
       ...state,
-      currentWorkspace: {
-        id: "workspace-1",
+      currentWorkspace: createWorkspaceFixture({
         name: "Repo",
         path: "/workspace",
         lastOpened: "2026-03-28T12:00:00.000Z",
         createdAt: "2026-03-28T11:00:00.000Z",
-      },
+      }),
     }));
     useSessionStore.setState((state) => ({
       ...state,
@@ -88,8 +93,7 @@ describe("TopBar", () => {
   it("prefers a newer compaction estimate over the last request usage", () => {
     useChatStore.setState({
       sessions: {
-        "session-a": {
-          messages: [],
+        "session-a": createChatSessionFixture({
           latestUsage: {
             prompt_tokens: 32000,
             completion_tokens: 512,
@@ -104,14 +108,7 @@ describe("TopBar", () => {
             context_length: 128000,
           },
           latestContextEstimateUpdatedAt: "2026-03-28T13:42:30.000Z",
-          currentStreamingContent: "",
-          currentReasoningContent: "",
-          isStreaming: false,
-          assistantStatus: "idle",
-          currentToolName: undefined,
-          pendingToolConfirm: undefined,
-          pendingQuestion: undefined,
-        },
+        }),
       },
     });
 

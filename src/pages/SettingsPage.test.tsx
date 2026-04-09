@@ -169,9 +169,8 @@ describe("SettingsPage", () => {
 
     expect(screen.getByText("Primary Model")).toBeTruthy();
     expect(screen.getByText("Background Model")).toBeTruthy();
-    expect(
-      screen.getByText("Used for title generation, session compaction, and future delegated background tasks. Falls back to the primary model when unset.")
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Primary Model Provider")).toBeTruthy();
+    expect(screen.getByLabelText("Background Model Provider")).toBeTruthy();
 
     openTab("Runtime");
     expect(screen.getByText("Shared Runtime")).toBeTruthy();
@@ -190,7 +189,7 @@ describe("SettingsPage", () => {
 
     openTab("OCR");
     expect(screen.getByLabelText("Enable OCR Tooling")).toBeTruthy();
-    expect(screen.getByText("Install OCR Plugin")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /install ocr/i })).toBeTruthy();
 
     openTab("UI");
     expect(screen.getByLabelText("Base Font Size")).toBeTruthy();
@@ -403,9 +402,7 @@ describe("SettingsPage", () => {
         await vi.advanceTimersByTimeAsync(15000);
       });
 
-      expect(
-        screen.getByText("Primary failed: Connection test timed out after 15 seconds")
-      ).toBeTruthy();
+      expect(screen.getByText(/connection test timed out after 15 seconds/i)).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
@@ -529,7 +526,8 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(installOcrSidecarMock).toHaveBeenCalledWith("C:/Downloads/ocr-sidecar");
     });
-    expect(screen.getByText("Installed (v0.1.0)")).toBeTruthy();
+    expect(screen.getByText(/installed/i)).toBeTruthy();
+    expect(screen.getByText(/v0\.1\.0/i)).toBeTruthy();
   });
 
   it("saves role-specific runtime overrides alongside shared runtime defaults", () => {

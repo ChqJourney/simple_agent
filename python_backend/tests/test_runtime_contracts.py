@@ -79,68 +79,59 @@ class RuntimeContractTests(unittest.TestCase):
 
         self.assertEqual({"enabled": True}, normalized["ocr"])
 
-    def test_normalize_runtime_config_supports_deepseek(self) -> None:
-        normalized = normalize_runtime_config(
+    def test_normalize_runtime_config_supports_hosted_provider_defaults(self) -> None:
+        cases = [
             {
                 "provider": "deepseek",
                 "model": "deepseek-chat",
-                "api_key": "test-key",
-                "base_url": "   ",
                 "enable_reasoning": False,
-            }
-        )
-
-        self.assertEqual("deepseek", normalized["provider"])
-        self.assertEqual("deepseek", normalized["profiles"]["primary"]["provider"])
-        self.assertEqual("https://api.deepseek.com", normalized["profiles"]["primary"]["base_url"])
-
-    def test_normalize_runtime_config_supports_kimi(self) -> None:
-        normalized = normalize_runtime_config(
+                "expected_base_url": "https://api.deepseek.com",
+            },
             {
                 "provider": "kimi",
                 "model": "kimi-k2.5",
-                "api_key": "test-key",
-                "base_url": "   ",
                 "enable_reasoning": True,
-            }
-        )
-
-        self.assertEqual("kimi", normalized["provider"])
-        self.assertEqual("kimi", normalized["profiles"]["primary"]["provider"])
-        self.assertEqual("https://api.moonshot.cn/v1", normalized["profiles"]["primary"]["base_url"])
-        self.assertTrue(normalized["profiles"]["primary"]["enable_reasoning"])
-
-    def test_normalize_runtime_config_supports_glm(self) -> None:
-        normalized = normalize_runtime_config(
+                "expected_base_url": "https://api.moonshot.cn/v1",
+                "expected_enable_reasoning": True,
+            },
             {
                 "provider": "glm",
                 "model": "glm-4.6v",
-                "api_key": "test-key",
-                "base_url": "   ",
                 "enable_reasoning": True,
-            }
-        )
-
-        self.assertEqual("glm", normalized["provider"])
-        self.assertEqual("glm", normalized["profiles"]["primary"]["provider"])
-        self.assertEqual("https://open.bigmodel.cn/api/paas/v4", normalized["profiles"]["primary"]["base_url"])
-        self.assertEqual("text", normalized["profiles"]["primary"]["input_type"])
-
-    def test_normalize_runtime_config_supports_minimax(self) -> None:
-        normalized = normalize_runtime_config(
+                "expected_base_url": "https://open.bigmodel.cn/api/paas/v4",
+                "expected_input_type": "text",
+            },
             {
                 "provider": "minimax",
                 "model": "MiniMax-M2.7",
-                "api_key": "test-key",
-                "base_url": "   ",
                 "enable_reasoning": True,
-            }
-        )
+                "expected_base_url": "https://api.minimaxi.com/v1",
+                "expected_enable_reasoning": False,
+            },
+        ]
 
-        self.assertEqual("minimax", normalized["provider"])
-        self.assertEqual("minimax", normalized["profiles"]["primary"]["provider"])
-        self.assertEqual("https://api.minimaxi.com/v1", normalized["profiles"]["primary"]["base_url"])
-        self.assertFalse(normalized["profiles"]["primary"]["enable_reasoning"])
+        for case in cases:
+            with self.subTest(provider=case["provider"], model=case["model"]):
+                normalized = normalize_runtime_config(
+                    {
+                        "provider": case["provider"],
+                        "model": case["model"],
+                        "api_key": "test-key",
+                        "base_url": "   ",
+                        "enable_reasoning": case["enable_reasoning"],
+                    }
+                )
+
+                self.assertEqual(case["provider"], normalized["provider"])
+                self.assertEqual(case["provider"], normalized["profiles"]["primary"]["provider"])
+                self.assertEqual(case["expected_base_url"], normalized["profiles"]["primary"]["base_url"])
+                if "expected_enable_reasoning" in case:
+                    self.assertEqual(
+                        case["expected_enable_reasoning"],
+                        normalized["profiles"]["primary"]["enable_reasoning"],
+                    )
+                if "expected_input_type" in case:
+                    self.assertEqual(case["expected_input_type"], normalized["profiles"]["primary"]["input_type"])
 
     def test_normalize_runtime_config_preserves_custom_appearance_font_size(self) -> None:
         normalized = normalize_runtime_config(

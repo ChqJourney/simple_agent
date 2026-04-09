@@ -15,113 +15,105 @@ from llms.qwen import QwenLLM
 
 
 class LLMRuntimeLimitTests(unittest.TestCase):
-    def test_openai_request_includes_max_output_tokens(self) -> None:
-        llm = OpenAILLM(
-            {
-                "provider": "openai",
-                "model": "gpt-4o-mini",
-                "api_key": "test-key",
-                "base_url": "https://api.openai.com/v1",
-                "max_output_tokens": 128,
-            }
-        )
+    def test_requests_include_max_output_tokens(self) -> None:
+        cases = [
+            (
+                OpenAILLM,
+                {
+                    "provider": "openai",
+                    "model": "gpt-4o-mini",
+                    "api_key": "test-key",
+                    "base_url": "https://api.openai.com/v1",
+                    "max_output_tokens": 128,
+                },
+                128,
+            ),
+            (
+                QwenLLM,
+                {
+                    "provider": "qwen",
+                    "model": "qwen-plus",
+                    "api_key": "test-key",
+                    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "max_output_tokens": 96,
+                },
+                96,
+            ),
+            (
+                DeepSeekLLM,
+                {
+                    "provider": "deepseek",
+                    "model": "deepseek-chat",
+                    "api_key": "test-key",
+                    "base_url": "https://api.deepseek.com",
+                    "max_output_tokens": 256,
+                },
+                256,
+            ),
+            (
+                KimiLLM,
+                {
+                    "provider": "kimi",
+                    "model": "kimi-k2.5",
+                    "api_key": "test-key",
+                    "base_url": "https://api.moonshot.cn/v1",
+                    "max_output_tokens": 144,
+                    "enable_reasoning": True,
+                },
+                144,
+            ),
+            (
+                GLMLLM,
+                {
+                    "provider": "glm",
+                    "model": "glm-4.6",
+                    "api_key": "test-key",
+                    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                    "max_output_tokens": 88,
+                },
+                88,
+            ),
+            (
+                MiniMaxLLM,
+                {
+                    "provider": "minimax",
+                    "model": "MiniMax-M2.5",
+                    "api_key": "test-key",
+                    "base_url": "https://api.minimaxi.com/v1",
+                    "max_output_tokens": 72,
+                },
+                72,
+            ),
+        ]
 
-        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
+        for llm_class, config, expected_max_tokens in cases:
+            with self.subTest(provider=config["provider"], model=config["model"]):
+                llm = llm_class(config)
+                kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
+                self.assertEqual(expected_max_tokens, kwargs["max_tokens"])
 
-        self.assertEqual(128, kwargs["max_tokens"])
+    def test_kimi_request_uses_role_specific_temperature(self) -> None:
+        cases = [
+            (True, 1.0),
+            (False, 0.6),
+        ]
 
-    def test_qwen_request_includes_max_output_tokens(self) -> None:
-        llm = QwenLLM(
-            {
-                "provider": "qwen",
-                "model": "qwen-plus",
-                "api_key": "test-key",
-                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                "max_output_tokens": 96,
-            }
-        )
+        for enable_reasoning, expected_temperature in cases:
+            with self.subTest(enable_reasoning=enable_reasoning):
+                llm = KimiLLM(
+                    {
+                        "provider": "kimi",
+                        "model": "kimi-k2.5",
+                        "api_key": "test-key",
+                        "base_url": "https://api.moonshot.cn/v1",
+                        "max_output_tokens": 144,
+                        "enable_reasoning": enable_reasoning,
+                    }
+                )
 
-        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
+                kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
 
-        self.assertEqual(96, kwargs["max_tokens"])
-
-    def test_deepseek_request_includes_max_output_tokens(self) -> None:
-        llm = DeepSeekLLM(
-            {
-                "provider": "deepseek",
-                "model": "deepseek-chat",
-                "api_key": "test-key",
-                "base_url": "https://api.deepseek.com",
-                "max_output_tokens": 256,
-            }
-        )
-
-        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
-
-        self.assertEqual(256, kwargs["max_tokens"])
-
-    def test_kimi_request_includes_max_output_tokens_and_k2_5_temperature(self) -> None:
-        llm = KimiLLM(
-            {
-                "provider": "kimi",
-                "model": "kimi-k2.5",
-                "api_key": "test-key",
-                "base_url": "https://api.moonshot.cn/v1",
-                "max_output_tokens": 144,
-                "enable_reasoning": True,
-            }
-        )
-
-        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
-
-        self.assertEqual(144, kwargs["max_tokens"])
-        self.assertEqual(1.0, kwargs["temperature"])
-
-    def test_kimi_non_reasoning_request_uses_fixed_non_thinking_temperature(self) -> None:
-        llm = KimiLLM(
-            {
-                "provider": "kimi",
-                "model": "kimi-k2.5",
-                "api_key": "test-key",
-                "base_url": "https://api.moonshot.cn/v1",
-                "max_output_tokens": 144,
-                "enable_reasoning": False,
-            }
-        )
-
-        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
-
-        self.assertEqual(0.6, kwargs["temperature"])
-
-    def test_glm_request_includes_max_output_tokens(self) -> None:
-        llm = GLMLLM(
-            {
-                "provider": "glm",
-                "model": "glm-4.6",
-                "api_key": "test-key",
-                "base_url": "https://open.bigmodel.cn/api/paas/v4",
-                "max_output_tokens": 88,
-            }
-        )
-
-        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
-
-        self.assertEqual(88, kwargs["max_tokens"])
-
-    def test_minimax_request_includes_max_output_tokens(self) -> None:
-        llm = MiniMaxLLM(
-            {
-                "provider": "minimax",
-                "model": "MiniMax-M2.5",
-                "api_key": "test-key",
-                "base_url": "https://api.minimaxi.com/v1",
-                "max_output_tokens": 72,
-            }
-        )
-
-        kwargs = llm._build_request_kwargs([{"role": "user", "content": "hello"}], None, False)
-
-        self.assertEqual(72, kwargs["max_tokens"])
+                self.assertEqual(expected_temperature, kwargs["temperature"])
 
 
 if __name__ == "__main__":

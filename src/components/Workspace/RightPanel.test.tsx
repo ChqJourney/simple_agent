@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RightPanel } from "./RightPanel";
 import { useSessionStore, useTaskStore, useUIStore } from "../../stores";
+import { resetFrontendTestState } from "../../test/frontendTestState";
 
 vi.mock("./FileTree", () => ({
   FileTree: () => <div>FileTree Content</div>,
@@ -13,7 +14,7 @@ vi.mock("./TaskList", () => ({
 
 describe("RightPanel", () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetFrontendTestState();
     useUIStore.setState((state) => ({
       ...state,
       rightPanelTab: "filetree",

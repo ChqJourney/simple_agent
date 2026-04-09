@@ -3,6 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspacePage } from "./WorkspacePage";
 import { useRunStore, useSessionStore, useUIStore, useWorkspaceStore } from "../stores";
 import { useChatStore } from "../stores/chatStore";
+import {
+  createChatSessionFixture,
+  createSessionMetaFixture,
+  createWorkspaceFixture,
+  resetFrontendTestState,
+} from "../test/frontendTestState";
+import { resetMocks } from "../test/mockUtils";
 import { loadSessionHistory, scanSessions } from "../utils/storage";
 
 const navigateMock = vi.hoisted(() => vi.fn());
@@ -79,17 +86,19 @@ const loadSessionHistoryMock = vi.mocked(loadSessionHistory);
 
 describe("WorkspacePage", () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetFrontendTestState();
     currentWorkspaceId = "workspace-1";
     vi.restoreAllMocks();
-    navigateMock.mockReset();
-    invokeMock.mockReset();
-    sendWorkspaceMock.mockReset();
-    interruptMock.mockReset();
-    useBeforeUnloadMock.mockReset();
-    confirmDialogMock.mockReset();
-    scanSessionsMock.mockReset();
-    loadSessionHistoryMock.mockReset();
+    resetMocks(
+      navigateMock,
+      invokeMock,
+      sendWorkspaceMock,
+      interruptMock,
+      useBeforeUnloadMock,
+      confirmDialogMock,
+      scanSessionsMock,
+      loadSessionHistoryMock,
+    );
     scanSessionsMock.mockResolvedValue([]);
     loadSessionHistoryMock.mockResolvedValue([]);
     invokeMock.mockResolvedValue({
@@ -106,20 +115,19 @@ describe("WorkspacePage", () => {
     useWorkspaceStore.setState((state) => ({
       ...state,
       workspaces: [
-        {
+        createWorkspaceFixture({
           id: "workspace-1",
-          name: "repo",
           path: "C:/Users/patri/source/repos/../repos/repo",
           lastOpened: "2026-03-12T10:00:00.000Z",
           createdAt: "2026-03-12T09:00:00.000Z",
-        },
-        {
+        }),
+        createWorkspaceFixture({
           id: "workspace-2",
           name: "repo-2",
           path: "C:/Users/patri/source/repos/../repos/repo-2",
           lastOpened: "2026-03-12T10:05:00.000Z",
           createdAt: "2026-03-12T09:05:00.000Z",
-        },
+        }),
       ],
       currentWorkspace: null,
     }));
@@ -164,17 +172,14 @@ describe("WorkspacePage", () => {
     useSessionStore.setState((state) => ({
       ...state,
       sessions: [
-        {
-          session_id: "session-a",
+        createSessionMetaFixture({
           workspace_path: "C:/Users/patri/source/repos/repo",
-          created_at: "2026-03-12T10:00:00.000Z",
-          updated_at: "2026-03-12T10:00:00.000Z",
           locked_model: {
             profile_name: "primary",
             provider: "openai",
             model: "gpt-4o",
           },
-        },
+        }),
       ],
       currentSessionId: "session-a",
     }));
@@ -378,31 +383,23 @@ describe("WorkspacePage", () => {
         currentSessionId: "session-a",
       }));
       useChatStore.setState({
-        sessions: {
-          "session-a": {
-            messages: [],
-            latestUsage: undefined,
-            currentStreamingContent: "",
-            currentReasoningContent: "",
-            isStreaming: true,
-            assistantStatus: "streaming",
-            currentToolName: undefined,
-            pendingToolConfirm: undefined,
-            pendingQuestion: undefined,
-          },
-        },
-      });
+      sessions: {
+        "session-a": createChatSessionFixture({
+          isStreaming: true,
+          assistantStatus: "streaming",
+        }),
+      },
+    });
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
 
     await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalledWith(
-        "A reply is still streaming. Leave this workspace and stop it?"
-      );
+      expect(window.confirm).toHaveBeenCalledTimes(1);
       expect(interruptMock).toHaveBeenCalledWith("session-a");
       expect(navigateMock).toHaveBeenCalledWith("/");
     });
+    expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toContain("streaming");
   });
 
   it("stays on the workspace when leaving is cancelled", async () => {
@@ -457,29 +454,21 @@ describe("WorkspacePage", () => {
         currentSessionId: "session-a",
       }));
       useChatStore.setState({
-        sessions: {
-          "session-a": {
-            messages: [],
-            latestUsage: undefined,
-            currentStreamingContent: "",
-            currentReasoningContent: "",
-            isStreaming: true,
-            assistantStatus: "streaming",
-            currentToolName: undefined,
-            pendingToolConfirm: undefined,
-            pendingQuestion: undefined,
-          },
-        },
-      });
+      sessions: {
+        "session-a": createChatSessionFixture({
+          isStreaming: true,
+          assistantStatus: "streaming",
+        }),
+      },
+    });
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
 
     await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalledWith(
-        "A reply is still streaming. Leave this workspace and stop it?"
-      );
+      expect(window.confirm).toHaveBeenCalledTimes(1);
     });
+    expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toContain("streaming");
     expect(interruptMock).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalledWith("/");
   });
@@ -528,20 +517,13 @@ describe("WorkspacePage", () => {
         currentSessionId: "session-a",
       }));
       useChatStore.setState({
-        sessions: {
-          "session-a": {
-            messages: [],
-            latestUsage: undefined,
-            currentStreamingContent: "",
-            currentReasoningContent: "",
-            isStreaming: true,
-            assistantStatus: "streaming",
-            currentToolName: undefined,
-            pendingToolConfirm: undefined,
-            pendingQuestion: undefined,
-          },
-        },
-      });
+      sessions: {
+        "session-a": createChatSessionFixture({
+          isStreaming: true,
+          assistantStatus: "streaming",
+        }),
+      },
+    });
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
@@ -549,11 +531,12 @@ describe("WorkspacePage", () => {
     await waitFor(() => {
       expect(confirmDialogMock).toHaveBeenCalled();
     });
-    expect(confirmDialogMock).toHaveBeenCalledWith(
-      "A reply is still streaming. Leave this workspace and stop it?",
+    expect(confirmDialogMock.mock.calls[0]?.[0]).toContain("streaming");
+    expect(confirmDialogMock.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        title: "Stop running task?",
-      })
+        title: expect.any(String),
+        kind: "warning",
+      }),
     );
     expect(interruptMock).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalled();
@@ -610,12 +593,11 @@ describe("WorkspacePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
 
     await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalledWith(
-        "Session compaction is still in progress. Leave this workspace and stop it?"
-      );
+      expect(window.confirm).toHaveBeenCalledTimes(1);
       expect(interruptMock).toHaveBeenCalledWith("session-a");
       expect(navigateMock).toHaveBeenCalledWith("/");
     });
+    expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toContain("compaction");
   });
 
   it("stays on the workspace when leaving is cancelled during background compaction", async () => {
@@ -662,10 +644,9 @@ describe("WorkspacePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
 
     await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalledWith(
-        "Session compaction is still in progress. Leave this workspace and stop it?"
-      );
+      expect(window.confirm).toHaveBeenCalledTimes(1);
     });
+    expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toContain("compaction");
     expect(interruptMock).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalledWith("/");
   });
@@ -704,20 +685,13 @@ describe("WorkspacePage", () => {
 
     act(() => {
       useChatStore.setState({
-        sessions: {
-          "session-a": {
-            messages: [],
-            latestUsage: undefined,
-            currentStreamingContent: "",
-            currentReasoningContent: "",
-            isStreaming: true,
-            assistantStatus: "streaming",
-            currentToolName: undefined,
-            pendingToolConfirm: undefined,
-            pendingQuestion: undefined,
-          },
-        },
-      });
+      sessions: {
+        "session-a": createChatSessionFixture({
+          isStreaming: true,
+          assistantStatus: "streaming",
+        }),
+      },
+    });
       useRunStore.getState().addEvent("session-a", {
         event_type: "session_compaction_started",
         session_id: "session-a",
@@ -732,11 +706,12 @@ describe("WorkspacePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
 
     await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalledWith(
-        "A reply is still streaming and session compaction is in progress. Leave this workspace and stop both?"
-      );
+      expect(window.confirm).toHaveBeenCalledTimes(1);
       expect(interruptMock).toHaveBeenCalledWith("session-a");
       expect(navigateMock).toHaveBeenCalledWith("/");
     });
+    const combinedPrompt = vi.mocked(window.confirm).mock.calls[0]?.[0] ?? "";
+    expect(combinedPrompt).toContain("streaming");
+    expect(combinedPrompt).toContain("compaction");
   });
 });

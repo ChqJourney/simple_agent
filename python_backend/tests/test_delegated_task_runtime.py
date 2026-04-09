@@ -57,6 +57,45 @@ class InvalidDelegatedLLM:
         return None
 
 
+class PlainTextDelegatedLLM:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.closed = False
+
+    async def complete(self, messages, tools=None):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": self.content,
+                    }
+                }
+            ]
+        }
+
+    async def aclose(self):
+        self.closed = True
+
+
+class JsonDelegatedLLM:
+    def __init__(self, payload) -> None:
+        self.payload = payload
+
+    async def complete(self, messages, tools=None):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(self.payload, ensure_ascii=False),
+                    }
+                }
+            ]
+        }
+
+    async def aclose(self):
+        return None
+
+
 class SlowCancelableDelegatedLLM:
     def __init__(self) -> None:
         self.started = False
@@ -219,3 +258,98 @@ class DelegatedTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(fake_llm.closed)
         with self.assertRaises(asyncio.CancelledError):
             await task
+
+    async def test_runner_falls_back_to_plain_text_summary_when_text_output_is_expected(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "api_key": "test-key",
+            }
+        )
+        fake_llm = PlainTextDelegatedLLM("Summarize the unresolved risks in one sentence.")
+        runner = DelegatedTaskRunner(
+            config_getter=lambda: normalized,
+            llm_factory=lambda execution_spec: fake_llm,
+        )
+
+        result = await runner.execute(
+            task="Summarize unresolved risks",
+            expected_output="text",
+            context={
+                "messages": [
+                    {"role": "user", "content": "  keep this  "},
+                    {"role": "", "content": "drop missing role"},
+                    {"role": "assistant", "content": "   "},
+                ],
+                "notes": "  Keep it brief.  ",
+            },
+        )
+
+        self.assertEqual("Summarize the unresolved risks in one sentence.", result["summary"])
+        self.assertIsNone(result["data"])
+        self.assertEqual(
+            {
+                "messages": [{"role": "user", "content": "keep this"}],
+                "notes": "Keep it brief.",
+            },
+            result["context"],
+        )
+        self.assertTrue(fake_llm.closed)
+
+    async def test_runner_rejects_empty_delegated_responses(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "api_key": "test-key",
+            }
+        )
+        runner = DelegatedTaskRunner(
+            config_getter=lambda: normalized,
+            llm_factory=lambda execution_spec: PlainTextDelegatedLLM("   "),
+        )
+
+        with self.assertRaisesRegex(ValueError, "empty response"):
+            await runner.execute(
+                task="Summarize unresolved risks",
+                expected_output="text",
+            )
+
+    async def test_runner_rejects_json_without_summary(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "api_key": "test-key",
+            }
+        )
+        runner = DelegatedTaskRunner(
+            config_getter=lambda: normalized,
+            llm_factory=lambda execution_spec: JsonDelegatedLLM({"data": {"risks": []}}),
+        )
+
+        with self.assertRaisesRegex(ValueError, "non-empty `summary`"):
+            await runner.execute(
+                task="Summarize unresolved risks",
+                expected_output="json",
+            )
+
+    async def test_runner_rejects_json_without_data_field(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "api_key": "test-key",
+            }
+        )
+        runner = DelegatedTaskRunner(
+            config_getter=lambda: normalized,
+            llm_factory=lambda execution_spec: JsonDelegatedLLM({"summary": "Done"}),
+        )
+
+        with self.assertRaisesRegex(ValueError, "include a `data` field"):
+            await runner.execute(
+                task="Summarize unresolved risks",
+                expected_output="json",
+            )

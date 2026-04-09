@@ -3,23 +3,38 @@ import { getImageSupportStatus, getSupportedInputTypes, supportsImageInput } fro
 
 describe("model image capabilities", () => {
   it("marks known vision models as image-capable", () => {
-    expect(getImageSupportStatus("openai", "gpt-4o")).toBe("supported");
-    expect(supportsImageInput("openai", "gpt-4o-mini")).toBe(true);
-    expect(getSupportedInputTypes("openai", "gpt-4o")).toEqual(["text", "image"]);
-    expect(getImageSupportStatus("kimi", "kimi-k2.5")).toBe("supported");
-    expect(getSupportedInputTypes("glm", "glm-4.6v")).toEqual(["text", "image"]);
+    [
+      { provider: "openai", model: "gpt-4o", supportedInputTypes: ["text", "image"] },
+      { provider: "openai", model: "gpt-4o-mini", supportedInputTypes: ["text", "image"] },
+      { provider: "kimi", model: "kimi-k2.5", supportedInputTypes: ["text", "image"] },
+      { provider: "glm", model: "glm-4.6v", supportedInputTypes: ["text", "image"] },
+    ].forEach(({ provider, model, supportedInputTypes }) => {
+      expect(getImageSupportStatus(provider, model)).toBe("supported");
+      expect(supportsImageInput(provider, model)).toBe(true);
+      expect(getSupportedInputTypes(provider, model)).toEqual(supportedInputTypes);
+    });
   });
 
   it("marks known text-only models as unsupported for image input", () => {
-    expect(getImageSupportStatus("deepseek", "deepseek-chat")).toBe("unsupported");
-    expect(getImageSupportStatus("openai", "o1-preview")).toBe("unsupported");
-    expect(getSupportedInputTypes("deepseek", "deepseek-chat")).toEqual(["text"]);
-    expect(getImageSupportStatus("minimax", "MiniMax-M2.7")).toBe("unsupported");
+    [
+      { provider: "deepseek", model: "deepseek-chat" },
+      { provider: "openai", model: "o1-preview" },
+      { provider: "minimax", model: "MiniMax-M2.7" },
+    ].forEach(({ provider, model }) => {
+      expect(getImageSupportStatus(provider, model)).toBe("unsupported");
+      expect(getSupportedInputTypes(provider, model)).toEqual(["text"]);
+      expect(supportsImageInput(provider, model)).toBe(false);
+    });
   });
 
   it("treats unknown models conservatively as text-only", () => {
-    expect(getImageSupportStatus("openai", "gpt-4-turbo")).toBe("unsupported");
-    expect(getImageSupportStatus("qwen", "qwen-plus")).toBe("unsupported");
-    expect(supportsImageInput("qwen", "qwen-plus")).toBe(false);
+    [
+      { provider: "openai", model: "gpt-4-turbo" },
+      { provider: "qwen", model: "qwen-plus" },
+    ].forEach(({ provider, model }) => {
+      expect(getImageSupportStatus(provider, model)).toBe("unsupported");
+      expect(getSupportedInputTypes(provider, model)).toEqual(["text"]);
+      expect(supportsImageInput(provider, model)).toBe(false);
+    });
   });
 });

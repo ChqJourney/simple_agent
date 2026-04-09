@@ -161,34 +161,36 @@ describe("normalizeProviderConfig", () => {
     });
   });
 
-  it("normalizes deepseek config with the provider default base url", () => {
-    const normalized = normalizeProviderConfig({
+  [
+    {
       provider: "deepseek",
       model: "deepseek-chat",
       api_key: "deepseek-key",
-      base_url: " ",
       enable_reasoning: false,
-    });
-
-    expect(normalized.provider).toBe("deepseek");
-    expect(normalized.base_url).toBe("https://api.deepseek.com");
-    expect(normalized.profiles?.primary.provider).toBe("deepseek");
-    expect(normalized.profiles?.primary.base_url).toBe("https://api.deepseek.com");
-  });
-
-  it("normalizes kimi config with the provider default base url", () => {
-    const normalized = normalizeProviderConfig({
+      expectedBaseUrl: "https://api.deepseek.com",
+    },
+    {
       provider: "kimi",
       model: "kimi-k2.5",
       api_key: "kimi-key",
-      base_url: " ",
       enable_reasoning: true,
-    });
+      expectedBaseUrl: "https://api.moonshot.cn/v1",
+    },
+  ].forEach(({ provider, model, api_key, enable_reasoning, expectedBaseUrl }) => {
+    it(`normalizes ${provider} config with the provider default base url`, () => {
+      const normalized = normalizeProviderConfig({
+        provider,
+        model,
+        api_key,
+        base_url: " ",
+        enable_reasoning,
+      });
 
-    expect(normalized.provider).toBe("kimi");
-    expect(normalized.base_url).toBe("https://api.moonshot.cn/v1");
-    expect(normalized.profiles?.primary.provider).toBe("kimi");
-    expect(normalized.profiles?.primary.base_url).toBe("https://api.moonshot.cn/v1");
+      expect(normalized.provider).toBe(provider);
+      expect(normalized.base_url).toBe(expectedBaseUrl);
+      expect(normalized.profiles?.primary.provider).toBe(provider);
+      expect(normalized.profiles?.primary.base_url).toBe(expectedBaseUrl);
+    });
   });
 
   it("treats hosted providers without an API key as not runnable", () => {

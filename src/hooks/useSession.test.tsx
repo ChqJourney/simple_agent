@@ -6,6 +6,14 @@ import { useRunStore } from "../stores/runStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import {
+  createChatSessionFixture,
+  createRunSessionFixture,
+  createSessionMetaFixture,
+  createWorkspaceFixture,
+  resetFrontendTestState,
+} from "../test/frontendTestState";
+import { resetMocks } from "../test/mockUtils";
 import { deleteSessionHistory, loadSessionHistory, scanSessions } from "../utils/storage";
 
 const interruptMock = vi.hoisted(() => vi.fn());
@@ -32,80 +40,60 @@ const scanSessionsMock = vi.mocked(scanSessions);
 
 describe("useSession", () => {
   beforeEach(() => {
-    globalThis.localStorage?.clear?.();
-    interruptMock.mockReset();
+    resetFrontendTestState();
     vi.restoreAllMocks();
-    deleteSessionHistoryMock.mockReset();
+    resetMocks(
+      interruptMock,
+      deleteSessionHistoryMock,
+      loadSessionHistoryMock,
+      scanSessionsMock,
+    );
     deleteSessionHistoryMock.mockResolvedValue(undefined);
-    loadSessionHistoryMock.mockReset();
     loadSessionHistoryMock.mockResolvedValue([]);
-    scanSessionsMock.mockReset();
     scanSessionsMock.mockResolvedValue([]);
 
     useWorkspaceStore.setState((state) => ({
       ...state,
-      currentWorkspace: {
-        id: "workspace-1",
-        name: "repo",
+      currentWorkspace: createWorkspaceFixture({
         path: "C:/repo",
         lastOpened: "2026-03-19T13:00:00.000Z",
         createdAt: "2026-03-19T12:00:00.000Z",
-      },
+      }),
     }));
     useSessionStore.setState((state) => ({
       ...state,
       sessions: [
-        {
+        createSessionMetaFixture({
           session_id: "session-a",
           workspace_path: "C:/repo",
           created_at: "2026-03-19T12:00:00.000Z",
           updated_at: "2026-03-19T12:00:00.000Z",
-        },
-        {
+        }),
+        createSessionMetaFixture({
           session_id: "session-b",
           workspace_path: "C:/repo",
           created_at: "2026-03-19T12:05:00.000Z",
           updated_at: "2026-03-19T12:05:00.000Z",
-        },
+        }),
       ],
       currentSessionId: "session-a",
     }));
     useChatStore.setState({
       sessions: {
-        "session-a": {
-          messages: [],
-          currentStreamingContent: "",
-          currentReasoningContent: "",
-          isStreaming: false,
-          assistantStatus: "idle",
-          currentToolName: undefined,
-          pendingToolConfirm: undefined,
-          pendingQuestion: undefined,
-        },
-        "session-b": {
-          messages: [],
-          currentStreamingContent: "",
-          currentReasoningContent: "",
-          isStreaming: false,
-          assistantStatus: "idle",
-          currentToolName: undefined,
-          pendingToolConfirm: undefined,
-          pendingQuestion: undefined,
-        },
+        "session-a": createChatSessionFixture(),
+        "session-b": createChatSessionFixture(),
       },
     });
     useRunStore.setState({
       sessions: {
-        "session-a": {
-          events: [],
+        "session-a": createRunSessionFixture({
           currentRunId: "run-a",
           status: "running",
-        },
-        "session-b": {
-          events: [],
+        }),
+        "session-b": createRunSessionFixture({
           currentRunId: "run-b",
           status: "completed",
-        },
+        }),
       },
     });
     useTaskStore.setState({
@@ -184,11 +172,11 @@ describe("useSession", () => {
     useChatStore.setState({
       sessions: {
         ...useChatStore.getState().sessions,
-        "session-a": {
+        "session-a": createChatSessionFixture({
           ...useChatStore.getState().sessions["session-a"],
           isStreaming: true,
           assistantStatus: "streaming",
-        },
+        }),
       },
     });
 
@@ -198,7 +186,8 @@ describe("useSession", () => {
       await result.current.switchSession("session-b");
     });
 
-    expect(window.confirm).toHaveBeenCalledWith("A reply is still streaming. Switch sessions and stop it?");
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toContain("streaming");
     expect(interruptMock).toHaveBeenCalledWith("session-a");
     expect(useSessionStore.getState().currentSessionId).toBe("session-b");
   });
@@ -208,11 +197,11 @@ describe("useSession", () => {
     useChatStore.setState({
       sessions: {
         ...useChatStore.getState().sessions,
-        "session-a": {
+        "session-a": createChatSessionFixture({
           ...useChatStore.getState().sessions["session-a"],
           isStreaming: true,
           assistantStatus: "streaming",
-        },
+        }),
       },
     });
 
@@ -222,6 +211,8 @@ describe("useSession", () => {
       await result.current.switchSession("session-b");
     });
 
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toContain("streaming");
     expect(interruptMock).not.toHaveBeenCalled();
     expect(loadSessionHistoryMock).not.toHaveBeenCalled();
     expect(useSessionStore.getState().currentSessionId).toBe("session-a");

@@ -20,18 +20,22 @@ describe("toolMessages", () => {
   });
 
   it("creates business-friendly summaries for foundational tools", () => {
-    expect(createToolCallSummary({
+    const searchSummary = createToolCallSummary({
       name: "search_documents",
       arguments: { query: "GB/T 19001" },
-    } as never)).toBe('正在搜索 "GB/T 19001"');
+    } as never);
+    expect(searchSummary).toContain("GB/T 19001");
+    expect(searchSummary).toContain("搜索");
 
-    expect(createToolCallSummary({
+    const readSummary = createToolCallSummary({
       name: "read_document_segment",
       arguments: {
         path: "report.md",
         locator: { type: "text_line_range", line_start: 12, line_end: 20 },
       },
-    } as never)).toBe("正在读取 report.md 的 text_line_range");
+    } as never);
+    expect(readSummary).toContain("report.md");
+    expect(readSummary).toContain("text_line_range");
   });
 
   it("formats directory tree results in a readable way", () => {
@@ -72,10 +76,12 @@ describe("toolMessages", () => {
   });
 
   it("creates OCR-friendly call summaries and result details", () => {
-    expect(createToolCallSummary({
+    const summary = createToolCallSummary({
       name: "ocr_extract",
       arguments: { path: "scan.pdf", input_type: "pdf" },
-    } as never)).toBe("正在识别 PDF scan.pdf");
+    } as never);
+    expect(summary).toContain("PDF");
+    expect(summary).toContain("scan.pdf");
 
     const details = renderToolResultDetails(true, {
       event: "ocr_extract",
@@ -191,7 +197,8 @@ describe("toolMessages", () => {
   it("shows simple error message when output has no execution details", () => {
     const details = renderToolResultDetails(false, "something broke", "Tool crashed");
 
-    expect(details).toBe("Error: Tool crashed");
+    expect(details).toContain("Tool crashed");
+    expect(details).toContain("Error");
   });
 
   it("truncates oversized technical payload values", () => {

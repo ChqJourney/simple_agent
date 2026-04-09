@@ -4,7 +4,7 @@ export type MessageStatus = 'streaming' | 'completed' | 'error';
 
 export type UserMessageStatus = 'sending' | 'sent';
 
-export type AssistantStatus = 'idle' | 'waiting' | 'thinking' | 'streaming' | 'tool_calling' | 'completed';
+export type AssistantStatus = 'idle' | 'waiting' | 'thinking' | 'streaming' | 'preparing_tool' | 'tool_calling' | 'completed';
 export type ExecutionMode = 'regular' | 'free';
 
 export type ToolDecision = 'approve_once' | 'approve_always' | 'reject';
@@ -302,6 +302,14 @@ export interface ServerToolCall {
   arguments: Record<string, unknown>;
 }
 
+export interface ServerToolCallProgress {
+  type: 'tool_call_progress';
+  session_id: string;
+  tool_call_id?: string | null;
+  name: string;
+  arguments_character_count: number;
+}
+
 export interface ServerToolConfirmRequest {
   type: 'tool_confirm_request';
   session_id: string;
@@ -418,6 +426,7 @@ export type ServerWebSocketMessage =
   | ServerToken
   | ServerReasoningToken
   | ServerReasoningComplete
+  | ServerToolCallProgress
   | ServerToolCall
   | ServerToolConfirmRequest
   | ServerToolDecision

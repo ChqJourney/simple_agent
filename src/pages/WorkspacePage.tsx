@@ -42,6 +42,7 @@ function hasTransientChatState(session: {
     || session.assistantStatus === 'waiting'
     || session.assistantStatus === 'thinking'
     || session.assistantStatus === 'streaming'
+    || session.assistantStatus === 'preparing_tool'
     || session.assistantStatus === 'tool_calling'
     || Boolean(session.pendingToolConfirm)
     || Boolean(session.pendingQuestion)

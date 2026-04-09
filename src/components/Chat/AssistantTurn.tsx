@@ -26,6 +26,7 @@ interface AssistantTurnProps {
   currentReasoningContent?: string;
   assistantStatus?: AssistantStatus;
   currentToolName?: string;
+  currentToolArgumentCharacters?: number;
   elapsedLabel?: string;
   onRetry?: () => void;
 }
@@ -183,6 +184,7 @@ export const AssistantTurn = ({
   currentReasoningContent = '',
   assistantStatus,
   currentToolName,
+  currentToolArgumentCharacters,
   elapsedLabel,
   onRetry,
 }: AssistantTurnProps) => {
@@ -337,6 +339,7 @@ export const AssistantTurn = ({
             message={formalAssistantMessage}
             assistantStatus={assistantStatus}
             currentToolName={currentToolName}
+            currentToolArgumentCharacters={currentToolArgumentCharacters}
             hideHeader={hasFormalContent}
           />
         </div>
@@ -353,6 +356,7 @@ export const AssistantTurn = ({
             streamingContent={streamingContent}
             assistantStatus={assistantStatus}
             currentToolName={currentToolName}
+            currentToolArgumentCharacters={currentToolArgumentCharacters}
             hideHeader={hasFormalContent}
           />
         </div>
@@ -395,7 +399,11 @@ export const AssistantTurn = ({
               {elapsedLabel}
             </div>
           )}
-          <AssistantStatusIndicator status={assistantStatus} toolName={currentToolName} />
+          <AssistantStatusIndicator
+            status={assistantStatus}
+            toolName={currentToolName}
+            toolArgumentCharacters={currentToolArgumentCharacters}
+          />
         </div>
       )}
     </div>

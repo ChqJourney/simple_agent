@@ -361,6 +361,32 @@ describe("WebSocketProvider", () => {
     });
   });
 
+  it("tracks tool-call preparation progress before the final tool call arrives", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "started",
+      session_id: "session-a",
+    });
+    websocketMockState.messageHandler?.({
+      type: "tool_call_progress",
+      session_id: "session-a",
+      tool_call_id: "tool-1",
+      name: "file_write",
+      arguments_character_count: 8192,
+    });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().sessions["session-a"]?.assistantStatus).toBe("preparing_tool");
+    });
+    expect(useChatStore.getState().sessions["session-a"]?.currentToolName).toBe("file_write");
+    expect(useChatStore.getState().sessions["session-a"]?.currentToolArgumentCharacters).toBe(8192);
+  });
+
   it("preserves partial content before surfacing backend errors marked with preserve_partial", async () => {
     render(
       <WebSocketProvider>

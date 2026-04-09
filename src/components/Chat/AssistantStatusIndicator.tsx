@@ -4,9 +4,14 @@ import { useI18n } from '../../i18n';
 interface AssistantStatusIndicatorProps {
   status: AssistantStatus;
   toolName?: string;
+  toolArgumentCharacters?: number;
 }
 
-export const AssistantStatusIndicator = ({ status, toolName }: AssistantStatusIndicatorProps) => {
+export const AssistantStatusIndicator = ({
+  status,
+  toolName,
+  toolArgumentCharacters,
+}: AssistantStatusIndicatorProps) => {
   const { t } = useI18n();
 
   if (status === 'idle') {
@@ -28,15 +33,21 @@ export const AssistantStatusIndicator = ({ status, toolName }: AssistantStatusIn
     waiting: t('chat.assistant.waiting'),
     thinking: t('chat.assistant.thinking'),
     streaming: t('chat.assistant.streaming'),
+    preparing_tool: t('chat.assistant.preparingTool'),
     tool_calling: t('chat.assistant.toolCalling'),
   };
 
+  const isPreparingTool = status === 'preparing_tool';
   const isToolCalling = status === 'tool_calling';
+  const showToolLabel = (isPreparingTool || isToolCalling) && toolName;
+  const formattedCharacterCount = typeof toolArgumentCharacters === 'number'
+    ? toolArgumentCharacters.toLocaleString()
+    : undefined;
 
   return (
     <div
       className={`flex items-center gap-1.5 mt-2 text-xs text-gray-500 dark:text-gray-400 ${
-        isToolCalling ? '' : 'animate-pulse-subtle'
+        (isToolCalling || isPreparingTool) ? '' : 'animate-pulse-subtle'
       }`}
     >
       {isToolCalling ? (
@@ -48,8 +59,11 @@ export const AssistantStatusIndicator = ({ status, toolName }: AssistantStatusIn
         <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
       )}
       <span>{statusConfig[status]}</span>
-      {isToolCalling && toolName && (
+      {showToolLabel && (
         <span className="text-blue-500 dark:text-blue-400">[{toolName}]</span>
+      )}
+      {isPreparingTool && formattedCharacterCount && (
+        <span>{t('chat.assistant.toolProgress', { count: formattedCharacterCount })}</span>
       )}
     </div>
   );

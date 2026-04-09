@@ -76,6 +76,7 @@ function hasTransientChatState(session: {
     || session.assistantStatus === 'waiting'
     || session.assistantStatus === 'thinking'
     || session.assistantStatus === 'streaming'
+    || session.assistantStatus === 'preparing_tool'
     || session.assistantStatus === 'tool_calling'
     || Boolean(session.pendingToolConfirm)
     || Boolean(session.pendingQuestion)
@@ -254,6 +255,13 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           break;
         case 'reasoning_complete':
           store.setReasoningComplete(data.session_id);
+          break;
+        case 'tool_call_progress':
+          store.setToolCallProgress(
+            data.session_id,
+            data.name,
+            data.arguments_character_count
+          );
           break;
         case 'tool_call': {
           if (data.name === 'ocr_extract') {

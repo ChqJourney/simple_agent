@@ -17,6 +17,7 @@ interface SessionState {
   isStreaming: boolean;
   assistantStatus: AssistantStatus;
   currentToolName?: string;
+  currentToolArgumentCharacters?: number;
   pendingToolConfirm?: ToolCall;
   pendingQuestion?: PendingQuestion;
 }
@@ -27,6 +28,7 @@ interface ChatState {
   addReasoningToken: (sessionId: string, token: string) => void;
   markStreamWaiting: (sessionId: string) => void;
   setReasoningComplete: (sessionId: string) => void;
+  setToolCallProgress: (sessionId: string, toolName: string, argumentCharacters: number) => void;
   setToolCall: (sessionId: string, toolCall: ToolCall) => void;
   setPendingToolConfirm: (sessionId: string, toolCall: ToolCall) => void;
   clearPendingToolConfirm: (sessionId: string, toolCallId?: string) => void;
@@ -72,6 +74,7 @@ const createEmptySession = (): SessionState => ({
   isStreaming: false,
   assistantStatus: 'idle',
   currentToolName: undefined,
+  currentToolArgumentCharacters: undefined,
   pendingToolConfirm: undefined,
   pendingQuestion: undefined,
 });
@@ -93,6 +96,8 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: true,
           assistantStatus: 'streaming',
           currentStreamingContent: session.currentStreamingContent + token,
+          currentToolName: undefined,
+          currentToolArgumentCharacters: undefined,
         },
       },
     };
@@ -108,6 +113,8 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: true,
           assistantStatus: 'thinking',
           currentReasoningContent: session.currentReasoningContent + token,
+          currentToolName: undefined,
+          currentToolArgumentCharacters: undefined,
         },
       },
     };
@@ -123,6 +130,7 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: true,
           assistantStatus: 'waiting',
           currentToolName: undefined,
+          currentToolArgumentCharacters: undefined,
         },
       },
     };
@@ -150,6 +158,22 @@ export const useChatStore = create<ChatState>((set) => ({
           ...session,
           messages: newMessages,
           currentReasoningContent: '',
+        },
+      },
+    };
+  }),
+
+  setToolCallProgress: (sessionId, toolName, argumentCharacters) => set((state) => {
+    const session = state.sessions[sessionId] || createEmptySession();
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          isStreaming: true,
+          assistantStatus: 'preparing_tool',
+          currentToolName: toolName,
+          currentToolArgumentCharacters: argumentCharacters,
         },
       },
     };
@@ -191,6 +215,7 @@ export const useChatStore = create<ChatState>((set) => ({
           currentStreamingContent: '',
           assistantStatus: 'tool_calling',
           currentToolName: toolCall.name,
+          currentToolArgumentCharacters: undefined,
         },
       },
     };
@@ -474,6 +499,7 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: false,
           assistantStatus: 'completed',
           currentToolName: undefined,
+          currentToolArgumentCharacters: undefined,
           pendingToolConfirm: undefined,
           pendingQuestion: undefined,
         },
@@ -550,6 +576,7 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: false,
           assistantStatus: 'idle',
           currentToolName: undefined,
+          currentToolArgumentCharacters: undefined,
           pendingToolConfirm: undefined,
           pendingQuestion: undefined,
         },
@@ -580,6 +607,7 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: false,
           assistantStatus: 'idle',
           currentToolName: undefined,
+          currentToolArgumentCharacters: undefined,
           pendingToolConfirm: undefined,
           pendingQuestion: undefined,
         },
@@ -656,6 +684,7 @@ export const useChatStore = create<ChatState>((set) => ({
           currentReasoningContent: '',
           assistantStatus: 'waiting',
           currentToolName: undefined,
+          currentToolArgumentCharacters: undefined,
           pendingQuestion: undefined,
         },
       },
@@ -683,6 +712,7 @@ export const useChatStore = create<ChatState>((set) => ({
           isStreaming: false,
           assistantStatus: 'idle',
           currentToolName: undefined,
+          currentToolArgumentCharacters: undefined,
           pendingToolConfirm: undefined,
           pendingQuestion: undefined,
         },

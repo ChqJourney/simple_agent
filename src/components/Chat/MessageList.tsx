@@ -22,6 +22,7 @@ interface MessageListProps {
   isStreaming?: boolean;
   assistantStatus?: AssistantStatus;
   currentToolName?: string;
+  currentToolArgumentCharacters?: number;
   runEvents?: RunEventRecord[];
   onRetryMessage?: (message: Message) => void;
 }
@@ -415,6 +416,7 @@ export const MessageList = memo<MessageListProps>(({
   isStreaming = false,
   assistantStatus,
   currentToolName,
+  currentToolArgumentCharacters,
   runEvents = [],
   onRetryMessage,
 }) => {
@@ -530,6 +532,7 @@ export const MessageList = memo<MessageListProps>(({
                   currentReasoningContent={isActiveTurn ? currentReasoningContent : ''}
                   assistantStatus={isActiveTurn ? assistantStatus : undefined}
                   currentToolName={isActiveTurn ? currentToolName : undefined}
+                  currentToolArgumentCharacters={isActiveTurn ? currentToolArgumentCharacters : undefined}
                   elapsedLabel={elapsedLabel}
                   onRetry={retryMessage && onRetryMessage ? () => onRetryMessage(retryMessage) : undefined}
                 />
@@ -546,6 +549,7 @@ export const MessageList = memo<MessageListProps>(({
             currentReasoningContent={currentReasoningContent}
             assistantStatus={assistantStatus}
             currentToolName={currentToolName}
+            currentToolArgumentCharacters={currentToolArgumentCharacters}
             elapsedLabel={formatElapsedLabel(
               (() => {
                 const runStart = parseTimestamp(currentRunTiming?.startedAt);

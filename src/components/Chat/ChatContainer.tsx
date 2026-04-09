@@ -26,6 +26,7 @@ const emptySession = {
   isStreaming: false,
   assistantStatus: 'idle' as const,
   currentToolName: undefined as string | undefined,
+  currentToolArgumentCharacters: undefined as number | undefined,
   pendingToolConfirm: undefined as { tool_call_id: string; name: string; arguments: Record<string, unknown> } | undefined,
   pendingQuestion: undefined as PendingQuestion | undefined,
 };
@@ -57,6 +58,7 @@ export const ChatContainer = () => {
     isStreaming,
     assistantStatus,
     currentToolName,
+    currentToolArgumentCharacters,
     pendingToolConfirm,
     pendingQuestion,
   } = useChatStore(
@@ -70,6 +72,7 @@ export const ChatContainer = () => {
         isStreaming: session.isStreaming,
         assistantStatus: session.assistantStatus,
         currentToolName: session.currentToolName,
+        currentToolArgumentCharacters: session.currentToolArgumentCharacters,
         pendingToolConfirm: session.pendingToolConfirm,
         pendingQuestion: session.pendingQuestion,
       } : emptySession;
@@ -184,6 +187,7 @@ export const ChatContainer = () => {
         isStreaming={isStreaming}
         assistantStatus={assistantStatus}
         currentToolName={currentToolName}
+        currentToolArgumentCharacters={currentToolArgumentCharacters}
         runEvents={runEvents}
         onRetryMessage={handleRetryMessage}
       />

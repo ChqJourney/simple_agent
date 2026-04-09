@@ -17,6 +17,7 @@ interface MessageItemProps {
   reasoningContent?: string;
   assistantStatus?: AssistantStatus;
   currentToolName?: string;
+  currentToolArgumentCharacters?: number;
   hideHeader?: boolean;
 }
 
@@ -27,6 +28,7 @@ export const MessageItem = memo<MessageItemProps>(({
   reasoningContent = '',
   assistantStatus,
   currentToolName,
+  currentToolArgumentCharacters,
   hideHeader = false,
 }) => {
   const isUser = message.role === 'user';
@@ -120,7 +122,11 @@ export const MessageItem = memo<MessageItemProps>(({
       )}
 
       {isAssistant && assistantStatus && (isStreaming || assistantStatus === 'completed') && (
-        <AssistantStatusIndicator status={assistantStatus} toolName={currentToolName} />
+        <AssistantStatusIndicator
+          status={assistantStatus}
+          toolName={currentToolName}
+          toolArgumentCharacters={currentToolArgumentCharacters}
+        />
       )}
     </div>
   );

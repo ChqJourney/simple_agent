@@ -136,6 +136,47 @@ class UsageReportingLLM(BaseLLM):
         return {}
 
 
+class ToolCallProgressLLM(BaseLLM):
+    def __init__(self):
+        super().__init__({'model': 'tool-progress-test-model'})
+
+    async def stream(self, messages, tools=None):
+        yield {
+            'choices': [{
+                'delta': {
+                    'tool_calls': [{
+                        'index': 0,
+                        'id': 'tool-1',
+                        'function': {'name': 'file_write'},
+                    }]
+                }
+            }]
+        }
+        yield {
+            'choices': [{
+                'delta': {
+                    'tool_calls': [{
+                        'index': 0,
+                        'function': {'arguments': '{"path":"notes.txt","content":"'},
+                    }]
+                }
+            }]
+        }
+        yield {
+            'choices': [{
+                'delta': {
+                    'tool_calls': [{
+                        'index': 0,
+                        'function': {'arguments': ('x' * 2500) + '"}'},
+                    }]
+                }
+            }]
+        }
+
+    async def complete(self, messages, tools=None):
+        return {}
+
+
 class CapturingWindowedLLM(BaseLLM):
     def __init__(self):
         super().__init__({
@@ -265,6 +306,30 @@ class ReasoningStreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(reasoning_complete))
         self.assertEqual('step 1 + step 2', session.messages[-1].reasoning_content)
         self.assertEqual('answer', session.messages[-1].content)
+
+        temp_dir.cleanup()
+
+    async def test_stream_llm_response_emits_tool_call_progress_before_tool_call_is_complete(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        sent_messages = []
+        user_manager = UserManager()
+
+        async def send_callback(message):
+            sent_messages.append(message)
+
+        await user_manager.register_connection('conn-1', send_callback)
+        session = await user_manager.create_session(temp_dir.name, 'session-1')
+        await user_manager.bind_session_to_connection('session-1', 'conn-1')
+
+        agent = Agent(ToolCallProgressLLM(), ToolRegistry(), user_manager)
+        assistant_message = await agent._stream_llm_response([], [], session, 'run-1')
+
+        progress_messages = [m for m in sent_messages if m.get('type') == 'tool_call_progress']
+        self.assertGreaterEqual(len(progress_messages), 2)
+        self.assertEqual('file_write', progress_messages[0]['name'])
+        self.assertEqual(0, progress_messages[0]['arguments_character_count'])
+        self.assertGreaterEqual(progress_messages[-1]['arguments_character_count'], 2500)
+        self.assertEqual('file_write', assistant_message.tool_calls[0]['function']['name'])
 
         temp_dir.cleanup()
 

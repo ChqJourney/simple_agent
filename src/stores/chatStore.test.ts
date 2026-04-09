@@ -72,6 +72,24 @@ describe("chatStore run events", () => {
     expect(useChatStore.getState().sessions["session-a"]?.currentStreamingContent).toBe("partial answer");
   });
 
+  it("tracks tool preparation progress and clears it once the tool call is ready", () => {
+    useChatStore.getState().startStreaming("session-a");
+    useChatStore.getState().setToolCallProgress("session-a", "file_write", 4096);
+
+    expect(useChatStore.getState().sessions["session-a"]?.assistantStatus).toBe("preparing_tool");
+    expect(useChatStore.getState().sessions["session-a"]?.currentToolName).toBe("file_write");
+    expect(useChatStore.getState().sessions["session-a"]?.currentToolArgumentCharacters).toBe(4096);
+
+    useChatStore.getState().setToolCall("session-a", {
+      tool_call_id: "tool-1",
+      name: "file_write",
+      arguments: { path: "notes.txt" },
+    });
+
+    expect(useChatStore.getState().sessions["session-a"]?.assistantStatus).toBe("tool_calling");
+    expect(useChatStore.getState().sessions["session-a"]?.currentToolArgumentCharacters).toBeUndefined();
+  });
+
   it("stores context estimates independently from the latest request usage", () => {
     useChatStore.getState().startStreaming("session-a");
     useChatStore.getState().setCompleted("session-a", {

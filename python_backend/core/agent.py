@@ -3,6 +3,7 @@ import inspect
 import json
 import logging
 import platform
+import time
 import uuid
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
@@ -23,6 +24,7 @@ BACKGROUND_COMPACTION_USAGE_THRESHOLD = 0.60
 FORCED_COMPACTION_USAGE_THRESHOLD = 0.75
 RECENT_RAW_MESSAGE_COUNT = 8
 MIN_RECENT_RAW_MESSAGE_COUNT = 4
+TOOL_CALL_PROGRESS_CHAR_INTERVAL = 2048
 
 
 class RunInterrupted(Exception):
@@ -506,7 +508,40 @@ class Agent:
         content_chunks: List[str] = []
         reasoning_chunks: List[str] = []
         tool_calls_data: Dict[int, Dict[str, Any]] = {}
+        tool_progress_sent_chars: Dict[int, int] = {}
+        last_tool_progress_emit_at: Dict[int, float] = {}
         stream_timeout_seconds = self._get_stream_inactivity_timeout_seconds()
+
+        async def maybe_emit_tool_call_progress(idx: int) -> None:
+            tc = tool_calls_data.get(idx)
+            if not tc:
+                return
+
+            tool_name = tc["function"]["name"]
+            if not tool_name:
+                return
+
+            argument_character_count = len(tc["function"]["arguments"])
+            last_sent_chars = tool_progress_sent_chars.get(idx)
+            now = time.monotonic()
+            last_emit_at = last_tool_progress_emit_at.get(idx, 0.0)
+            should_emit = (
+                last_sent_chars is None
+                or argument_character_count - last_sent_chars >= TOOL_CALL_PROGRESS_CHAR_INTERVAL
+                or now - last_emit_at >= 0.5
+            )
+            if not should_emit:
+                return
+
+            tool_progress_sent_chars[idx] = argument_character_count
+            last_tool_progress_emit_at[idx] = now
+            await self.user_manager.send_to_frontend({
+                "type": "tool_call_progress",
+                "session_id": session.session_id,
+                "tool_call_id": tc["id"] or None,
+                "name": tool_name,
+                "arguments_character_count": argument_character_count,
+            })
 
         def interrupted_with_partial() -> RunInterrupted:
             partial_message = self._build_interrupted_assistant_message(
@@ -594,10 +629,12 @@ class Agent:
                             function_name = self._get_delta_field(function_delta, "name")
                             if function_name:
                                 tool_calls_data[idx]["function"]["name"] = function_name
+                                await maybe_emit_tool_call_progress(idx)
 
                             function_args = self._get_delta_field(function_delta, "arguments")
                             if function_args:
                                 tool_calls_data[idx]["function"]["arguments"] += function_args
+                                await maybe_emit_tool_call_progress(idx)
         except asyncio.CancelledError as exc:
             raise interrupted_with_partial() from exc
         except RunInterrupted:

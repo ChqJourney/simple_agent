@@ -37,6 +37,7 @@ describe("FileTree", () => {
     copyFileMock.mockResolvedValue(undefined);
     existsMock.mockResolvedValue(false);
     openMock.mockResolvedValue(null);
+    invokeMock.mockResolvedValue(undefined);
 
     useWorkspaceStore.setState((state) => ({
       ...state,
@@ -205,5 +206,31 @@ describe("FileTree", () => {
         selectedPath: "C:/repo",
       });
     });
+  });
+
+  it("opens a file with the system default app on double click", async () => {
+    render(<FileTree />);
+
+    const fileNode = await screen.findByText("existing.txt");
+    fireEvent.doubleClick(fileNode.closest("div")!);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("open_file_path", {
+        selectedPath: "C:/repo/existing.txt",
+      });
+    });
+  });
+
+  it("does not try to open directories on double click", async () => {
+    readDirMock.mockResolvedValueOnce([
+      { name: "src", isDirectory: true },
+    ]);
+
+    render(<FileTree />);
+
+    const directoryNode = await screen.findByText("src");
+    fireEvent.doubleClick(directoryNode.closest("div")!);
+
+    expect(invokeMock).not.toHaveBeenCalledWith("open_file_path", expect.anything());
   });
 });

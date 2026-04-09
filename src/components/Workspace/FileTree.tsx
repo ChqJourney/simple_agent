@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { copyFile, exists, readDir } from '@tauri-apps/plugin-fs';
 import { useI18n } from '../../i18n';
 import { useWorkspaceStore } from '../../stores';
@@ -257,7 +257,7 @@ export const FileTree: React.FC = () => {
     setIsImporting(true);
 
     try {
-      const selected = await open({
+      const selected = await openDialog({
         multiple: true,
         directory: false,
         title: t('fileTree.importDialogTitle'),
@@ -319,6 +319,18 @@ export const FileTree: React.FC = () => {
     }
   };
 
+  const handleOpenFile = async (node: FileNode) => {
+    if (node.isDirectory) {
+      return;
+    }
+
+    try {
+      await invoke('open_file_path', { selectedPath: node.path });
+    } catch (error) {
+      console.error('Failed to open file:', error);
+    }
+  };
+
   const renderNode = (node: FileNode, depth: number = 0) => {
     const isExpanded = expandedPaths.has(node.path);
     const isLoadingChildren = loadingPaths.has(node.path);
@@ -336,6 +348,7 @@ export const FileTree: React.FC = () => {
           className={`flex items-center gap-1 px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer rounded text-sm ${changeHighlightClass}`}
           style={{ paddingLeft: `${depth * 16 + 8}px` }}
           onClick={() => void toggleExpand(node)}
+          onDoubleClick={() => void handleOpenFile(node)}
           draggable={true}
           onDragStart={(e) => {
             const isImageFile = !node.isDirectory && isImagePath(node.path);

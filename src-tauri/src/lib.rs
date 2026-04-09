@@ -7,6 +7,7 @@ use std::{
 };
 use serde::Serialize;
 use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 
 mod session_storage;
@@ -239,6 +240,22 @@ fn open_workspace_folder(selected_path: String) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("Failed to open workspace folder: {error}"))
+}
+
+#[tauri::command]
+fn open_file_path(app: tauri::AppHandle, selected_path: String) -> Result<(), String> {
+    let file_path = Path::new(&selected_path);
+    if !file_path.exists() {
+        return Err(format!("File path does not exist: {selected_path}"));
+    }
+
+    if !file_path.is_file() {
+        return Err(format!("File path is not a file: {selected_path}"));
+    }
+
+    app.opener()
+        .open_path(&selected_path, None::<&str>)
+        .map_err(|error| format!("Failed to open file: {error}"))
 }
 
 #[tauri::command]
@@ -836,6 +853,7 @@ pub fn run() {
             read_session_history,
             delete_session_history,
             open_workspace_folder,
+            open_file_path,
             scan_system_skills,
             scan_workspace_skills,
             get_backend_auth_token,

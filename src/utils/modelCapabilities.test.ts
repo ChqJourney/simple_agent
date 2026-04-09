@@ -18,8 +18,8 @@ describe("model image capabilities", () => {
   });
 
   it("treats unknown models conservatively as text-only", () => {
-    expect(getImageSupportStatus("openai", "gpt-4-turbo")).toBe("unknown");
-    expect(getImageSupportStatus("qwen", "qwen-plus")).toBe("unknown");
+    expect(getImageSupportStatus("openai", "gpt-4-turbo")).toBe("unsupported");
+    expect(getImageSupportStatus("qwen", "qwen-plus")).toBe("unsupported");
     expect(supportsImageInput("qwen", "qwen-plus")).toBe(false);
   });
 });

@@ -224,9 +224,14 @@ export const LeftPanel: React.FC = () => {
                             <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                               {skill.description || t('common.noDescription')}
                             </div>
-                            <div className="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
-                              {skill.path}
-                            </div>
+                            <details className="mt-2">
+                              <summary className="cursor-pointer text-xs font-medium text-gray-500 dark:text-gray-400">
+                                {t('workspace.leftPanel.skillPath')}
+                              </summary>
+                              <div className="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+                                {skill.path}
+                              </div>
+                            </details>
                           </div>
                         ))}
                       </div>
@@ -254,9 +259,14 @@ export const LeftPanel: React.FC = () => {
                             <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                               {skill.description || t('common.noDescription')}
                             </div>
-                            <div className="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
-                              {skill.path}
-                            </div>
+                            <details className="mt-2">
+                              <summary className="cursor-pointer text-xs font-medium text-gray-500 dark:text-gray-400">
+                                {t('workspace.leftPanel.skillPath')}
+                              </summary>
+                              <div className="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+                                {skill.path}
+                              </div>
+                            </details>
                           </div>
                         ))}
                       </div>

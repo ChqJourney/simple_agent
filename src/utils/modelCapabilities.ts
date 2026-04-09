@@ -1,5 +1,5 @@
 import type { InputType, ProviderType } from '../types';
-export type ImageSupportStatus = 'supported' | 'unsupported' | 'unknown';
+export type ImageSupportStatus = 'supported' | 'unsupported';
 
 const OPENAI_REASONING_PREFIXES = ['o1', 'o3', 'o4', 'gpt-5'];
 const KIMI_REASONING_PREFIXES = ['kimi-k2.5'];
@@ -89,7 +89,7 @@ export function supportsReasoning(provider: ProviderType, model: string): boolea
 export function getImageSupportStatus(provider: ProviderType, model: string): ImageSupportStatus {
   const normalizedModel = normalizeModel(model);
   if (!normalizedModel) {
-    return 'unknown';
+    return 'unsupported';
   }
 
   switch (provider) {
@@ -100,7 +100,7 @@ export function getImageSupportStatus(provider: ProviderType, model: string): Im
       if (matchesPrefix(normalizedModel, OPENAI_IMAGE_UNSUPPORTED_PREFIXES)) {
         return 'unsupported';
       }
-      return 'unknown';
+      return 'unsupported';
     case 'kimi':
       if (matchesPrefix(normalizedModel, KIMI_IMAGE_SUPPORTED_PREFIXES)) {
         return 'supported';
@@ -108,7 +108,7 @@ export function getImageSupportStatus(provider: ProviderType, model: string): Im
       if (matchesPrefix(normalizedModel, KIMI_IMAGE_UNSUPPORTED_PREFIXES)) {
         return 'unsupported';
       }
-      return 'unknown';
+      return 'unsupported';
     case 'glm':
       if (matchesPrefix(normalizedModel, GLM_IMAGE_SUPPORTED_PREFIXES)) {
         return 'supported';
@@ -116,11 +116,11 @@ export function getImageSupportStatus(provider: ProviderType, model: string): Im
       if (matchesPrefix(normalizedModel, GLM_IMAGE_UNSUPPORTED_PREFIXES)) {
         return 'unsupported';
       }
-      return 'unknown';
+      return 'unsupported';
     case 'deepseek':
       return matchesPrefix(normalizedModel, DEEPSEEK_IMAGE_UNSUPPORTED_PREFIXES)
         ? 'unsupported'
-        : 'unknown';
+        : 'unsupported';
     case 'minimax':
       if (matchesPrefix(normalizedModel, MINIMAX_IMAGE_SUPPORTED_PREFIXES)) {
         return 'supported';
@@ -128,7 +128,7 @@ export function getImageSupportStatus(provider: ProviderType, model: string): Im
       if (matchesPrefix(normalizedModel, MINIMAX_IMAGE_UNSUPPORTED_PREFIXES)) {
         return 'unsupported';
       }
-      return 'unknown';
+      return 'unsupported';
     case 'qwen':
       if (matchesPrefix(normalizedModel, QWEN_IMAGE_SUPPORTED_PREFIXES)) {
         return 'supported';
@@ -136,9 +136,9 @@ export function getImageSupportStatus(provider: ProviderType, model: string): Im
       if (matchesPrefix(normalizedModel, QWEN_IMAGE_UNSUPPORTED_PREFIXES)) {
         return 'unsupported';
       }
-      return 'unknown';
+      return 'unsupported';
     default:
-      return 'unknown';
+      return 'unsupported';
   }
 }
 

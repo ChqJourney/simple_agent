@@ -5,6 +5,7 @@ import {
   InputType,
   ModelProfile,
   OcrConfig,
+  ProviderCatalogModel,
   ProviderConfig,
   ProviderMemoryEntry,
   ProviderType,
@@ -106,6 +107,48 @@ function normalizeProviderMemoryEntry(entry?: ProviderMemoryEntry): ProviderMemo
   };
 }
 
+function normalizeProviderCatalogEntry(entry: ProviderCatalogModel): ProviderCatalogModel | null {
+  const id = entry?.id?.trim();
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    context_length: typeof entry.context_length === 'number' && Number.isFinite(entry.context_length) && entry.context_length > 0
+      ? Math.round(entry.context_length)
+      : undefined,
+    supports_image_in: typeof entry.supports_image_in === 'boolean' ? entry.supports_image_in : undefined,
+  };
+}
+
+export function normalizeProviderCatalog(
+  providerCatalog?: Partial<Record<ProviderType, ProviderCatalogModel[]>>
+): Partial<Record<ProviderType, ProviderCatalogModel[]>> {
+  if (!providerCatalog) {
+    return {};
+  }
+
+  const normalized = {} as Partial<Record<ProviderType, ProviderCatalogModel[]>>;
+  Object.keys(providerCatalog).forEach((provider) => {
+    if (!isProviderType(provider)) {
+      return;
+    }
+
+    const entries = Array.isArray(providerCatalog[provider])
+      ? providerCatalog[provider]
+        ?.map((entry) => normalizeProviderCatalogEntry(entry))
+        .filter((entry): entry is ProviderCatalogModel => entry !== null)
+      : [];
+
+    if (entries.length > 0) {
+      normalized[provider] = entries;
+    }
+  });
+
+  return normalized;
+}
+
 export function normalizeProviderMemory(
   providerMemory?: Partial<Record<ProviderType, ProviderMemoryEntry>>
 ): Partial<Record<ProviderType, ProviderMemoryEntry>> {
@@ -190,8 +233,13 @@ export function resolveCapabilitySummaryForRole(
     };
   }
 
+  const dynamicCatalogEntry = config?.provider_catalog?.[profile.provider]?.find((entry) => entry.id === profile.model);
+  const supportedInputTypes: InputType[] = typeof dynamicCatalogEntry?.supports_image_in === 'boolean'
+    ? (dynamicCatalogEntry.supports_image_in ? ['text', 'image'] : ['text'])
+    : getSupportedInputTypes(profile.provider, profile.model);
+
   return {
-    supportedInputTypes: getSupportedInputTypes(profile.provider, profile.model),
+    supportedInputTypes,
     reasoningSupported: supportsReasoning(profile.provider, profile.model),
   };
 }
@@ -307,6 +355,7 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
     },
     system_prompt: normalizeSystemPrompt(config.system_prompt),
     provider_memory: normalizeProviderMemory(config.provider_memory),
+    provider_catalog: normalizeProviderCatalog(config.provider_catalog),
     runtime: normalizeRuntimeConfig(config.runtime),
     appearance: normalizeAppearanceConfig(config.appearance),
     context_providers: normalizeContextProviders(config.context_providers),

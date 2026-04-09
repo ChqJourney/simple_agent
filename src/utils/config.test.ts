@@ -265,4 +265,27 @@ describe("normalizeProviderConfig", () => {
     expect(supportsImageAttachmentsForRole(normalized, "conversation")).toBe(true);
     expect(supportsImageAttachmentsForRole(normalized, "background")).toBe(false);
   });
+
+  it("prefers live provider catalog metadata for supported input types", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4.1-nano",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+      provider_catalog: {
+        openai: [
+          {
+            id: "gpt-4.1-nano",
+            supports_image_in: true,
+            context_length: 128000,
+          },
+        ],
+      },
+    });
+
+    expect(resolveCapabilitySummaryForRole(normalized, "conversation").supportedInputTypes).toEqual(["text", "image"]);
+    expect(supportsImageAttachmentsForRole(normalized, "conversation")).toBe(true);
+    expect(normalized.provider_catalog?.openai?.[0]?.context_length).toBe(128000);
+  });
 });

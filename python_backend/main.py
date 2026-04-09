@@ -25,6 +25,7 @@ from llms.openai import OpenAILLM
 from llms.qwen import QwenLLM
 from ocr.manager import OcrSidecarManager
 from runtime.config import (
+    DEFAULT_BASE_URLS,
     DEFAULT_RUNTIME_POLICY,
     get_disabled_tool_names,
     get_primary_profile_config,
@@ -295,6 +296,107 @@ def _normalize_execution_mode(value: Any) -> Optional[Literal["regular", "free"]
 
 def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
     return normalize_runtime_config(data)
+
+
+def _normalize_provider_probe_config(data: Dict[str, Any]) -> Dict[str, str]:
+    provider = str(data.get("provider") or "").strip().lower()
+    if provider not in SUPPORTED_PROVIDERS:
+        raise ValueError(f"Unsupported provider: {provider}")
+
+    api_key = str(data.get("api_key") or "").strip()
+    base_url = str(data.get("base_url") or "").strip() or DEFAULT_BASE_URLS.get(
+        provider, ""
+    )
+
+    return {
+        "provider": provider,
+        "api_key": api_key,
+        "base_url": base_url,
+    }
+
+
+def _build_provider_auth_headers(api_key: str) -> Dict[str, str]:
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def _supports_live_model_catalog(base_url: str, status_code: Optional[int] = None) -> bool:
+    normalized_base_url = str(base_url or "").strip().lower()
+    if "dashscope.aliyuncs.com" in normalized_base_url:
+        return False
+
+    if status_code in (404, 405, 501):
+        return False
+
+    return True
+
+
+def _extract_provider_model_supports_image(item: Dict[str, Any]) -> Optional[bool]:
+    supports_image_in = item.get("supports_image_in")
+    if isinstance(supports_image_in, bool):
+        return supports_image_in
+
+    for key in ("input_types", "input_modalities", "modalities", "supported_inputs"):
+        raw_value = item.get(key)
+        if not isinstance(raw_value, list):
+            continue
+
+        normalized = {
+            str(entry).strip().lower()
+            for entry in raw_value
+            if str(entry).strip()
+        }
+        if normalized:
+            return "image" in normalized
+
+    return None
+
+
+def _extract_provider_model_context_length(item: Dict[str, Any]) -> Optional[int]:
+    for key in ("context_length", "context_window", "max_context_length", "input_token_limit"):
+        value = item.get(key)
+        if isinstance(value, int) and value > 0:
+            return value
+    return None
+
+
+def _extract_provider_models(payload: Any) -> List[Dict[str, Any]]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        return []
+
+    models_by_id: Dict[str, Dict[str, Any]] = {}
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+
+        model_id = str(item.get("id") or "").strip()
+        if not model_id:
+            continue
+
+        entry: Dict[str, Any] = {"id": model_id}
+        supports_image_in = _extract_provider_model_supports_image(item)
+        context_length = _extract_provider_model_context_length(item)
+
+        if supports_image_in is not None:
+            entry["supports_image_in"] = supports_image_in
+        if context_length is not None:
+            entry["context_length"] = context_length
+
+        models_by_id[model_id] = entry
+
+    return [models_by_id[key] for key in sorted(models_by_id)]
+
+
+async def _fetch_provider_models(api_key: str, base_url: str) -> List[Dict[str, Any]]:
+    headers = _build_provider_auth_headers(api_key)
+    models_url = f"{base_url.rstrip('/')}/models"
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.get(models_url, headers=headers)
+
+    response.raise_for_status()
+    payload = response.json()
+    return _extract_provider_models(payload)
 
 
 def create_llm_for_profile(
@@ -1271,6 +1373,68 @@ async def list_tools(request: Request):
     return {"tools": _build_tool_catalog_payload()}
 
 
+@app.post("/provider-models")
+async def list_provider_models(request: Request, data: Dict[str, Any]):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
+    try:
+        config = _normalize_provider_probe_config(data)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+
+    if not config["api_key"]:
+        return JSONResponse(
+            status_code=400, content={"ok": False, "error": "Missing api_key"}
+        )
+
+    if not config["base_url"]:
+        return JSONResponse(
+            status_code=400, content={"ok": False, "error": "Missing base_url"}
+        )
+
+    try:
+        models = await _fetch_provider_models(config["api_key"], config["base_url"])
+        return {"ok": True, "models": models}
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "Provider model listing failed for %s with HTTP %s",
+            config["provider"],
+            exc.response.status_code,
+        )
+        if not _supports_live_model_catalog(
+            config["base_url"], exc.response.status_code
+        ):
+            return {
+                "ok": False,
+                "models": [],
+                "error": (
+                    "Live model catalog is not available for this provider/base URL."
+                ),
+            }
+
+        return {
+            "ok": False,
+            "models": [],
+            "error": f"Models probe failed with HTTP {exc.response.status_code}",
+        }
+    except httpx.TimeoutException:
+        logger.warning("Provider model listing timed out for %s", config["provider"])
+        return {
+            "ok": False,
+            "models": [],
+            "error": "Timed out while loading the live model catalog",
+        }
+    except Exception as exc:
+        logger.exception("Provider model listing failed: %s", exc)
+        return {
+            "ok": False,
+            "models": [],
+            "error": f"Failed to load provider models: {str(exc)}",
+        }
+
+
 @app.post("/test-config")
 async def test_config(request: Request, data: Dict[str, Any]):
     auth_error = await _require_http_auth(request)
@@ -1305,8 +1469,7 @@ async def test_config(request: Request, data: Dict[str, Any]):
             status_code=400, content={"ok": False, "error": "Missing base_url"}
         )
 
-    headers: Dict[str, str] = {}
-    headers["Authorization"] = f"Bearer {api_key}"
+    headers = _build_provider_auth_headers(api_key)
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:

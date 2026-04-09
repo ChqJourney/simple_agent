@@ -3,6 +3,7 @@ import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useConfigStore } from '../../stores/configStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useI18n } from '../../i18n';
 
 const toneByStatus = {
   available: 'bg-emerald-500',
@@ -10,13 +11,8 @@ const toneByStatus = {
   starting: 'bg-amber-500',
 } as const;
 
-const labelByStatus = {
-  available: 'OCR: available',
-  unavailable: 'OCR: unavailable',
-  starting: 'OCR: starting',
-} as const;
-
 export const OCRStatusIndicator: React.FC = () => {
+  const { t } = useI18n();
   const config = useConfigStore((state) => state.config);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const activeSession = useChatStore((state) => (
@@ -31,8 +27,13 @@ export const OCRStatusIndicator: React.FC = () => {
   const isOcrRunning = activeSession?.assistantStatus === 'tool_calling'
     && activeSession.currentToolName === 'ocr_extract';
   const status = isOcrRunning ? 'starting' : ocrStatus.status;
+  const labelByStatus = {
+    available: t('workspace.status.ocr.available'),
+    unavailable: t('workspace.status.ocr.unavailable'),
+    starting: t('workspace.status.ocr.starting'),
+  } as const;
   const title = status === 'unavailable' && !ocrStatus.installed
-    ? 'OCR sidecar is enabled but not installed.'
+    ? t('workspace.status.ocr.notInstalled')
     : labelByStatus[status];
 
   return (

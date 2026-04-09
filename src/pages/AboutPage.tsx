@@ -306,27 +306,6 @@ export const AboutPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid gap-4 p-6 md:grid-cols-2">
-            <div className={ABOUT_PANEL_CLASS}>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('about.identifier')}</div>
-              <div className="mt-2 break-all font-mono text-sm text-gray-900 dark:text-gray-100">{aboutInfo.identifier}</div>
-            </div>
-            <div className={ABOUT_PANEL_CLASS}>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('about.tauriRuntime')}</div>
-              <div className="mt-2 font-mono text-sm text-gray-900 dark:text-gray-100">
-                {aboutInfo.tauriVersion || t('about.unknown')}
-              </div>
-            </div>
-            <div className={ABOUT_PANEL_CLASS}>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('about.frontendMode')}</div>
-              <div className="mt-2 font-mono text-sm text-gray-900 dark:text-gray-100">{aboutInfo.mode}</div>
-            </div>
-            <div className={ABOUT_PANEL_CLASS}>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('about.stack')}</div>
-              <div className="mt-2 text-sm text-gray-900 dark:text-gray-100">React 19 + Vite + Tauri 2</div>
-            </div>
-          </div>
-
           <div className="border-t border-gray-200 px-6 py-6 dark:border-gray-700/80">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
@@ -360,7 +339,64 @@ export const AboutPage: React.FC = () => {
                     {updateNotice.message}
                   </div>
                 ) : null}
-                <div className="mt-4 grid gap-3 rounded-2xl border border-gray-200/80 bg-slate-50/80 p-4 text-sm dark:border-gray-700/80 dark:bg-slate-900/35">
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleCheckForUpdates()}
+                  disabled={updateStatus === 'checking' || updateStatus === 'installing' || updateStatus === 'unavailable'}
+                  className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700/80 dark:text-gray-200 dark:hover:bg-gray-800/80"
+                >
+                  {updateStatus === 'checking' ? t('about.update.checking') : t('about.update.check')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleInstallUpdate()}
+                  disabled={updateStatus !== 'available' && updateStatus !== 'installing'}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {updateStatus === 'installing' ? t('about.update.installing') : t('about.update.install')}
+                </button>
+              </div>
+            </div>
+
+            <details className="mt-5 rounded-2xl border border-gray-200/80 bg-slate-50/80 p-4 dark:border-gray-700/80 dark:bg-slate-900/35">
+              <summary className="cursor-pointer list-none">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900 dark:text-white">{t('about.diagnostics.title')}</div>
+                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('about.diagnostics.description')}</div>
+                  </div>
+                  <svg className="h-4 w-4 text-gray-500 dark:text-gray-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 5l5 5-5 5" />
+                  </svg>
+                </div>
+              </summary>
+
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className={ABOUT_PANEL_CLASS}>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('about.identifier')}</div>
+                    <div className="mt-2 break-all font-mono text-sm text-gray-900 dark:text-gray-100">{aboutInfo.identifier}</div>
+                  </div>
+                  <div className={ABOUT_PANEL_CLASS}>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('about.tauriRuntime')}</div>
+                    <div className="mt-2 font-mono text-sm text-gray-900 dark:text-gray-100">
+                      {aboutInfo.tauriVersion || t('about.unknown')}
+                    </div>
+                  </div>
+                  <div className={ABOUT_PANEL_CLASS}>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('about.frontendMode')}</div>
+                    <div className="mt-2 font-mono text-sm text-gray-900 dark:text-gray-100">{aboutInfo.mode}</div>
+                  </div>
+                  <div className={ABOUT_PANEL_CLASS}>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('about.stack')}</div>
+                    <div className="mt-2 text-sm text-gray-900 dark:text-gray-100">React 19 + Vite + Tauri 2</div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-2xl border border-gray-200/80 bg-white/80 p-4 text-sm dark:border-gray-700/80 dark:bg-gray-950/30">
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
                       {t('about.update.feed')}
@@ -387,26 +423,7 @@ export const AboutPage: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => void handleCheckForUpdates()}
-                  disabled={updateStatus === 'checking' || updateStatus === 'installing' || updateStatus === 'unavailable'}
-                  className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700/80 dark:text-gray-200 dark:hover:bg-gray-800/80"
-                >
-                  {updateStatus === 'checking' ? t('about.update.checking') : t('about.update.check')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleInstallUpdate()}
-                  disabled={updateStatus !== 'available' && updateStatus !== 'installing'}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {updateStatus === 'installing' ? t('about.update.installing') : t('about.update.install')}
-                </button>
-              </div>
-            </div>
+            </details>
           </div>
         </section>
       </main>

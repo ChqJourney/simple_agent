@@ -1,12 +1,20 @@
-import React from 'react';
-import { useI18n } from '../../i18n';
-import { ProviderType, ProviderConfig } from '../../types';
-import { getImageSupportStatus, ImageSupportStatus, supportsReasoning } from '../../utils/modelCapabilities';
+import React, { useEffect, useMemo, useState } from 'react';
+import { translate, useI18n } from '../../i18n';
+import { ProviderCatalogModel, ProviderType, ProviderConfig } from '../../types';
+import {
+  getDefaultContextLength,
+  getImageSupportStatus,
+  ImageSupportStatus,
+  supportsReasoning,
+} from '../../utils/modelCapabilities';
+import { normalizeBaseUrl } from '../../utils/config';
+import { listProviderModels } from '../../utils/providerModels';
 import { CustomSelect } from '../common';
 
 interface ProviderConfigProps {
   config: Partial<ProviderConfig>;
   onChange: (config: Partial<ProviderConfig>) => void;
+  onCatalogLoaded?: (provider: ProviderType, models: ProviderCatalogModel[]) => void;
   configuredProviders?: Partial<Record<ProviderType, boolean>>;
   title?: string;
   onTestConnection?: () => void;
@@ -18,6 +26,7 @@ interface ProviderConfigProps {
   testConnectionSuccessLabel?: string;
   testConnectionFailureLabel?: string;
   testButtonVariant?: "primary" | "secondary";
+  enableDynamicModelCatalog?: boolean;
 }
 
 const PROVIDERS: { value: ProviderType; label: string }[] = [
@@ -29,7 +38,7 @@ const PROVIDERS: { value: ProviderType; label: string }[] = [
   { value: 'qwen', label: 'Qwen (Tongyi Qianwen)' },
 ];
 
-const MODELS: Record<ProviderType, string[]> = {
+const BUILT_IN_MODELS: Record<ProviderType, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
   deepseek: ['deepseek-chat', 'deepseek-reasoner'],
   kimi: ['kimi-k2.5','kimi-k2-thinking'],
@@ -42,10 +51,8 @@ function getImageSupportBadge(status: ImageSupportStatus): string {
   switch (status) {
     case 'supported':
       return 'supported';
-    case 'unsupported':
-      return 'unsupported';
     default:
-      return 'unknown';
+      return 'unsupported';
   }
 }
 
@@ -53,11 +60,74 @@ function getImageSupportDescription(status: ImageSupportStatus, t: ReturnType<ty
   switch (status) {
     case 'supported':
       return t('settings.provider.imageSupportedDesc');
-    case 'unsupported':
-      return t('settings.provider.imageUnsupportedDesc');
     default:
-      return t('settings.provider.imageUnknownDesc');
+      return t('settings.provider.imageUnsupportedDesc');
   }
+}
+
+function getContextLengthDescription(
+  contextLength: number | undefined,
+  t: ReturnType<typeof useI18n>['t']
+): string | null {
+  if (!contextLength) {
+    return null;
+  }
+
+  return t('settings.provider.contextLengthDesc', {
+    context: formatContextLength(contextLength),
+  });
+}
+
+function formatContextLength(contextLength: number): string {
+  if (contextLength % 1000 === 0) {
+    return `${Math.round(contextLength / 1000)}K`;
+  }
+
+  if (contextLength % 1024 === 0) {
+    return `${Math.round(contextLength / 1024)}K`;
+  }
+
+  if (contextLength >= 1000) {
+    return `${Math.round(contextLength / 1000)}K`;
+  }
+
+  return String(contextLength);
+}
+
+function resolveImageSupportStatus(
+  provider: ProviderType,
+  modelName: string,
+  metadata?: ProviderCatalogModel
+): ImageSupportStatus {
+  if (typeof metadata?.supports_image_in === 'boolean') {
+    return metadata.supports_image_in ? 'supported' : 'unsupported';
+  }
+
+  return getImageSupportStatus(provider, modelName);
+}
+
+function buildModelHint(
+  provider: ProviderType,
+  modelName: string,
+  t: ReturnType<typeof useI18n>['t'],
+  metadata?: ProviderCatalogModel
+): string {
+  const imageSupportStatus = resolveImageSupportStatus(provider, modelName, metadata);
+  const parts = [
+    t(
+      `settings.provider.image${getImageSupportBadge(imageSupportStatus).charAt(0).toUpperCase()}${getImageSupportBadge(imageSupportStatus).slice(1)}`
+    ),
+  ];
+
+  if (metadata?.context_length) {
+    parts.push(
+      t('settings.provider.contextLengthShort', {
+        context: formatContextLength(metadata.context_length),
+      })
+    );
+  }
+
+  return parts.join(' · ');
 }
 
 function fieldIdPrefix(title?: string): string {
@@ -67,6 +137,7 @@ function fieldIdPrefix(title?: string): string {
 export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   config,
   onChange,
+  onCatalogLoaded,
   configuredProviders = {},
   title,
   onTestConnection,
@@ -78,11 +149,15 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   testConnectionSuccessLabel = "Connected",
   testConnectionFailureLabel = "Failed",
   testButtonVariant = "primary",
+  enableDynamicModelCatalog = import.meta.env.MODE !== 'test',
 }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const idPrefix = fieldIdPrefix(title);
   const provider = config.provider;
   const hasSavedProviderConfig = provider ? Boolean(configuredProviders[provider]) : false;
+  const [dynamicModels, setDynamicModels] = useState<ProviderCatalogModel[]>([]);
+  const [isLoadingDynamicModels, setIsLoadingDynamicModels] = useState(false);
+  const [dynamicModelsError, setDynamicModelsError] = useState<string | null>(null);
 
   const handleChange = (key: keyof ProviderConfig, value: string | boolean) => {
     onChange({ ...config, [key]: value });
@@ -107,12 +182,119 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   };
 
   const showReasoningToggle = Boolean(provider && config.model && supportsReasoning(provider, config.model));
-  const selectedImageSupport = provider && config.model
-    ? getImageSupportStatus(provider, config.model)
-    : 'unknown';
+  const builtInModels = provider ? BUILT_IN_MODELS[provider] : [];
+  const resolvedBaseUrl = provider
+    ? normalizeBaseUrl(provider, config.base_url || '')
+    : '';
+  const hasModelCatalogCredentials = Boolean(provider && config.api_key?.trim());
   const testButtonClassName = testButtonVariant === "secondary"
     ? "rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
     : "rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white";
+
+  useEffect(() => {
+    if (!enableDynamicModelCatalog || !provider) {
+      setDynamicModels([]);
+      setDynamicModelsError(null);
+      setIsLoadingDynamicModels(false);
+      return;
+    }
+
+    if (!hasModelCatalogCredentials) {
+      setDynamicModels([]);
+      setDynamicModelsError(null);
+      setIsLoadingDynamicModels(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsLoadingDynamicModels(true);
+    setDynamicModelsError(null);
+
+    void listProviderModels(
+      provider,
+      resolvedBaseUrl,
+      config.api_key || '',
+      { signal: controller.signal },
+    )
+      .then((models) => {
+        setDynamicModels(models);
+        setDynamicModelsError(null);
+        if (provider && models.length > 0) {
+          onCatalogLoaded?.(provider, models);
+        }
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setDynamicModels([]);
+        setDynamicModelsError(
+          error instanceof Error
+            ? error.message
+            : translate(locale, 'settings.provider.modelCatalogFallback')
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoadingDynamicModels(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [config.api_key, enableDynamicModelCatalog, hasModelCatalogCredentials, locale, onCatalogLoaded, provider, resolvedBaseUrl]);
+
+  const dynamicModelMap = useMemo(() => new Map(dynamicModels.map((entry) => [entry.id, entry])), [dynamicModels]);
+
+  const selectedModelMetadata = provider && config.model
+    ? dynamicModelMap.get(config.model)
+    : undefined;
+  const selectedImageSupport = provider && config.model
+    ? resolveImageSupportStatus(provider, config.model, selectedModelMetadata)
+    : 'unsupported';
+  const selectedContextLength = provider && config.model
+    ? selectedModelMetadata?.context_length ?? getDefaultContextLength(provider, config.model)
+    : undefined;
+
+  const modelOptions = useMemo(() => {
+    if (!provider) {
+      return [];
+    }
+
+    const baseModels = dynamicModels.length > 0
+      ? dynamicModels
+      : builtInModels.map((modelName) => ({ id: modelName }));
+    const mergedModels = config.model && !baseModels.some((entry) => entry.id === config.model)
+      ? [{ id: config.model }, ...baseModels]
+      : baseModels;
+
+    return mergedModels.map((entry) => ({
+      value: entry.id,
+      label: entry.id,
+      hint: buildModelHint(provider, entry.id, t, entry),
+    }));
+  }, [builtInModels, config.model, dynamicModels, provider, t]);
+
+  const modelCatalogStatus = !provider
+    ? null
+    : !enableDynamicModelCatalog
+      ? { tone: 'neutral', message: t('settings.provider.modelCatalogBuiltin') }
+    : isLoadingDynamicModels
+      ? { tone: 'neutral', message: t('settings.provider.modelCatalogLoading') }
+      : dynamicModels.length > 0
+        ? { tone: 'success', message: t('settings.provider.modelCatalogLive') }
+        : dynamicModelsError
+          ? { tone: 'warning', message: t('settings.provider.modelCatalogFallback') }
+          : hasModelCatalogCredentials
+            ? { tone: 'neutral', message: t('settings.provider.modelCatalogBuiltin') }
+            : { tone: 'neutral', message: t('settings.provider.modelCatalogNeedsKey') };
+
+  const modelCatalogClassName = modelCatalogStatus?.tone === 'success'
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : modelCatalogStatus?.tone === 'warning'
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-gray-500 dark:text-gray-400';
 
   return (
     <div className="space-y-4">
@@ -162,16 +344,20 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
               value={config.model || ''}
               onChange={handleModelChange}
               placeholder={t('settings.provider.selectModel')}
-              options={MODELS[provider].map((modelName) => ({
-                value: modelName,
-                label: modelName,
-                hint: t(`settings.provider.image${getImageSupportBadge(getImageSupportStatus(provider, modelName)).charAt(0).toUpperCase()}${getImageSupportBadge(getImageSupportStatus(provider, modelName)).slice(1)}`),
-              }))}
+              options={modelOptions}
             />
-            {config.model && (
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {getImageSupportDescription(selectedImageSupport, t)}
+            {modelCatalogStatus && (
+              <p className={`mt-2 text-xs ${modelCatalogClassName}`}>
+                {modelCatalogStatus.message}
               </p>
+            )}
+            {config.model && (
+              <div className="mt-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                <p>{getImageSupportDescription(selectedImageSupport, t)}</p>
+                {selectedContextLength && (
+                  <p>{getContextLengthDescription(selectedContextLength, t)}</p>
+                )}
+              </div>
             )}
           </div>
 

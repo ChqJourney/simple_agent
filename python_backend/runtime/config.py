@@ -169,6 +169,45 @@ def _normalize_system_prompt(data: Dict[str, Any]) -> str:
     return str(raw_value).strip()
 
 
+def _normalize_provider_catalog(data: Dict[str, Any]) -> Dict[str, list[Dict[str, Any]]]:
+    raw_catalog = (
+        data.get("provider_catalog")
+        if isinstance(data.get("provider_catalog"), dict)
+        else {}
+    )
+    normalized: Dict[str, list[Dict[str, Any]]] = {}
+
+    for provider, entries in raw_catalog.items():
+        normalized_provider = str(provider or "").strip().lower()
+        if normalized_provider not in SUPPORTED_PROVIDERS or not isinstance(entries, list):
+            continue
+
+        normalized_entries: list[Dict[str, Any]] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+
+            model_id = str(entry.get("id") or "").strip()
+            if not model_id:
+                continue
+
+            normalized_entry: Dict[str, Any] = {"id": model_id}
+            context_length = _to_int(entry.get("context_length"))
+            if isinstance(context_length, int) and context_length > 0:
+                normalized_entry["context_length"] = context_length
+
+            supports_image_in = entry.get("supports_image_in")
+            if isinstance(supports_image_in, bool):
+                normalized_entry["supports_image_in"] = supports_image_in
+
+            normalized_entries.append(normalized_entry)
+
+        if normalized_entries:
+            normalized[normalized_provider] = normalized_entries
+
+    return normalized
+
+
 def _normalize_profile(
     data: Dict[str, Any],
     *,
@@ -240,6 +279,7 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
             **({"background": background_profile} if background_profile else {}),
         },
         "system_prompt": _normalize_system_prompt(data),
+        "provider_catalog": _normalize_provider_catalog(data),
         "runtime": runtime,
         "appearance": appearance,
         "context_providers": _normalize_context_providers(data),

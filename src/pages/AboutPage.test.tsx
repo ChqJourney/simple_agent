@@ -123,13 +123,15 @@ describe("AboutPage", () => {
 
     render(<AboutPage />);
 
-    await screen.findByText("https://updates.example.com/latest.json");
+    await screen.findByText("Diagnostics");
     fireEvent.click(await screen.findByRole("button", { name: "Check for Updates" }));
 
     await waitFor(() => {
       expect(screen.getAllByText(/None of the fallback platforms/).length).toBeGreaterThan(0);
     });
 
+    fireEvent.click(screen.getByText("Diagnostics"));
+    await screen.findByText("https://updates.example.com/latest.json");
     expect(screen.getByText("C:\\Users\\runneradmin\\AppData\\Roaming\\photonee\\logs\\updater.log")).toBeTruthy();
   });
 });

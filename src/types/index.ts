@@ -100,6 +100,12 @@ export type ProviderType = 'openai' | 'deepseek' | 'kimi' | 'glm' | 'minimax' | 
 export type InputType = 'text' | 'image';
 export type ExecutionRole = 'conversation' | 'background' | 'compaction' | 'delegated_task';
 
+export interface ProviderCatalogModel {
+  id: string;
+  context_length?: number;
+  supports_image_in?: boolean;
+}
+
 export interface ModelProfile {
   provider: ProviderType;
   model: string;
@@ -179,6 +185,7 @@ export interface ProviderConfig extends ModelProfile {
   };
   system_prompt?: string;
   provider_memory?: Partial<Record<ProviderType, ProviderMemoryEntry>>;
+  provider_catalog?: Partial<Record<ProviderType, ProviderCatalogModel[]>>;
   runtime?: RuntimeConfig;
   appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
@@ -229,6 +236,7 @@ export interface ClientConfig {
   profiles?: ProviderConfig['profiles'];
   system_prompt?: string;
   provider_memory?: ProviderConfig['provider_memory'];
+  provider_catalog?: ProviderConfig['provider_catalog'];
   runtime?: RuntimeConfig;
   appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;

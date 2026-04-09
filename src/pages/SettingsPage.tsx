@@ -1,16 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProviderConfigForm } from '../components/Settings/ProviderConfig';
 import { CustomSelect } from '../components/common';
 import { useConfigStore } from '../stores/configStore';
 import { useUIStore } from '../stores';
-import { ExecutionRole, ModelProfile, ProviderConfig, ProviderType, RuntimePolicy } from '../types';
+import { ExecutionRole, ModelProfile, ProviderCatalogModel, ProviderConfig, ProviderType, RuntimePolicy } from '../types';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import {
   normalizeBaseFontSize,
   normalizeBaseUrl,
   normalizeContextProviders,
   normalizeOcrConfig,
+  normalizeProviderCatalog,
   normalizeProviderMemory,
   normalizeProviderConfig,
   normalizeRuntimeConfig,
@@ -249,10 +250,21 @@ export const SettingsPage: React.FC = () => {
   const primaryProfile: Partial<ModelProfile> = draftConfig.profiles?.primary || draftConfig;
   const backgroundProfile: Partial<ModelProfile> = draftConfig.profiles?.background || {};
   const providerMemory = normalizeProviderMemory(draftConfig.provider_memory);
+  const providerCatalog = normalizeProviderCatalog(draftConfig.provider_catalog);
   const contextProviders = normalizeContextProviders(draftConfig.context_providers);
   const ocrConfig = normalizeOcrConfig(draftConfig.ocr);
   const disabledToolNames = new Set(contextProviders.tools?.disabled ?? []);
   const disabledSystemSkillNames = new Set(contextProviders.skills?.system?.disabled ?? []);
+  const handleProviderCatalogLoaded = useCallback((provider: ProviderType, models: ProviderCatalogModel[]) => {
+    setDraftConfig((currentDraft) => ({
+      ...currentDraft,
+      provider_catalog: {
+        ...(currentDraft.provider_catalog || {}),
+        [provider]: models,
+      },
+    }));
+  }, []);
+
   const configuredProviders = Object.entries(providerMemory).reduce((acc, [provider, entry]) => ({
     ...acc,
     [provider]: Boolean(entry?.api_key || entry?.base_url),
@@ -322,7 +334,8 @@ export const SettingsPage: React.FC = () => {
       return warnings;
     }
 
-    const knownContextLength = getDefaultContextLength(profile.provider, profile.model);
+    const knownContextLength = providerCatalog[profile.provider]?.find((entry) => entry.id === profile.model)?.context_length
+      ?? getDefaultContextLength(profile.provider, profile.model);
     if (knownContextLength && effectiveRuntime.context_length > knownContextLength) {
       warnings.push(
         t('settings.runtime.contextExceedsModel', {
@@ -623,6 +636,7 @@ export const SettingsPage: React.FC = () => {
             }
           : {}),
       },
+      provider_catalog: providerCatalog,
       runtime: draftConfig.runtime,
       system_prompt: draftConfig.system_prompt || '',
       appearance: {
@@ -697,6 +711,7 @@ export const SettingsPage: React.FC = () => {
               <ProviderConfigForm
                 title={t('settings.model.primary')}
                 config={primaryProfile}
+                onCatalogLoaded={handleProviderCatalogLoaded}
                 configuredProviders={configuredProviders}
                 onChange={(nextConfig) => updateProfile('primary', nextConfig)}
                 onTestConnection={() => void handleTest('primary')}
@@ -714,6 +729,7 @@ export const SettingsPage: React.FC = () => {
                 <ProviderConfigForm
                   title={t('settings.model.background')}
                   config={backgroundProfile}
+                  onCatalogLoaded={handleProviderCatalogLoaded}
                   configuredProviders={configuredProviders}
                   onChange={(nextConfig) => updateProfile('background', nextConfig)}
                   onTestConnection={() => void handleTest('background')}

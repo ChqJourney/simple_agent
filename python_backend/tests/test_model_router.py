@@ -280,6 +280,51 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
             execution_spec["guardrails"]["warnings"],
         )
 
+    def test_build_execution_spec_prefers_provider_catalog_metadata(self) -> None:
+        config = {
+            **backend_main.runtime_state.current_config,
+            "profiles": {
+                "primary": {
+                    "provider": "openai",
+                    "model": "gpt-4.1-nano",
+                    "api_key": "test-key",
+                    "base_url": "https://api.openai.com/v1",
+                    "enable_reasoning": False,
+                    "profile_name": "primary",
+                },
+            },
+            "provider_catalog": {
+                "openai": [
+                    {
+                        "id": "gpt-4.1-nano",
+                        "context_length": 200000,
+                        "supports_image_in": True,
+                    },
+                ],
+            },
+            "runtime": {
+                "shared": {
+                    "context_length": 256000,
+                    "max_output_tokens": 220000,
+                    "max_tool_rounds": 2,
+                    "max_retries": 5,
+                },
+            },
+        }
+
+        execution_spec = build_execution_spec(config, "conversation")
+
+        self.assertEqual(["text", "image"], execution_spec["capability_summary"]["supported_input_types"])
+        self.assertEqual(200000, execution_spec["runtime"]["context_length"])
+        self.assertEqual(200000, execution_spec["runtime"]["max_output_tokens"])
+        self.assertEqual(
+            [
+                "context_length 256000 exceeds known model window 200000",
+                "max_output_tokens 220000 exceeds effective context_length 200000",
+            ],
+            execution_spec["guardrails"]["warnings"],
+        )
+
     async def test_handle_user_message_rejects_session_when_locked_model_mismatches_active_profile(self) -> None:
         session = Session(
             "session-locked",

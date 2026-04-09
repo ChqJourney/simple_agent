@@ -11,6 +11,7 @@ const listToolsMock = vi.hoisted(() => vi.fn());
 const inspectOcrSidecarInstallationMock = vi.hoisted(() => vi.fn());
 const installOcrSidecarMock = vi.hoisted(() => vi.fn());
 const openDialogMock = vi.hoisted(() => vi.fn());
+const listProviderModelsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../contexts/WebSocketContext", () => ({
   useWebSocket: () => ({
@@ -32,6 +33,10 @@ vi.mock("../utils/systemSkills", () => ({
 
 vi.mock("../utils/toolCatalog", () => ({
   listTools: listToolsMock,
+}));
+
+vi.mock("../utils/providerModels", () => ({
+  listProviderModels: listProviderModelsMock,
 }));
 
 vi.mock("../utils/ocr", () => ({
@@ -70,10 +75,12 @@ describe("SettingsPage", () => {
     setConfigMock.mockReset();
     listSystemSkillsMock.mockReset();
     listToolsMock.mockReset();
+    listProviderModelsMock.mockReset();
     inspectOcrSidecarInstallationMock.mockReset();
     installOcrSidecarMock.mockReset();
     openDialogMock.mockReset();
     globalThis.fetch = vi.fn();
+    listProviderModelsMock.mockResolvedValue([]);
     listSystemSkillsMock.mockResolvedValue({
       rootPath: "/system-skills",
       rootPaths: ["/portable/skills", "/system-skills"],
@@ -421,7 +428,7 @@ describe("SettingsPage", () => {
     const modelOptions = listOpenOptions();
 
     expect(modelOptions.some((option) => option.includes("gpt-4o") && option.includes("Images"))).toBe(true);
-    expect(modelOptions.some((option) => option.includes("gpt-4-turbo") && option.includes("Unknown"))).toBe(true);
+    expect(modelOptions.some((option) => option.includes("gpt-4-turbo") && option.includes("Text only"))).toBe(true);
     expect(modelOptions.some((option) => option.includes("o1-preview") && option.includes("Text only"))).toBe(true);
     expect(screen.getAllByText("Image input is supported for this model.").length).toBeGreaterThan(0);
   });

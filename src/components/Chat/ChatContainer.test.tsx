@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatContainer } from "./ChatContainer";
 import { useChatStore } from "../../stores/chatStore";
 import { useConfigStore } from "../../stores/configStore";
+import { useSessionStore } from "../../stores/sessionStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 
 const sendMessageMock = vi.hoisted(() => vi.fn());
@@ -96,6 +97,18 @@ describe("ChatContainer", () => {
     messageInputPropsMock.mockReset();
     messageListPropsMock.mockReset();
     useConfigStore.setState({ config: null as never });
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSessionId: "session-a",
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/tauri_agent",
+          created_at: "2026-03-13T09:00:00.000Z",
+          updated_at: "2026-03-13T10:00:00.000Z",
+        },
+      ],
+    }));
     useWorkspaceStore.setState((state) => ({
       ...state,
       currentWorkspace: {
@@ -355,6 +368,104 @@ describe("ChatContainer", () => {
         supportsImageAttachments: true,
       })
     );
+  });
+
+  it("disables the composer when the current session is locked to a different model", () => {
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o-mini",
+            api_key: "test-key",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+        },
+      } as never,
+    });
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSessionId: "session-a",
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/tauri_agent",
+          created_at: "2026-03-13T09:00:00.000Z",
+          updated_at: "2026-03-13T10:00:00.000Z",
+          locked_model: {
+            profile_name: "primary",
+            provider: "deepseek",
+            model: "deepseek-chat",
+          },
+        },
+      ],
+    }));
+
+    render(<ChatContainer />);
+
+    expect(messageInputPropsMock.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        disabled: true,
+        placeholder: "This session is locked to DeepSeek/deepseek-chat. Start a new session to send messages...",
+      })
+    );
+    expect(
+      screen.getByText(
+        "This session is locked to DeepSeek/deepseek-chat, but your current settings point to OpenAI/gpt-4o-mini. Start a new session or switch the model in Settings back to continue here."
+      )
+    ).toBeTruthy();
+  });
+
+  it("offers a new session shortcut when the current session model is locked", () => {
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o-mini",
+            api_key: "test-key",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+        },
+      } as never,
+    });
+    useSessionStore.setState((state) => ({
+      ...state,
+      currentSessionId: "session-a",
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/tauri_agent",
+          created_at: "2026-03-13T09:00:00.000Z",
+          updated_at: "2026-03-13T10:00:00.000Z",
+          locked_model: {
+            profile_name: "primary",
+            provider: "deepseek",
+            model: "deepseek-chat",
+          },
+        },
+      ],
+    }));
+
+    render(<ChatContainer />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New Session" }));
+
+    expect(createSessionMock).toHaveBeenCalledTimes(1);
   });
 
   it("re-sends a failed user message through the existing send flow", () => {

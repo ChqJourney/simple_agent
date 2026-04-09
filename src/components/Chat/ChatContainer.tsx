@@ -31,6 +31,15 @@ const emptySession = {
   pendingQuestion: undefined as PendingQuestion | undefined,
 };
 
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: 'OpenAI',
+  deepseek: 'DeepSeek',
+  kimi: 'Kimi',
+  glm: 'GLM',
+  minimax: 'MiniMax',
+  qwen: 'Qwen',
+};
+
 export const ChatContainer = () => {
   const { t } = useI18n();
   const { currentSessionId, createSession } = useSession();
@@ -38,15 +47,39 @@ export const ChatContainer = () => {
   const { currentWorkspace } = useWorkspaceStore();
   const config = useConfigStore((state) => state.config);
   const updateSession = useSessionStore((state) => state.updateSession);
+  const activeSessionMeta = useSessionStore((state) => (
+    currentSessionId
+      ? state.sessions.find((session) => session.session_id === currentSessionId)
+      : undefined
+  ));
   const [sessionExecutionModes, setSessionExecutionModes] = useState<Record<string, ExecutionMode>>({});
   const [draftExecutionMode, setDraftExecutionMode] = useState<ExecutionMode>('regular');
   const primaryProfile = resolveProfileForRole(config, 'conversation');
   const hasConfiguredModel = hasConfiguredModelProfile(primaryProfile);
   const hasRunnableConfig = hasRunnableConversationProfile(config);
-  const canSendMessage = isConnected && hasRunnableConfig && Boolean(currentWorkspace?.path);
+  const lockedModel = activeSessionMeta?.locked_model;
+  const isSessionModelMismatch = Boolean(
+    lockedModel
+    && primaryProfile?.provider
+    && primaryProfile?.model
+    && (
+      lockedModel.provider !== primaryProfile.provider
+      || lockedModel.model !== primaryProfile.model
+    )
+  );
+  const canSendMessage = isConnected && hasRunnableConfig && Boolean(currentWorkspace?.path) && !isSessionModelMismatch;
   const supportsImageAttachments = supportsImageAttachmentsForRole(config, 'conversation');
+  const lockedProviderLabel = lockedModel ? (PROVIDER_LABELS[lockedModel.provider] || lockedModel.provider) : '';
+  const configuredProviderLabel = primaryProfile?.provider
+    ? (PROVIDER_LABELS[primaryProfile.provider] || primaryProfile.provider)
+    : '';
   const composerPlaceholder = !hasConfiguredModel
     ? t('chat.input.configureModel')
+    : isSessionModelMismatch && lockedModel
+      ? t('chat.input.sessionLockedPlaceholder', {
+          provider: lockedProviderLabel,
+          model: lockedModel.model,
+        })
     : hasRunnableConfig
       ? t('chat.input.placeholder')
       : t('chat.input.addApiKey');
@@ -198,6 +231,30 @@ export const ChatContainer = () => {
           onSubmitAnswer={handleQuestionAnswer}
           onDismiss={handleDismissQuestion}
         />
+      )}
+
+      {isSessionModelMismatch && lockedModel && primaryProfile?.model && (
+        <div className="mx-4 mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              {t('chat.input.sessionLockedNotice', {
+                sessionProvider: lockedProviderLabel,
+                sessionModel: lockedModel.model,
+                configProvider: configuredProviderLabel,
+                configModel: primaryProfile.model,
+              })}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                createSession();
+              }}
+              className="shrink-0 rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-950 dark:bg-amber-100 dark:text-amber-950 dark:hover:bg-white"
+            >
+              {t('sessions.new')}
+            </button>
+          </div>
+        </div>
       )}
 
       <MessageInput

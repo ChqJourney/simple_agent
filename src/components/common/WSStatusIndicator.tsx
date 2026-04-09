@@ -1,5 +1,6 @@
 import React from 'react';
 import { useWebSocket } from '../../contexts/WebSocketContext';
+import { useI18n } from '../../i18n';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -9,14 +10,14 @@ const toneByStatus: Record<ConnectionStatus, string> = {
   disconnected: 'bg-red-500',
 };
 
-const labelByStatus: Record<ConnectionStatus, string> = {
-  connecting: 'Connecting...',
-  connected: 'Connected',
-  disconnected: 'Disconnected',
-};
-
 export const WSStatusIndicator: React.FC = () => {
+  const { t } = useI18n();
   const { connectionStatus } = useWebSocket();
+  const labelByStatus: Record<ConnectionStatus, string> = {
+    connecting: t('workspace.status.ws.connecting'),
+    connected: t('workspace.status.ws.connected'),
+    disconnected: t('workspace.status.ws.disconnected'),
+  };
 
   return (
     <div className="flex items-center gap-2 rounded px-2 py-1" title={labelByStatus[connectionStatus]}>

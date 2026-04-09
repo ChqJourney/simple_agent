@@ -5,7 +5,16 @@ import { useTaskStore } from "../stores/taskStore";
 import { useUIStore } from "../stores/uiStore";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { useChatStore } from "../stores/chatStore";
-import type { LockedModelRef, Workspace } from "../types";
+import type {
+  AssistantStatus,
+  LockedModelRef,
+  Message,
+  PendingQuestion,
+  RunEventRecord,
+  TokenUsage,
+  ToolCall,
+  Workspace,
+} from "../types";
 
 type SessionMetaFixture = {
   session_id: string;
@@ -17,23 +26,23 @@ type SessionMetaFixture = {
 };
 
 type ChatSessionFixture = {
-  messages: unknown[];
-  latestUsage?: unknown;
+  messages: Message[];
+  latestUsage?: TokenUsage;
   latestUsageUpdatedAt?: string;
-  latestContextEstimate?: unknown;
+  latestContextEstimate?: TokenUsage;
   latestContextEstimateUpdatedAt?: string;
   currentStreamingContent: string;
   currentReasoningContent: string;
   isStreaming: boolean;
-  assistantStatus: string;
+  assistantStatus: AssistantStatus;
   currentToolName?: string;
   currentToolArgumentCharacters?: number;
-  pendingToolConfirm?: unknown;
-  pendingQuestion?: unknown;
+  pendingToolConfirm?: ToolCall;
+  pendingQuestion?: PendingQuestion;
 };
 
 type RunSessionFixture = {
-  events: unknown[];
+  events: RunEventRecord[];
   currentRunId?: string;
   status: "idle" | "running" | "completed" | "failed" | "interrupted";
 };

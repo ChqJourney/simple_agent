@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ProviderType } from "../types";
 import {
   hasRunnableConversationProfile,
   normalizeProviderConfig,
@@ -6,6 +7,29 @@ import {
   resolveProfileForRole,
   supportsImageAttachmentsForRole,
 } from "./config";
+
+const providerBaseUrlCases = [
+  {
+    provider: "deepseek",
+    model: "deepseek-chat",
+    api_key: "deepseek-key",
+    enable_reasoning: false,
+    expectedBaseUrl: "https://api.deepseek.com",
+  },
+  {
+    provider: "kimi",
+    model: "kimi-k2.5",
+    api_key: "kimi-key",
+    enable_reasoning: true,
+    expectedBaseUrl: "https://api.moonshot.cn/v1",
+  },
+] satisfies ReadonlyArray<{
+  provider: ProviderType;
+  model: string;
+  api_key: string;
+  enable_reasoning: boolean;
+  expectedBaseUrl: string;
+}>;
 
 describe("normalizeProviderConfig", () => {
   it("promotes flat config into a primary profile while preserving runtime metadata", () => {
@@ -161,22 +185,7 @@ describe("normalizeProviderConfig", () => {
     });
   });
 
-  [
-    {
-      provider: "deepseek",
-      model: "deepseek-chat",
-      api_key: "deepseek-key",
-      enable_reasoning: false,
-      expectedBaseUrl: "https://api.deepseek.com",
-    },
-    {
-      provider: "kimi",
-      model: "kimi-k2.5",
-      api_key: "kimi-key",
-      enable_reasoning: true,
-      expectedBaseUrl: "https://api.moonshot.cn/v1",
-    },
-  ].forEach(({ provider, model, api_key, enable_reasoning, expectedBaseUrl }) => {
+  providerBaseUrlCases.forEach(({ provider, model, api_key, enable_reasoning, expectedBaseUrl }) => {
     it(`normalizes ${provider} config with the provider default base url`, () => {
       const normalized = normalizeProviderConfig({
         provider,

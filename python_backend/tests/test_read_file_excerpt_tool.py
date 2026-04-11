@@ -82,11 +82,11 @@ class ReadDocumentSegmentToolTests(unittest.IsolatedAsyncioTestCase):
                 "tools.read_document_segment.read_pdf_pages",
                 return_value={
                     "items": [
-                        {"page_number": 2, "text": "Clause 4.1", "total_lines": 4},
-                        {"page_number": 3, "text": "Clause 4.2", "total_lines": 5},
+                        {"page_number": 2, "text": "# Clause 4.1", "format": "markdown", "total_lines": 4},
+                        {"page_number": 3, "text": "# Clause 4.2", "format": "markdown", "total_lines": 5},
                     ]
                 },
-            ):
+            ) as mocked:
                 result = await ReadDocumentSegmentTool().execute(
                     tool_call_id="excerpt-4",
                     workspace_path=temp_dir,
@@ -99,6 +99,7 @@ class ReadDocumentSegmentToolTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             self.assertTrue(result.success)
+            self.assertEqual("markdown", mocked.call_args.kwargs["mode"])
             self.assertEqual("pdf", result.output["document_type"])
             self.assertEqual("pdf_page_range", result.output["segment_type"])
             self.assertIn("[Page 2]", result.output["content"])

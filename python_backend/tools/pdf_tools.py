@@ -56,6 +56,58 @@ def _filter_properties() -> dict[str, dict[str, Any]]:
     }
 
 
+def _markdown_properties() -> dict[str, dict[str, Any]]:
+    return {
+        "write_images": {
+            "type": "boolean",
+            "default": True,
+            "description": "When mode='markdown', save extracted image assets and reference them from markdown.",
+        },
+        "embed_images": {
+            "type": "boolean",
+            "default": False,
+            "description": "When mode='markdown', embed images as data URIs instead of writing asset files.",
+        },
+        "image_format": {
+            "type": "string",
+            "enum": ["png"],
+            "default": "png",
+            "description": "Image format used for extracted markdown assets.",
+        },
+        "dpi": {
+            "type": "integer",
+            "default": 150,
+            "description": "Rasterization DPI used when extracting markdown images.",
+        },
+        "force_text": {
+            "type": "boolean",
+            "default": True,
+            "description": "Keep text that appears on top of image regions in markdown output.",
+        },
+        "ignore_graphics": {
+            "type": "boolean",
+            "default": False,
+            "description": "Skip vector graphic extraction in markdown mode.",
+        },
+        "detect_bg_color": {
+            "type": "boolean",
+            "default": True,
+            "description": "Use background color detection to reduce noisy markdown extraction.",
+        },
+        "ignore_alpha": {
+            "type": "boolean",
+            "default": True,
+            "description": "Ignore fully transparent text when building markdown output.",
+        },
+        "table_strategy": {
+            "type": "string",
+            "enum": ["lines_strict", "lines", "text"],
+            "default": "lines_strict",
+            "description": "Table detection strategy used in markdown mode.",
+        },
+    }
+
+
 class PdfToolMixin:
     @staticmethod
     def _resolve_pdf_path(
@@ -102,6 +154,12 @@ class PdfToolMixin:
             )
 
         return file_path, None
+
+    @staticmethod
+    def _markdown_asset_root(workspace_path: Optional[str]) -> Path | None:
+        if not workspace_path:
+            return None
+        return Path(workspace_path).resolve() / ".agent" / "cache" / "pdf_markdown"
 
 
 class PdfGetInfoTool(PdfToolMixin, BaseTool):
@@ -229,17 +287,17 @@ class PdfGetOutlineTool(PdfToolMixin, BaseTool):
 class PdfReadPagesTool(PdfToolMixin, BaseTool):
     name = "pdf_read_pages"
     description = (
-        "Read PDF pages by page selector. "
+        "Read PDF pages by page selector, preferring markdown output that preserves headings, tables, images, and layout. "
         "Use pages='all' for the whole file, or selectors like '23', '34-40', or '1-3,8-10'. "
-        "Mode can return page text, visual lines, or text blocks."
+        "Prefer mode='markdown' for normal reading. Use other modes only when you specifically need plain page text, visual lines, or text blocks."
     )
     display_name = "PDF Read Pages"
     category = "workspace"
     read_only = True
     risk_level = "low"
-    preferred_order = 16
-    use_when = "Use when you need page-level PDF content before narrowing to line ranges."
-    avoid_when = "Avoid when you only need a few specific lines or a keyword search."
+    preferred_order = 15
+    use_when = "Use when you need page-level PDF reading. Prefer the default markdown mode because it best preserves structure, tables, and images for LLM consumption."
+    avoid_when = "Avoid when you only need a few specific visual lines or a keyword search."
     user_summary_template = "Reading PDF pages from {path}"
     result_preview_fields = ["summary", "items"]
     tags = ["document", "pdf", "safe-read", "excerpt"]
@@ -256,11 +314,12 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
             },
             "mode": {
                 "type": "string",
-                "enum": ["page_text", "visual_lines", "blocks"],
-                "default": "page_text",
-                "description": "Output shape: 'page_text' returns one text blob per page, 'visual_lines' returns visual lines, 'blocks' returns text blocks.",
+                "enum": ["page_text", "visual_lines", "blocks", "markdown"],
+                "default": "markdown",
+                "description": "Preferred output shape. 'markdown' is the default and should be used for normal PDF reading because it preserves headings, tables, images, and layout. 'page_text' returns flattened text, 'visual_lines' returns visual lines, and 'blocks' returns text blocks.",
             },
             **_filter_properties(),
+            **_markdown_properties(),
         },
         "required": ["path", "pages"],
         "additionalProperties": False,
@@ -270,7 +329,7 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
         self,
         path: str,
         pages: str,
-        mode: str = "page_text",
+        mode: str = "markdown",
         exclude_header_footer: bool = True,
         header_ratio: float = 0.05,
         footer_ratio: float = 0.05,
@@ -278,6 +337,15 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
         angle_threshold: float = 5.0,
         exclude_tables: bool = True,
         y_tolerance: float = 3.0,
+        write_images: bool = True,
+        embed_images: bool = False,
+        image_format: str = "png",
+        dpi: int = 150,
+        force_text: bool = True,
+        ignore_graphics: bool = False,
+        detect_bg_color: bool = True,
+        ignore_alpha: bool = True,
+        table_strategy: str = "lines_strict",
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
         **_: Any,
@@ -298,6 +366,16 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
                 angle_threshold=angle_threshold,
                 exclude_tables=exclude_tables,
                 y_tolerance=y_tolerance,
+                write_images=write_images,
+                embed_images=embed_images,
+                image_format=image_format,
+                dpi=dpi,
+                force_text=force_text,
+                ignore_graphics=ignore_graphics,
+                detect_bg_color=detect_bg_color,
+                ignore_alpha=ignore_alpha,
+                table_strategy=table_strategy,
+                asset_root=self._markdown_asset_root(workspace_path),
             )
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))

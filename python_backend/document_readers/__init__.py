@@ -1,6 +1,7 @@
 from .excel_reader import get_excel_structure, read_excel_range, search_excel_workbook
 from .pdf_reader import (
     ExtractionOptions,
+    MarkdownOptions,
     PdfReader,
     get_pdf_info,
     get_pdf_outline,
@@ -17,6 +18,7 @@ __all__ = [
     "read_excel_range",
     "search_excel_workbook",
     "ExtractionOptions",
+    "MarkdownOptions",
     "PdfReader",
     "get_pdf_info",
     "get_pdf_outline",

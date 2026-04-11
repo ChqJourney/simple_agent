@@ -21,14 +21,15 @@ class ReadDocumentSegmentTool(BaseTool):
     description = (
         "Read a narrow segment from a workspace document using a structured locator. "
         "Supports text documents, PDF files, Word documents, Excel workbooks, and PowerPoint decks. "
-        "Use locator.type plus the matching locator fields for the target format."
+        "Use locator.type plus the matching locator fields for the target format. "
+        "For PDF page ranges, the returned content is markdown-oriented so structure, tables, and images are preserved as much as possible."
     )
     display_name = "Read Document Segment"
     category = "workspace"
     read_only = True
     risk_level = "low"
     preferred_order = 12
-    use_when = "Use when you know the target document and need a specific line, character, page, paragraph, table, sheet, cell-range, or slide segment."
+    use_when = "Use when you know the target document and need a specific line, character, page, paragraph, table, sheet, cell-range, or slide segment. For PDF page ranges, this is a good way to get markdown-preserving excerpts."
     avoid_when = "Avoid when you first need to locate relevant content or understand the document structure."
     user_summary_template = "Reading document segment from {path}"
     result_preview_fields = ["summary", "content"]
@@ -224,6 +225,7 @@ class ReadDocumentSegmentTool(BaseTool):
         file_path: Path,
         locator: dict[str, Any],
         *,
+        workspace_path: Optional[str],
         max_chars: int,
     ) -> dict[str, Any]:
         page_start = self._normalize_positive_int(locator.get("page_start", locator.get("start")), "page_start")
@@ -232,7 +234,15 @@ class ReadDocumentSegmentTool(BaseTool):
             raise ValueError("Invalid range: page_end must be >= page_start")
 
         page_spec = str(page_start) if page_start == page_end else f"{page_start}-{page_end}"
-        result = read_pdf_pages(file_path, pages=page_spec, mode="page_text")
+        asset_root = None
+        if workspace_path:
+            asset_root = Path(workspace_path).resolve() / ".agent" / "cache" / "pdf_markdown"
+        result = read_pdf_pages(
+            file_path,
+            pages=page_spec,
+            mode="markdown",
+            asset_root=asset_root,
+        )
         blocks = []
         for item in result["items"]:
             page_number = int(item["page_number"])
@@ -654,6 +664,7 @@ class ReadDocumentSegmentTool(BaseTool):
                     segment = self._read_pdf_page_segment(
                         file_path,
                         locator,
+                        workspace_path=workspace_path,
                         max_chars=normalized_max_chars,
                     )
             else:

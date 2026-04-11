@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import math
 import re
+import tempfile
 from pathlib import Path
 from dataclasses import asdict, dataclass, replace
 from typing import TYPE_CHECKING, Any, Sequence
@@ -12,6 +14,11 @@ try:
     import pymupdf  # type: ignore
 except Exception:  # pragma: no cover - exercised through runtime validation
     pymupdf = None
+
+try:
+    import pymupdf4llm  # type: ignore
+except Exception:  # pragma: no cover - exercised through runtime validation
+    pymupdf4llm = None
 
 if TYPE_CHECKING:
     import pymupdf as pymupdf_types
@@ -35,9 +42,35 @@ class ExtractionOptions:
     y_tolerance: float = 3.0
 
 
+@dataclass(frozen=True)
+class MarkdownOptions:
+    write_images: bool = True
+    embed_images: bool = False
+    image_format: str = "png"
+    dpi: int = 150
+    force_text: bool = True
+    ignore_graphics: bool = False
+    detect_bg_color: bool = True
+    ignore_alpha: bool = True
+    table_strategy: str = "lines_strict"
+    image_size_limit: float = 0.05
+    graphics_limit: int | None = None
+    fontsize_limit: float = 3.0
+    ignore_code: bool = False
+    extract_words: bool = False
+    use_glyphs: bool = False
+
+
 def _require_pymupdf() -> None:
     if pymupdf is None:
         raise RuntimeError("PyMuPDF is not installed. Install `pymupdf` to use PDF tools.")
+
+
+def _require_pymupdf4llm() -> None:
+    if pymupdf4llm is None:
+        raise RuntimeError(
+            "PyMuPDF4LLM is not installed. Install matching `pymupdf` and `pymupdf4llm` versions to use markdown PDF reads."
+        )
 
 
 def _normalize_text(text: str) -> str:
@@ -93,6 +126,22 @@ def _edge_text_keys(text: str) -> set[str]:
         keys.add(" ".join(tokens[1:-1]))
 
     return {key for key in keys if key}
+
+
+def _markdown_line_text_keys(text: str) -> set[str]:
+    normalized = text.strip()
+    if not normalized:
+        return set()
+
+    normalized = re.sub(r"^\s{0,3}(#{1,6}|>|[-*+])\s+", "", normalized)
+    normalized = re.sub(r"^\s{0,3}\d+\.\s+", "", normalized)
+    normalized = normalized.strip("|` ").strip()
+    return _edge_text_keys(_normalize_text(normalized))
+
+
+def _collapse_blank_lines(text: str) -> str:
+    collapsed = re.sub(r"\n{3,}", "\n\n", text)
+    return collapsed.strip()
 
 
 def _merge_visual_segments(
@@ -227,6 +276,30 @@ def _get_table_regions(page: "pymupdf_types.Page") -> list[list[float]]:
         if bbox and len(bbox) == 4:
             regions.append(_coerce_bbox(bbox))
     return regions
+
+
+def _default_markdown_asset_root() -> Path:
+    return Path(tempfile.gettempdir()) / "work-agent-cache" / "pdf_markdown"
+
+
+def _markdown_asset_dir(pdf_path: Path, page_number: int, asset_root: str | Path | None) -> Path:
+    stat = pdf_path.stat()
+    digest = hashlib.sha256(
+        f"{pdf_path.resolve()}:{int(stat.st_size)}:{int(stat.st_mtime_ns)}".encode("utf-8")
+    ).hexdigest()[:16]
+    root = Path(asset_root) if asset_root is not None else _default_markdown_asset_root()
+    return root / digest / f"page-{page_number}"
+
+
+def _validate_markdown_options(options: MarkdownOptions) -> None:
+    if options.write_images and options.embed_images:
+        raise ValueError("write_images and embed_images cannot both be True")
+    if options.dpi < 36:
+        raise ValueError("dpi must be >= 36")
+    if not 0 <= options.image_size_limit < 1:
+        raise ValueError("image_size_limit must be >= 0 and < 1")
+    if options.table_strategy not in {"lines_strict", "lines", "text"}:
+        raise ValueError("table_strategy must be one of: lines_strict, lines, text")
 
 
 class PdfReader:
@@ -477,37 +550,171 @@ class PdfReader:
         self._page_cache[cache_key] = content
         return content
 
+    def _markdown_exclusion_texts(
+        self,
+        page_number: int,
+        options: ExtractionOptions,
+    ) -> set[str]:
+        raw_options = replace(
+            options,
+            exclude_header_footer=False,
+            exclude_watermark=False,
+            exclude_tables=False,
+        )
+        content = self._get_page_content(page_number, raw_options)
+        forbidden: set[str] = set()
+
+        if options.exclude_header_footer:
+            repeated_edge_texts = self._get_repeated_edge_texts(options)
+            header_limit = content["page_height"] * _expanded_edge_ratio(options.header_ratio)
+            footer_limit = content["page_height"] * (1.0 - _expanded_edge_ratio(options.footer_ratio))
+            for line in content["lines"]:
+                bbox = line["bbox"]
+                line_top = float(bbox[1])
+                line_bottom = float(bbox[3])
+                text_keys = _edge_text_keys(line["text"])
+                if line_top < header_limit and any(key in repeated_edge_texts["header"] for key in text_keys):
+                    forbidden.update(text_keys)
+                if line_bottom > footer_limit and any(key in repeated_edge_texts["footer"] for key in text_keys):
+                    forbidden.update(text_keys)
+
+        if options.exclude_watermark:
+            for line in content["lines"]:
+                if abs(float(line.get("angle") or 0.0)) > options.angle_threshold:
+                    forbidden.update(_edge_text_keys(line["text"]))
+
+        return {item for item in forbidden if item}
+
+    def _sanitize_markdown_text(
+        self,
+        text: str,
+        *,
+        page_number: int,
+        options: ExtractionOptions,
+    ) -> str:
+        forbidden = self._markdown_exclusion_texts(page_number, options)
+        if not forbidden:
+            return _collapse_blank_lines(text)
+
+        kept_lines: list[str] = []
+        for line in text.splitlines():
+            line_keys = _markdown_line_text_keys(line)
+            if line_keys and any(key in forbidden for key in line_keys):
+                continue
+            kept_lines.append(line)
+        return _collapse_blank_lines("\n".join(kept_lines))
+
+    def _get_page_markdown(
+        self,
+        page_number: int,
+        *,
+        options: ExtractionOptions,
+        markdown_options: MarkdownOptions,
+        asset_root: str | Path | None = None,
+    ) -> dict[str, Any]:
+        _require_pymupdf4llm()
+        _validate_markdown_options(markdown_options)
+        self._validate_page_number(page_number)
+
+        page = self.doc[page_number - 1]
+        image_dir: Path | None = None
+        image_path = ""
+        if markdown_options.write_images and not markdown_options.embed_images:
+            image_dir = _markdown_asset_dir(self.pdf_path, page_number, asset_root)
+            image_dir.mkdir(parents=True, exist_ok=True)
+            image_path = str(image_dir)
+
+        margin_top = float(page.rect.height) * options.header_ratio if options.exclude_header_footer else 0.0
+        margin_bottom = float(page.rect.height) * options.footer_ratio if options.exclude_header_footer else 0.0
+        chunk_list = pymupdf4llm.helpers.pymupdf_rag.to_markdown(
+            self.doc,
+            pages=[page_number - 1],
+            page_chunks=True,
+            write_images=markdown_options.write_images and not markdown_options.embed_images,
+            embed_images=markdown_options.embed_images,
+            image_path=image_path,
+            image_format=markdown_options.image_format,
+            image_size_limit=markdown_options.image_size_limit,
+            filename=str(self.pdf_path),
+            force_text=markdown_options.force_text,
+            margins=(0.0, margin_top, 0.0, margin_bottom),
+            dpi=markdown_options.dpi,
+            table_strategy=markdown_options.table_strategy,
+            graphics_limit=markdown_options.graphics_limit,
+            fontsize_limit=markdown_options.fontsize_limit,
+            ignore_code=markdown_options.ignore_code,
+            extract_words=markdown_options.extract_words,
+            show_progress=False,
+            use_glyphs=markdown_options.use_glyphs,
+            ignore_alpha=markdown_options.ignore_alpha,
+            ignore_graphics=markdown_options.ignore_graphics,
+            detect_bg_color=markdown_options.detect_bg_color,
+        )
+        chunk = chunk_list[0] if chunk_list else {}
+        metadata = dict(chunk.get("metadata") or {})
+        markdown_text = self._sanitize_markdown_text(
+            str(chunk.get("text") or ""),
+            page_number=page_number,
+            options=options,
+        )
+
+        return {
+            "page_number": int(metadata.get("page") or page_number),
+            "page_width": round(float(page.rect.width), 3),
+            "page_height": round(float(page.rect.height), 3),
+            "total_lines": len(markdown_text.splitlines()),
+            "text": markdown_text,
+            "format": "markdown",
+            "metadata": metadata,
+            "toc_items": list(chunk.get("toc_items") or []),
+            "tables": list(chunk.get("tables") or []),
+            "images": list(chunk.get("images") or []),
+            "graphics": list(chunk.get("graphics") or []),
+            "words": list(chunk.get("words") or []),
+            "image_directory": str(image_dir) if image_dir is not None else None,
+        }
+
     def read_pages(
         self,
         pages: int | str | Sequence[int],
         *,
         mode: str = "page_text",
         options: ExtractionOptions | None = None,
+        markdown_options: MarkdownOptions | None = None,
+        asset_root: str | Path | None = None,
     ) -> dict[str, Any]:
         options = options or ExtractionOptions()
         page_numbers = parse_page_spec(pages, page_count=self.page_count)
-        allowed_modes = {"page_text", "visual_lines", "blocks"}
+        allowed_modes = {"page_text", "visual_lines", "blocks", "markdown"}
         if mode not in allowed_modes:
             raise ValueError(f"Unsupported mode: {mode}. Supported modes: {sorted(allowed_modes)}")
 
         items = []
         for page_number in page_numbers:
-            content = self._get_page_content(page_number, options)
-            page_item = {
-                "page_number": page_number,
-                "page_width": content["page_width"],
-                "page_height": content["page_height"],
-                "total_lines": content["total_lines"],
-            }
-            if mode == "page_text":
-                page_item["text"] = content["text"]
-            elif mode == "visual_lines":
-                page_item["lines"] = content["lines"]
+            if mode == "markdown":
+                page_item = self._get_page_markdown(
+                    page_number,
+                    options=options,
+                    markdown_options=markdown_options or MarkdownOptions(),
+                    asset_root=asset_root,
+                )
             else:
-                page_item["blocks"] = content["blocks"]
+                content = self._get_page_content(page_number, options)
+                page_item = {
+                    "page_number": page_number,
+                    "page_width": content["page_width"],
+                    "page_height": content["page_height"],
+                    "total_lines": content["total_lines"],
+                }
+                if mode == "page_text":
+                    page_item["text"] = content["text"]
+                elif mode == "visual_lines":
+                    page_item["lines"] = content["lines"]
+                else:
+                    page_item["blocks"] = content["blocks"]
             items.append(page_item)
 
-        return {
+        result = {
             "pdf_path": str(self.pdf_path),
             "page_count": self.page_count,
             "pages": page_numbers,
@@ -515,6 +722,9 @@ class PdfReader:
             "filters": asdict(options),
             "items": items,
         }
+        if mode == "markdown":
+            result["markdown"] = asdict(markdown_options or MarkdownOptions())
+        return result
 
     def read_lines(
         self,
@@ -703,6 +913,22 @@ def read_pdf_pages(
     angle_threshold: float = 5.0,
     exclude_tables: bool = True,
     y_tolerance: float = 3.0,
+    write_images: bool = True,
+    embed_images: bool = False,
+    image_format: str = "png",
+    dpi: int = 150,
+    force_text: bool = True,
+    ignore_graphics: bool = False,
+    detect_bg_color: bool = True,
+    ignore_alpha: bool = True,
+    table_strategy: str = "lines_strict",
+    image_size_limit: float = 0.05,
+    graphics_limit: int | None = None,
+    fontsize_limit: float = 3.0,
+    ignore_code: bool = False,
+    extract_words: bool = False,
+    use_glyphs: bool = False,
+    asset_root: str | Path | None = None,
 ) -> dict[str, Any]:
     options = ExtractionOptions(
         exclude_header_footer=exclude_header_footer,
@@ -713,8 +939,31 @@ def read_pdf_pages(
         exclude_tables=exclude_tables,
         y_tolerance=y_tolerance,
     )
+    markdown_options = MarkdownOptions(
+        write_images=write_images,
+        embed_images=embed_images,
+        image_format=image_format,
+        dpi=dpi,
+        force_text=force_text,
+        ignore_graphics=ignore_graphics,
+        detect_bg_color=detect_bg_color,
+        ignore_alpha=ignore_alpha,
+        table_strategy=table_strategy,
+        image_size_limit=image_size_limit,
+        graphics_limit=graphics_limit,
+        fontsize_limit=fontsize_limit,
+        ignore_code=ignore_code,
+        extract_words=extract_words,
+        use_glyphs=use_glyphs,
+    )
     with PdfReader(pdf_path) as reader:
-        return reader.read_pages(pages, mode=mode, options=options)
+        return reader.read_pages(
+            pages,
+            mode=mode,
+            options=options,
+            markdown_options=markdown_options,
+            asset_root=asset_root,
+        )
 
 
 def read_pdf_lines(

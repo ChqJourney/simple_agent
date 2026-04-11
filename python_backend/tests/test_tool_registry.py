@@ -11,7 +11,7 @@ from tools.delegate_task import DelegateTaskTool
 from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
 from tools.ocr_extract import OcrExtractTool
-from tools.pdf_tools import PdfGetInfoTool, PdfSearchTool
+from tools.pdf_tools import PdfGetInfoTool, PdfReadPagesTool, PdfSearchTool
 from tools.read_document_segment import ReadDocumentSegmentTool
 from tools.search_documents import SearchDocumentsTool
 from tools.skill_loader import SkillLoaderTool
@@ -43,6 +43,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         registry.register(ReadDocumentSegmentTool())
         registry.register(GetDocumentStructureTool())
         registry.register(PdfGetInfoTool())
+        registry.register(PdfReadPagesTool())
         registry.register(PdfSearchTool())
         registry.register(OcrExtractTool())
         registry.register(TodoTaskTool())
@@ -60,6 +61,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
                 "list_directory_tree",
                 "ocr_extract",
                 "pdf_get_info",
+                "pdf_read_pages",
                 "pdf_search",
                 "read_document_segment",
                 "search_documents",
@@ -85,6 +87,10 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
 
         pdf_search_descriptor = next(d for d in descriptors if d.name == "pdf_search")
         self.assertIn("search_mode='page'", pdf_search_descriptor.description)
+
+        pdf_pages_descriptor = next(d for d in descriptors if d.name == "pdf_read_pages")
+        self.assertIn("Prefer mode='markdown'", pdf_pages_descriptor.description)
+        self.assertEqual("markdown", pdf_pages_descriptor.parameters["properties"]["mode"]["default"])
 
         ocr_descriptor = next(d for d in descriptors if d.name == "ocr_extract")
         self.assertTrue(ocr_descriptor.read_only)

@@ -103,6 +103,16 @@ a = Analysis(
         'tiktoken',
         'tiktoken_ext',
         'tiktoken_ext.openai_public',
+        # pymupdf / pymupdf4llm
+        'pymupdf',
+        'pymupdf.layout',
+        'pymupdf4llm',
+        'pymupdf4llm.helpers',
+        'pymupdf4llm.helpers.document_layout',
+        'pymupdf4llm.helpers.get_text_lines',
+        'pymupdf4llm.helpers.multi_column',
+        'pymupdf4llm.helpers.pymupdf_rag',
+        'pymupdf4llm.helpers.utils',
         # uvicorn
         'uvicorn',
         'uvicorn.logging',

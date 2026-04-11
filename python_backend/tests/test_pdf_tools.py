@@ -102,6 +102,34 @@ class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("pdf_pages", result.output["event"])
             self.assertEqual([2, 3], result.output["summary"]["requested_pages"])
 
+    async def test_pdf_read_pages_tool_defaults_to_markdown_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "manual.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7")
+
+            with patch(
+                "tools.pdf_tools.read_pdf_pages",
+                return_value={
+                    "pdf_path": str(pdf_path),
+                    "page_count": 12,
+                    "pages": [2],
+                    "mode": "markdown",
+                    "filters": {},
+                    "markdown": {},
+                    "items": [{"page_number": 2, "text": "# Scope", "format": "markdown"}],
+                },
+            ) as mocked:
+                result = await PdfReadPagesTool().execute(
+                    tool_call_id="pdf-pages-default-markdown",
+                    workspace_path=temp_dir,
+                    path="manual.pdf",
+                    pages="2",
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual("markdown", mocked.call_args.kwargs["mode"])
+            self.assertEqual("markdown", result.output["summary"]["mode"])
+
     async def test_pdf_read_pages_tool_allows_all_pages_keyword(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             pdf_path = Path(temp_dir) / "manual.pdf"
@@ -128,6 +156,43 @@ class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result.success)
             self.assertEqual("all", mocked.call_args.kwargs["pages"])
             self.assertEqual(list(range(1, 13)), result.output["summary"]["requested_pages"])
+
+    async def test_pdf_read_pages_tool_supports_markdown_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "manual.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7")
+
+            with patch(
+                "tools.pdf_tools.read_pdf_pages",
+                return_value={
+                    "pdf_path": str(pdf_path),
+                    "page_count": 12,
+                    "pages": [2],
+                    "mode": "markdown",
+                    "filters": {},
+                    "markdown": {"write_images": True},
+                    "items": [
+                        {
+                            "page_number": 2,
+                            "text": "# Scope\n\n| A | B |\n| - | - |\n| 1 | 2 |",
+                            "format": "markdown",
+                            "images": [],
+                            "tables": [],
+                        }
+                    ],
+                },
+            ) as mocked:
+                result = await PdfReadPagesTool().execute(
+                    tool_call_id="pdf-pages-markdown",
+                    workspace_path=temp_dir,
+                    path="manual.pdf",
+                    pages="2",
+                    mode="markdown",
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual("markdown", mocked.call_args.kwargs["mode"])
+            self.assertEqual("markdown", result.output["summary"]["mode"])
 
     async def test_pdf_read_lines_tool_returns_line_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,6 +1,7 @@
 from .ask_question import AskQuestionTool
 from .base import BaseTool, ToolDescriptor, ToolRegistry, ToolResult
 from .delegate_task import DelegateTaskTool
+from .extract_checklist_rows import ExtractChecklistRowsTool
 from .file_read import FileReadTool
 from .get_document_structure import GetDocumentStructureTool
 from .file_write import FileWriteTool
@@ -26,6 +27,7 @@ __all__ = [
     "AskQuestionTool",
     "BaseTool",
     "DelegateTaskTool",
+    "ExtractChecklistRowsTool",
     "FileReadTool",
     "FileWriteTool",
     "GetDocumentStructureTool",

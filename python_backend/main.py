@@ -45,6 +45,7 @@ from skills.local_loader import default_skill_search_roots
 from tools.base import BaseTool, ToolRegistry
 from tools.ask_question import AskQuestionTool
 from tools.delegate_task import DelegateTaskTool
+from tools.extract_checklist_rows import ExtractChecklistRowsTool
 from tools.file_read import FileReadTool
 from tools.file_write import FileWriteTool
 from tools.get_document_structure import GetDocumentStructureTool
@@ -123,6 +124,9 @@ tool_registry = ToolRegistry()
 tool_registry.register(ListDirectoryTreeTool())
 tool_registry.register(SearchDocumentsTool())
 tool_registry.register(ReadDocumentSegmentTool())
+tool_registry.register(
+    ExtractChecklistRowsTool(config_getter=lambda: runtime_state.current_config)
+)
 tool_registry.register(
     SearchReferenceLibraryTool(config_getter=lambda: runtime_state.current_config)
 )

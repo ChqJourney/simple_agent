@@ -177,6 +177,15 @@ fn authorize_workspace_path(
 }
 
 #[tauri::command]
+fn authorize_reference_library_path(
+    app: tauri::AppHandle,
+    selected_path: String,
+) -> Result<workspace_paths::AuthorizedWorkspacePath, String> {
+    workspace_paths::authorize_reference_library_path(&app, Path::new(&selected_path))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn scan_workspace_sessions(
     app: tauri::AppHandle,
     workspace_path: String,
@@ -849,6 +858,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             prepare_workspace_path,
             authorize_workspace_path,
+            authorize_reference_library_path,
             scan_workspace_sessions,
             read_session_history,
             delete_session_history,

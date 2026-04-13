@@ -185,6 +185,45 @@ describe("normalizeProviderConfig", () => {
     });
   });
 
+  it("normalizes reference library roots and kinds", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+      reference_library: {
+        roots: [
+          {
+            id: "  ",
+            label: " ",
+            path: " /standards ",
+            enabled: false,
+            kinds: ["standard", " checklist ", "unknown"],
+          },
+          {
+            id: "ignored",
+            label: "Ignored",
+            path: "   ",
+            enabled: true,
+          },
+        ],
+      },
+    });
+
+    expect(normalized.reference_library).toEqual({
+      roots: [
+        {
+          id: "/standards",
+          label: "standards",
+          path: "/standards",
+          enabled: false,
+          kinds: ["standard", "checklist"],
+        },
+      ],
+    });
+  });
+
   providerBaseUrlCases.forEach(({ provider, model, api_key, enable_reasoning, expectedBaseUrl }) => {
     it(`normalizes ${provider} config with the provider default base url`, () => {
       const normalized = normalizeProviderConfig({

@@ -1,10 +1,20 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { invoke } from '@tauri-apps/api/core';
 import { ProviderConfigForm } from '../components/Settings/ProviderConfig';
 import { CustomSelect } from '../components/common';
 import { useConfigStore } from '../stores/configStore';
 import { useUIStore } from '../stores';
-import { ExecutionRole, ModelProfile, ProviderCatalogModel, ProviderConfig, ProviderType, RuntimePolicy } from '../types';
+import {
+  ExecutionRole,
+  ModelProfile,
+  ProviderCatalogModel,
+  ProviderConfig,
+  ProviderType,
+  ReferenceLibraryKind,
+  ReferenceLibraryRoot,
+  RuntimePolicy,
+} from '../types';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import {
   normalizeBaseFontSize,
@@ -14,6 +24,7 @@ import {
   normalizeProviderCatalog,
   normalizeProviderMemory,
   normalizeProviderConfig,
+  normalizeReferenceLibraryConfig,
   normalizeRuntimeConfig,
   resolveProfileForRole,
   resolveRuntimePolicy,
@@ -28,7 +39,7 @@ import { AppLocale, useI18n } from '../i18n';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 type ProfileName = 'primary' | 'background';
-type SettingsTab = 'model' | 'runtime' | 'tools' | 'skills' | 'ocr' | 'ui';
+type SettingsTab = 'model' | 'runtime' | 'tools' | 'skills' | 'reference' | 'ocr' | 'ui';
 type RuntimeSectionKey = 'shared' | 'conversation' | 'background' | 'compaction' | 'delegated_task';
 
 interface ConnectionTestState {
@@ -41,6 +52,10 @@ interface OcrInstallState {
   installing: boolean;
   error: string | null;
   info: OcrSidecarInstallInfo | null;
+}
+
+interface AuthorizedReferenceLibraryPath {
+  canonical_path: string;
 }
 
 const APP_FONT_LABEL = 'Inter';
@@ -83,12 +98,14 @@ export const SettingsPage: React.FC = () => {
     error: null,
     info: null,
   });
+  const [referenceLibraryError, setReferenceLibraryError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const settingsTabs: Array<{ value: SettingsTab; label: string; description: string }> = [
     { value: 'model', label: t('settings.tab.model'), description: t('settings.tab.modelDescription') },
     { value: 'runtime', label: t('settings.tab.runtime'), description: t('settings.tab.runtimeDescription') },
     { value: 'tools', label: t('settings.tab.tools'), description: t('settings.tab.toolsDescription') },
     { value: 'skills', label: t('settings.tab.skills'), description: t('settings.tab.skillsDescription') },
+    { value: 'reference', label: t('settings.tab.reference'), description: t('settings.tab.referenceDescription') },
     { value: 'ocr', label: t('settings.tab.ocr'), description: t('settings.tab.ocrDescription') },
     { value: 'ui', label: t('settings.tab.ui'), description: t('settings.tab.uiDescription') },
   ];
@@ -253,8 +270,15 @@ export const SettingsPage: React.FC = () => {
   const providerCatalog = normalizeProviderCatalog(draftConfig.provider_catalog);
   const contextProviders = normalizeContextProviders(draftConfig.context_providers);
   const ocrConfig = normalizeOcrConfig(draftConfig.ocr);
+  const referenceLibrary = normalizeReferenceLibraryConfig(draftConfig.reference_library);
+  const referenceLibraryRoots = referenceLibrary.roots;
   const disabledToolNames = new Set(contextProviders.tools?.disabled ?? []);
   const disabledSystemSkillNames = new Set(contextProviders.skills?.system?.disabled ?? []);
+  const referenceLibraryKindOptions: Array<{ value: ReferenceLibraryKind; label: string }> = [
+    { value: 'standard', label: t('settings.reference.kind.standard') },
+    { value: 'checklist', label: t('settings.reference.kind.checklist') },
+    { value: 'guidance', label: t('settings.reference.kind.guidance') },
+  ];
   const handleProviderCatalogLoaded = useCallback((provider: ProviderType, models: ProviderCatalogModel[]) => {
     setDraftConfig((currentDraft) => ({
       ...currentDraft,
@@ -414,6 +438,82 @@ export const SettingsPage: React.FC = () => {
         },
       },
     });
+  };
+
+  const updateReferenceLibraryRoots = (roots: ReferenceLibraryRoot[]) => {
+    setDraftConfig({
+      ...draftConfig,
+      reference_library: {
+        roots,
+      },
+    });
+  };
+
+  const updateReferenceLibraryRoot = (rootId: string, updates: Partial<ReferenceLibraryRoot>) => {
+    const nextRoots = referenceLibraryRoots.map((root) => (
+      root.id === rootId ? { ...root, ...updates } : root
+    ));
+    updateReferenceLibraryRoots(nextRoots);
+  };
+
+  const toggleReferenceLibraryKind = (rootId: string, kind: ReferenceLibraryKind, enabled: boolean) => {
+    const root = referenceLibraryRoots.find((item) => item.id === rootId);
+    if (!root) {
+      return;
+    }
+    const currentKinds = root.kinds ?? referenceLibraryKindOptions.map((option) => option.value);
+    const nextKinds = enabled
+      ? Array.from(new Set([...currentKinds, kind]))
+      : currentKinds.filter((value) => value !== kind);
+    if (nextKinds.length === 0) {
+      return;
+    }
+    updateReferenceLibraryRoot(rootId, { kinds: nextKinds });
+  };
+
+  const handleRemoveReferenceRoot = (rootId: string) => {
+    updateReferenceLibraryRoots(referenceLibraryRoots.filter((root) => root.id !== rootId));
+  };
+
+  const handleAddReferenceRoot = async () => {
+    setReferenceLibraryError(null);
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t('settings.reference.selectFolderTitle'),
+      });
+
+      if (!selected || Array.isArray(selected)) {
+        return;
+      }
+
+      const authorized = await invoke<AuthorizedReferenceLibraryPath>('authorize_reference_library_path', {
+        selectedPath: selected,
+      });
+      const canonicalPath = authorized.canonical_path;
+      const normalizedPath = canonicalPath.toLowerCase();
+      const existingRoot = referenceLibraryRoots.find((root) => root.path.toLowerCase() === normalizedPath);
+      if (existingRoot) {
+        setReferenceLibraryError(t('settings.reference.duplicate'));
+        return;
+      }
+
+      const label = canonicalPath.split(/[\\/]/).filter(Boolean).pop() || canonicalPath;
+      updateReferenceLibraryRoots([
+        ...referenceLibraryRoots,
+        {
+          id: crypto.randomUUID(),
+          label,
+          path: canonicalPath,
+          enabled: true,
+          kinds: ['standard'],
+        },
+      ]);
+    } catch (error) {
+      setReferenceLibraryError(error instanceof Error ? error.message : t('settings.error.addReferenceLibrary'));
+    }
   };
 
   const setConnectionTestState = (profileName: ProfileName, status: TestStatus, error: string | null = null) => {
@@ -644,6 +744,7 @@ export const SettingsPage: React.FC = () => {
       },
       context_providers: contextProviders,
       ocr: ocrConfig,
+      reference_library: referenceLibrary,
     });
 
     setBaseFontSize(normalizeBaseFontSize(draftBaseFontSize));
@@ -1062,6 +1163,121 @@ export const SettingsPage: React.FC = () => {
                 </div>
               ))}
             </div>
+          </section>
+        </div>
+      );
+    }
+
+    if (activeTab === 'reference') {
+      return (
+        <div className="space-y-6">
+          <section className={SETTINGS_CARD_CLASS}>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.reference.title')}</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  {t('settings.reference.description')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleAddReferenceRoot()}
+                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700/80 dark:text-gray-200 dark:hover:bg-gray-800/80"
+              >
+                {t('settings.reference.add')}
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {referenceLibraryRoots.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  {t('settings.reference.empty')}
+                </div>
+              )}
+
+              {referenceLibraryRoots.map((root) => (
+                <div key={root.id} className={SETTINGS_ROW_CLASS}>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1 space-y-4">
+                      <div>
+                        <label
+                          htmlFor={`reference-label-${root.id}`}
+                          className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          {t('settings.reference.label')}
+                        </label>
+                        <input
+                          id={`reference-label-${root.id}`}
+                          type="text"
+                          value={root.label}
+                          onChange={(event) => updateReferenceLibraryRoot(root.id, { label: event.target.value })}
+                          className="mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                          {t('settings.reference.path')}
+                        </div>
+                        <div className="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+                          {root.path}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-3">
+                      <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <span>{root.enabled ? t('common.enabled') : t('common.disabled')}</span>
+                        <input
+                          type="checkbox"
+                          checked={root.enabled}
+                          onChange={(event) => updateReferenceLibraryRoot(root.id, { enabled: event.target.checked })}
+                          className="h-5 w-5 rounded border-gray-300 dark:border-gray-600"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveReferenceRoot(root.id)}
+                        className="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
+                      >
+                        {t('settings.reference.remove')}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      {t('settings.reference.kinds')}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-4">
+                      {referenceLibraryKindOptions.map((option) => {
+                        const isEnabled = root.kinds ? root.kinds.includes(option.value) : true;
+                        return (
+                          <label
+                            key={`${root.id}-${option.value}`}
+                            className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isEnabled}
+                              onChange={(event) => toggleReferenceLibraryKind(root.id, option.value, event.target.checked)}
+                              className="h-4 w-4 rounded border-gray-300 dark:border-gray-600"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {referenceLibraryError && (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                {referenceLibraryError}
+              </div>
+            )}
           </section>
         </div>
       );

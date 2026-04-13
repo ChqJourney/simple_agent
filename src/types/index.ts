@@ -99,6 +99,7 @@ export interface RunEventRecord {
 export type ProviderType = 'openai' | 'deepseek' | 'kimi' | 'glm' | 'minimax' | 'qwen';
 export type InputType = 'text' | 'image';
 export type ExecutionRole = 'conversation' | 'background' | 'compaction' | 'delegated_task';
+export type ScenarioId = 'default' | 'standard_qa' | 'checklist_evaluation';
 
 export interface ProviderCatalogModel {
   id: string;
@@ -136,6 +137,20 @@ export interface ProviderMemoryEntry {
   model?: string;
   api_key?: string;
   base_url?: string;
+}
+
+export type ReferenceLibraryKind = 'standard' | 'checklist' | 'guidance';
+
+export interface ReferenceLibraryRoot {
+  id: string;
+  label: string;
+  path: string;
+  enabled: boolean;
+  kinds?: ReferenceLibraryKind[];
+}
+
+export interface ReferenceLibraryConfig {
+  roots: ReferenceLibraryRoot[];
 }
 
 export interface AppearanceConfig {
@@ -190,6 +205,7 @@ export interface ProviderConfig extends ModelProfile {
   appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
   ocr?: OcrConfig;
+  reference_library?: ReferenceLibraryConfig;
 }
 
 export interface LockedModelRef {
@@ -214,6 +230,9 @@ export interface Session {
   updated_at?: string;
   title?: string;
   locked_model?: LockedModelRef;
+  scenario_id?: ScenarioId;
+  scenario_version?: number;
+  scenario_label?: string;
 }
 
 export interface ClientMessage {
@@ -276,6 +295,24 @@ export interface ClientSetExecutionMode {
   execution_mode: ExecutionMode;
 }
 
+export interface ClientCreateSession {
+  type: 'create_session';
+  session_id: string;
+  workspace_path: string;
+  scenario_id?: ScenarioId;
+  scenario_version?: number;
+  scenario_label?: string;
+}
+
+export interface ClientUpdateSessionScenario {
+  type: 'update_session_scenario';
+  session_id: string;
+  workspace_path?: string;
+  scenario_id?: ScenarioId;
+  scenario_version?: number;
+  scenario_label?: string;
+}
+
 export type ClientWebSocketMessage =
   | ClientMessage
   | ClientConfig
@@ -283,7 +320,9 @@ export type ClientWebSocketMessage =
   | ClientQuestionResponse
   | ClientInterrupt
   | ClientSetWorkspace
-  | ClientSetExecutionMode;
+  | ClientSetExecutionMode
+  | ClientCreateSession
+  | ClientUpdateSessionScenario;
 
 export interface ServerToken {
   type: 'token';
@@ -424,6 +463,23 @@ export interface ServerSessionLockUpdated {
   locked_model: LockedModelRef;
 }
 
+export interface ServerSessionCreated {
+  type: 'session_created';
+  session_id: string;
+  workspace_path: string;
+  scenario_id?: ScenarioId;
+  scenario_version?: number;
+  scenario_label?: string;
+}
+
+export interface ServerSessionScenarioUpdated {
+  type: 'session_scenario_updated';
+  session_id: string;
+  scenario_id?: ScenarioId;
+  scenario_version?: number;
+  scenario_label?: string;
+}
+
 export interface ServerRunEvent {
   type: 'run_event';
   session_id: string;
@@ -451,6 +507,8 @@ export type ServerWebSocketMessage =
   | ServerExecutionModeUpdated
   | ServerSessionTitleUpdated
   | ServerSessionLockUpdated
+  | ServerSessionCreated
+  | ServerSessionScenarioUpdated
   | ServerRunEvent;
 
 export type WebSocketMessage = ClientWebSocketMessage | ServerWebSocketMessage;

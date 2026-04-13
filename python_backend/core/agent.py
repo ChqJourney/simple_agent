@@ -61,6 +61,7 @@ class Agent:
         user_manager: UserManager,
         skill_provider: Optional[SkillProvider] = None,
         custom_system_prompt: str = "",
+        scenario_system_prompt: str = "",
         compaction_llm_factory: Optional[Callable[[], BaseLLM]] = None,
         background_compaction_scheduler: Optional[Callable[[Session, str], Awaitable[None]]] = None,
         tool_filter: Optional[Callable[[BaseTool], bool]] = None,
@@ -72,6 +73,7 @@ class Agent:
         self.user_manager = user_manager
         self.skill_provider = skill_provider
         self.custom_system_prompt = custom_system_prompt.strip()
+        self.scenario_system_prompt = scenario_system_prompt.strip()
         self.compaction_llm_factory = compaction_llm_factory
         self.background_compaction_scheduler = background_compaction_scheduler
         self.tool_filter = tool_filter
@@ -1293,6 +1295,9 @@ class Agent:
         if self.custom_system_prompt:
             prompt_sections.append(self._format_custom_system_prompt_section(self.custom_system_prompt))
 
+        if self.scenario_system_prompt:
+            prompt_sections.append(self._format_scenario_prompt_section(self.scenario_system_prompt))
+
         prompt_sections.append(self._format_runtime_environment_section(session))
         if self._is_tool_available_to_model("delegate_task"):
             prompt_sections.append(self._format_delegation_guidance_section())
@@ -1640,6 +1645,10 @@ class Agent:
     @staticmethod
     def _format_custom_system_prompt_section(custom_system_prompt: str) -> str:
         return f"Additional user-configured system instructions:\n{custom_system_prompt}"
+
+    @staticmethod
+    def _format_scenario_prompt_section(scenario_system_prompt: str) -> str:
+        return f"Scenario guidance:\n{scenario_system_prompt}"
 
     @staticmethod
     def _format_runtime_environment_section(session: Session) -> str:

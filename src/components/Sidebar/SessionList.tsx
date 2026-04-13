@@ -36,6 +36,19 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
     void switchSession(sessionId);
   };
 
+  const getScenarioLabel = (scenarioId?: string, scenarioLabel?: string) => {
+    if (scenarioLabel && scenarioLabel.trim()) {
+      return scenarioLabel;
+    }
+    if (scenarioId === 'standard_qa') {
+      return t('scenario.standardQa');
+    }
+    if (scenarioId === 'checklist_evaluation') {
+      return t('scenario.checklistEvaluation');
+    }
+    return t('scenario.default');
+  };
+
   const handleDeleteClick = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     setDeleteConfirm(sessionId);
@@ -98,8 +111,13 @@ export const SessionList: React.FC<SessionListProps> = ({ workspacePath }) => {
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100'
                     }`}
                     >
-                    <div className="font-medium truncate">
-                      {session.title?.trim() || t('sessions.newSessionTitle')}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium truncate">
+                        {session.title?.trim() || t('sessions.newSessionTitle')}
+                      </div>
+                      <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:bg-gray-800 dark:text-gray-300">
+                        {getScenarioLabel(session.scenario_id, session.scenario_label)}
+                      </span>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">
                       {formatTimestamp(session.updated_at)}

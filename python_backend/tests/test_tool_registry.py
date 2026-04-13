@@ -13,6 +13,7 @@ from tools.list_directory_tree import ListDirectoryTreeTool
 from tools.ocr_extract import OcrExtractTool
 from tools.pdf_tools import PdfGetInfoTool, PdfReadPagesTool, PdfSearchTool
 from tools.read_document_segment import ReadDocumentSegmentTool
+from tools.reference_library import ReadReferenceSegmentTool, SearchReferenceLibraryTool
 from tools.search_documents import SearchDocumentsTool
 from tools.skill_loader import SkillLoaderTool
 from tools.registry import ToolRegistry
@@ -35,12 +36,18 @@ class FakeDelegatedTaskExecutor:
         }
 
 
+def empty_config():
+    return None
+
+
 class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_registry_exposes_descriptors_and_category_lookup(self) -> None:
         registry = ToolRegistry()
         registry.register(ListDirectoryTreeTool())
         registry.register(SearchDocumentsTool())
         registry.register(ReadDocumentSegmentTool())
+        registry.register(SearchReferenceLibraryTool(empty_config))
+        registry.register(ReadReferenceSegmentTool(empty_config))
         registry.register(GetDocumentStructureTool())
         registry.register(PdfGetInfoTool())
         registry.register(PdfReadPagesTool())
@@ -64,7 +71,9 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
                 "pdf_read_pages",
                 "pdf_search",
                 "read_document_segment",
+                "read_reference_segment",
                 "search_documents",
+                "search_reference_library",
                 "skill_loader",
                 "todo_task",
             ],
@@ -84,6 +93,10 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         read_descriptor = next(d for d in descriptors if d.name == "read_document_segment")
         locator_schema = read_descriptor.parameters["properties"]["locator"]
         self.assertIn("pdf_line_range", locator_schema["description"])
+
+        reference_search_descriptor = next(d for d in descriptors if d.name == "search_reference_library")
+        self.assertTrue(reference_search_descriptor.read_only)
+        self.assertIn("reference materials", reference_search_descriptor.description)
 
         pdf_search_descriptor = next(d for d in descriptors if d.name == "pdf_search")
         self.assertIn("search_mode='page'", pdf_search_descriptor.description)

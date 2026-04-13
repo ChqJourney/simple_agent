@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import { deleteSessionHistory, scanSessions } from '../utils/storage';
-import { LockedModelRef } from '../types';
+import { LockedModelRef, ScenarioId } from '../types';
 
 interface SessionMeta {
   session_id: string;
@@ -11,6 +11,9 @@ interface SessionMeta {
   updated_at: string;
   title?: string;
   locked_model?: LockedModelRef;
+  scenario_id?: ScenarioId;
+  scenario_version?: number;
+  scenario_label?: string;
 }
 
 interface SessionState {

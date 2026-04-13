@@ -9,6 +9,8 @@ import {
   ProviderConfig,
   ProviderMemoryEntry,
   ProviderType,
+  ReferenceLibraryConfig,
+  ReferenceLibraryKind,
   RuntimeConfig,
   RuntimePolicy,
 } from '../types';
@@ -97,6 +99,58 @@ export function normalizeOcrConfig(ocr?: OcrConfig): Required<OcrConfig> {
 
 export function normalizeSystemPrompt(systemPrompt?: string): string {
   return systemPrompt?.trim() || '';
+}
+
+const REFERENCE_LIBRARY_KINDS: ReferenceLibraryKind[] = ['standard', 'checklist', 'guidance'];
+
+function normalizeReferenceLibraryKinds(kinds?: ReferenceLibraryKind[]): ReferenceLibraryKind[] | undefined {
+  if (!Array.isArray(kinds)) {
+    return undefined;
+  }
+
+  const normalized = Array.from(
+    new Set(
+      kinds
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter((value): value is ReferenceLibraryKind => REFERENCE_LIBRARY_KINDS.includes(value as ReferenceLibraryKind))
+    )
+  );
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+export function normalizeReferenceLibraryConfig(
+  referenceLibrary?: ReferenceLibraryConfig
+): ReferenceLibraryConfig {
+  const roots = Array.isArray(referenceLibrary?.roots) ? referenceLibrary?.roots : [];
+
+  const normalizedRoots = roots
+    .map((root) => {
+      if (!root || typeof root !== 'object') {
+        return null;
+      }
+      const rawPath = typeof root.path === 'string' ? root.path.trim() : '';
+      if (!rawPath) {
+        return null;
+      }
+      const rawId = typeof root.id === 'string' ? root.id.trim() : '';
+      const rawLabel = typeof root.label === 'string' ? root.label.trim() : '';
+      const label = rawLabel || rawPath.split(/[\\/]/).filter(Boolean).pop() || rawPath;
+      const kinds = normalizeReferenceLibraryKinds(root.kinds);
+
+      return {
+        id: rawId || rawPath,
+        label,
+        path: rawPath,
+        enabled: root.enabled !== false,
+        ...(kinds ? { kinds } : {}),
+      };
+    })
+    .filter((root): root is ReferenceLibraryConfig['roots'][number] => root !== null);
+
+  return {
+    roots: normalizedRoots,
+  };
 }
 
 function normalizeProviderMemoryEntry(entry?: ProviderMemoryEntry): ProviderMemoryEntry {
@@ -360,5 +414,6 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
     appearance: normalizeAppearanceConfig(config.appearance),
     context_providers: normalizeContextProviders(config.context_providers),
     ocr: normalizeOcrConfig(config.ocr),
+    reference_library: normalizeReferenceLibraryConfig(config.reference_library),
   };
 }

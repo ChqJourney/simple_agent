@@ -21,6 +21,9 @@ pub struct SessionMetaPayload {
     pub updated_at: String,
     pub title: Option<String>,
     pub locked_model: Option<LockedModelRefPayload>,
+    pub scenario_id: Option<String>,
+    pub scenario_version: Option<u32>,
+    pub scenario_label: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -34,6 +37,9 @@ struct SessionMetadataPayload {
     updated_at: Option<String>,
     title: Option<String>,
     locked_model: Option<LockedModelRefPayload>,
+    scenario_id: Option<String>,
+    scenario_version: Option<u32>,
+    scenario_label: Option<String>,
 }
 
 fn authorize_workspace_path<R: Runtime, M: Manager<R>>(
@@ -171,7 +177,10 @@ pub fn scan_workspace_sessions<R: Runtime, M: Manager<R>>(
             created_at,
             updated_at,
             title: metadata.as_ref().and_then(|value| value.title.clone()),
-            locked_model: metadata.and_then(|value| value.locked_model),
+            locked_model: metadata.as_ref().and_then(|value| value.locked_model.clone()),
+            scenario_id: metadata.as_ref().and_then(|value| value.scenario_id.clone()),
+            scenario_version: metadata.as_ref().and_then(|value| value.scenario_version),
+            scenario_label: metadata.as_ref().and_then(|value| value.scenario_label.clone()),
         });
     }
 

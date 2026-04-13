@@ -12,6 +12,7 @@ const confirmToolMock = vi.hoisted(() => vi.fn());
 const interruptMock = vi.hoisted(() => vi.fn());
 const setExecutionModeMock = vi.hoisted(() => vi.fn());
 const createSessionMock = vi.hoisted(() => vi.fn(() => "session-a"));
+const updateSessionScenarioMock = vi.hoisted(() => vi.fn());
 const messageInputPropsMock = vi.hoisted(() => vi.fn());
 const messageListPropsMock = vi.hoisted(() => vi.fn());
 
@@ -30,6 +31,7 @@ vi.mock("../../hooks/useSession", () => ({
   useSession: () => ({
     currentSessionId: "session-a",
     createSession: createSessionMock,
+    updateSessionScenario: updateSessionScenarioMock,
   }),
 }));
 
@@ -94,6 +96,7 @@ describe("ChatContainer", () => {
     interruptMock.mockReset();
     setExecutionModeMock.mockReset();
     createSessionMock.mockClear();
+    updateSessionScenarioMock.mockReset();
     messageInputPropsMock.mockReset();
     messageListPropsMock.mockReset();
     useConfigStore.setState({ config: null as never });
@@ -513,5 +516,68 @@ describe("ChatContainer", () => {
         content: "Retry this request",
       })
     );
+  });
+
+  it("updates the scenario on an empty session instead of creating a new one", () => {
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [],
+          currentStreamingContent: "",
+          currentReasoningContent: "",
+          isStreaming: false,
+          assistantStatus: "idle",
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
+        },
+      },
+    });
+
+    render(<ChatContainer />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Standard QA" }));
+
+    expect(updateSessionScenarioMock).toHaveBeenCalledWith("session-a", {
+      id: "standard_qa",
+      version: 1,
+      label: "Standard QA",
+    });
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("creates a new session when switching scenarios from a non-empty session", () => {
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [
+            {
+              id: "message-1",
+              role: "user",
+              content: "Question",
+              status: "completed",
+            },
+          ],
+          currentStreamingContent: "",
+          currentReasoningContent: "",
+          isStreaming: false,
+          assistantStatus: "idle",
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
+        },
+      },
+    });
+
+    render(<ChatContainer />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Standard QA" }));
+
+    expect(createSessionMock).toHaveBeenCalledWith({
+      id: "standard_qa",
+      version: 1,
+      label: "Standard QA",
+    });
+    expect(updateSessionScenarioMock).not.toHaveBeenCalled();
   });
 });

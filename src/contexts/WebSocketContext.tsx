@@ -18,6 +18,7 @@ import {
   ExecutionMode,
   OcrRuntimeStatus,
   OcrStatusPayload,
+  ScenarioId,
 } from '../types';
 import { normalizeProviderConfig } from '../utils/config';
 import { getBackendAuthToken } from '../utils/backendAuth';
@@ -35,6 +36,20 @@ interface WebSocketContextValue {
   interrupt: (sessionId: string) => void;
   sendWorkspace: (workspacePath: string) => void;
   setExecutionMode: (sessionId: string, mode: ExecutionMode) => boolean;
+  createSession: (payload: {
+    sessionId: string;
+    workspacePath: string;
+    scenarioId?: ScenarioId;
+    scenarioVersion?: number;
+    scenarioLabel?: string;
+  }) => boolean;
+  updateSessionScenario: (payload: {
+    sessionId: string;
+    workspacePath?: string;
+    scenarioId?: ScenarioId;
+    scenarioVersion?: number;
+    scenarioLabel?: string;
+  }) => boolean;
 }
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
@@ -59,7 +74,9 @@ interface QueuedWorkspaceMessage {
 type QueuedAuthenticatedMessage =
   | Extract<ClientWebSocketMessage, { type: 'question_response' }>
   | Extract<ClientWebSocketMessage, { type: 'tool_confirm' }>
-  | Extract<ClientWebSocketMessage, { type: 'interrupt' }>;
+  | Extract<ClientWebSocketMessage, { type: 'interrupt' }>
+  | Extract<ClientWebSocketMessage, { type: 'create_session' }>
+  | Extract<ClientWebSocketMessage, { type: 'update_session_scenario' }>;
 
 function hasTransientChatState(session: {
   isStreaming: boolean;
@@ -461,6 +478,20 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         case 'session_lock_updated':
           useSessionStore.getState().updateSession(data.session_id, { locked_model: data.locked_model });
           break;
+        case 'session_created':
+          useSessionStore.getState().updateSession(data.session_id, {
+            scenario_id: data.scenario_id,
+            scenario_version: data.scenario_version,
+            scenario_label: data.scenario_label,
+          });
+          break;
+        case 'session_scenario_updated':
+          useSessionStore.getState().updateSession(data.session_id, {
+            scenario_id: data.scenario_id,
+            scenario_version: data.scenario_version,
+            scenario_label: data.scenario_label,
+          });
+          break;
         case 'run_event':
           runStore.addEvent(data.session_id, data.event);
           if (data.event.event_type === 'session_compaction_completed') {
@@ -674,8 +705,42 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     return sent;
   }, [send]);
 
+  const createSession = useCallback((payload: {
+    sessionId: string;
+    workspacePath: string;
+    scenarioId?: ScenarioId;
+    scenarioVersion?: number;
+    scenarioLabel?: string;
+  }) => {
+    return sendAuthenticatedMessage({
+      type: 'create_session',
+      session_id: payload.sessionId,
+      workspace_path: payload.workspacePath,
+      scenario_id: payload.scenarioId,
+      scenario_version: payload.scenarioVersion,
+      scenario_label: payload.scenarioLabel,
+    });
+  }, [sendAuthenticatedMessage]);
+
+  const updateSessionScenario = useCallback((payload: {
+    sessionId: string;
+    workspacePath?: string;
+    scenarioId?: ScenarioId;
+    scenarioVersion?: number;
+    scenarioLabel?: string;
+  }) => {
+    return sendAuthenticatedMessage({
+      type: 'update_session_scenario',
+      session_id: payload.sessionId,
+      workspace_path: payload.workspacePath,
+      scenario_id: payload.scenarioId,
+      scenario_version: payload.scenarioVersion,
+      scenario_label: payload.scenarioLabel,
+    });
+  }, [sendAuthenticatedMessage]);
+
   return (
-    <WebSocketContext.Provider value={{ connectionStatus, isConnected, ocrStatus, sendMessage, answerQuestion, sendConfig, confirmTool, interrupt, sendWorkspace, setExecutionMode }}>
+    <WebSocketContext.Provider value={{ connectionStatus, isConnected, ocrStatus, sendMessage, answerQuestion, sendConfig, confirmTool, interrupt, sendWorkspace, setExecutionMode, createSession, updateSessionScenario }}>
       {children}
     </WebSocketContext.Provider>
   );

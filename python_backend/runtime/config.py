@@ -329,6 +329,43 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def get_enabled_reference_library_roots(
+    config: Optional[Dict[str, Any]],
+    *,
+    kind: Optional[str] = None,
+) -> list[Dict[str, Any]]:
+    if not isinstance(config, dict):
+        return []
+
+    reference_library = (
+        config.get("reference_library")
+        if isinstance(config.get("reference_library"), dict)
+        else {}
+    )
+    raw_roots = reference_library.get("roots")
+    if not isinstance(raw_roots, list):
+        return []
+
+    normalized_kind = str(kind or "").strip().lower()
+    selected_roots: list[Dict[str, Any]] = []
+    for root in raw_roots:
+        if not isinstance(root, dict):
+            continue
+        if not _to_bool(root.get("enabled"), True):
+            continue
+        if normalized_kind:
+            kinds = root.get("kinds")
+            if isinstance(kinds, list) and normalized_kind not in {
+                str(item or "").strip().lower()
+                for item in kinds
+                if str(item or "").strip()
+            }:
+                continue
+        selected_roots.append(root)
+
+    return selected_roots
+
+
 def get_primary_profile_config(config: Dict[str, Any]) -> Dict[str, Any]:
     profiles = config.get("profiles")
     if isinstance(profiles, dict):

@@ -160,6 +160,35 @@ class SkillRuntimeTests(unittest.IsolatedAsyncioTestCase):
             first_request_messages[0]["content"],
         )
 
+    async def test_agent_appends_scenario_guidance_after_custom_instructions(self) -> None:
+        session = await self.user_manager.create_session(self.temp_dir.name, "session-scenario-prompt")
+        await self.user_manager.bind_session_to_connection("session-scenario-prompt", "conn-1")
+
+        llm = RecordingLLM()
+        agent = Agent(
+            llm,
+            ToolRegistry(),
+            self.user_manager,
+            custom_system_prompt="Prefer concise answers.",
+            scenario_system_prompt="Use Conclusion, Evidence, Uncertainties, and Needed Information.",
+        )
+
+        await agent.run("hello", session)
+
+        first_request_messages = llm.captured_messages[0]
+        self.assertIn(
+            "Additional user-configured system instructions:",
+            first_request_messages[0]["content"],
+        )
+        self.assertIn(
+            "Scenario guidance:",
+            first_request_messages[0]["content"],
+        )
+        self.assertIn(
+            "Use Conclusion, Evidence, Uncertainties, and Needed Information.",
+            first_request_messages[0]["content"],
+        )
+
     async def test_agent_includes_delegation_guidance_when_delegate_task_tool_is_available(self) -> None:
         session = await self.user_manager.create_session(self.temp_dir.name, "session-delegation-guidance")
         await self.user_manager.bind_session_to_connection("session-delegation-guidance", "conn-1")

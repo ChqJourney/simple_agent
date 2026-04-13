@@ -7,10 +7,20 @@ import { useTaskStore } from '../stores/taskStore';
 import { v4 as uuidv4 } from 'uuid';
 import { loadSessionHistory } from '../utils/storage';
 import { useWebSocket } from '../contexts/WebSocketContext';
+import { ScenarioId } from '../types';
 
 interface UseSessionReturn {
   currentSessionId: string | null;
-  createSession: () => string;
+  createSession: (scenario?: {
+    id?: ScenarioId;
+    version?: number;
+    label?: string;
+  }) => string;
+  updateSessionScenario: (sessionId: string, scenario: {
+    id?: ScenarioId;
+    version?: number;
+    label?: string;
+  }) => void;
   switchSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<string | null>;
   clearCurrentSession: () => void;
@@ -63,17 +73,21 @@ export function useSession(): UseSessionReturn {
     addSession,
     removeSession,
     sessions,
+    updateSession,
   } = useSessionStore();
   const { currentWorkspace } = useWorkspaceStore();
   const { clearSession, loadSession: loadChatSession } = useChatStore();
   const clearRunSession = useRunStore((state) => state.clearSession);
   const clearSessionTasks = useTaskStore((state) => state.clearSessionTasks);
-  const { interrupt } = useWebSocket();
+  const { interrupt, createSession: createRemoteSession, updateSessionScenario: updateRemoteSessionScenario } = useWebSocket();
 
-  const createSession = useCallback((): string => {
+  const createSession = useCallback((scenario?: { id?: ScenarioId; version?: number; label?: string }): string => {
     const sessionId = uuidv4();
     const now = new Date().toISOString();
     const workspacePath = currentWorkspace?.path;
+    const scenarioId = scenario?.id ?? 'default';
+    const scenarioVersion = scenario?.version ?? 1;
+    const scenarioLabel = scenario?.label;
 
     if (!workspacePath) {
       console.error('useSession: no workspace path available');
@@ -85,10 +99,38 @@ export function useSession(): UseSessionReturn {
       workspace_path: workspacePath,
       created_at: now,
       updated_at: now,
+      scenario_id: scenarioId,
+      scenario_version: scenarioVersion,
+      scenario_label: scenarioLabel,
+    });
+    createRemoteSession({
+      sessionId,
+      workspacePath,
+      scenarioId,
+      scenarioVersion,
+      scenarioLabel,
     });
 
     return sessionId;
-  }, [currentWorkspace?.path, addSession]);
+  }, [currentWorkspace?.path, addSession, createRemoteSession]);
+
+  const updateSessionScenario = useCallback((sessionId: string, scenario: { id?: ScenarioId; version?: number; label?: string }) => {
+    const scenarioId = scenario.id ?? 'default';
+    const scenarioVersion = scenario.version ?? 1;
+    const scenarioLabel = scenario.label;
+    updateSession(sessionId, {
+      scenario_id: scenarioId,
+      scenario_version: scenarioVersion,
+      scenario_label: scenarioLabel,
+    });
+    updateRemoteSessionScenario({
+      sessionId,
+      workspacePath: currentWorkspace?.path,
+      scenarioId,
+      scenarioVersion,
+      scenarioLabel,
+    });
+  }, [currentWorkspace?.path, updateRemoteSessionScenario, updateSession]);
 
   const switchSession = useCallback(async (sessionId: string) => {
     const previousSessionId = useSessionStore.getState().currentSessionId;
@@ -174,6 +216,7 @@ export function useSession(): UseSessionReturn {
   return {
     currentSessionId,
     createSession,
+    updateSessionScenario,
     switchSession,
     deleteSession,
     clearCurrentSession,

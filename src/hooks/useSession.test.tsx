@@ -17,6 +17,8 @@ import { resetMocks } from "../test/mockUtils";
 import { deleteSessionHistory, loadSessionHistory, scanSessions } from "../utils/storage";
 
 const interruptMock = vi.hoisted(() => vi.fn());
+const createRemoteSessionMock = vi.hoisted(() => vi.fn());
+const updateSessionScenarioMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/storage", async () => {
   const actual = await vi.importActual<typeof import("../utils/storage")>("../utils/storage");
@@ -31,6 +33,8 @@ vi.mock("../utils/storage", async () => {
 vi.mock("../contexts/WebSocketContext", () => ({
   useWebSocket: () => ({
     interrupt: interruptMock,
+    createSession: createRemoteSessionMock,
+    updateSessionScenario: updateSessionScenarioMock,
   }),
 }));
 
@@ -44,6 +48,8 @@ describe("useSession", () => {
     vi.restoreAllMocks();
     resetMocks(
       interruptMock,
+      createRemoteSessionMock,
+      updateSessionScenarioMock,
       deleteSessionHistoryMock,
       loadSessionHistoryMock,
       scanSessionsMock,

@@ -321,6 +321,18 @@ def _normalize_scenario_version(value: Any) -> int:
     return 1
 
 
+def _scenario_cache_key(scenario_spec: Dict[str, Any]) -> tuple[Any, ...]:
+    allowlist = scenario_spec.get("tool_allowlist")
+    denylist = scenario_spec.get("tool_denylist")
+    return (
+        str(scenario_spec.get("scenario_id") or "default").strip().lower(),
+        str(scenario_spec.get("loop_strategy") or "").strip().lower(),
+        str(scenario_spec.get("system_prompt_addendum") or "").strip(),
+        tuple(allowlist) if isinstance(allowlist, list) else None,
+        tuple(denylist) if isinstance(denylist, list) else None,
+    )
+
+
 def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
     return normalize_runtime_config(data)
 
@@ -717,9 +729,22 @@ async def get_or_create_agent(
     execution_spec: Dict[str, Any],
     scenario_spec: Dict[str, Any],
 ) -> Optional[Agent]:
+    scenario_key = _scenario_cache_key(scenario_spec)
+    stale_llm: Optional[BaseLLM] = None
+
     async with state_lock:
         if not runtime_state.current_config:
             return None
+
+        cached_agent = runtime_state.active_agents.get(session_id)
+        cached_scenario_key = (
+            getattr(cached_agent, "_scenario_cache_key", None)
+            if cached_agent is not None
+            else None
+        )
+        if cached_agent is not None and cached_scenario_key != scenario_key:
+            runtime_state.active_agents.pop(session_id, None)
+            stale_llm = getattr(cached_agent, "llm", None)
 
         if session_id not in runtime_state.active_agents:
             effective_runtime_policy = (
@@ -781,6 +806,7 @@ async def get_or_create_agent(
                     effective_runtime_policy, "max_retries", 3
                 ),
             )
+            setattr(agent, "_scenario_cache_key", scenario_key)
             agent.background_compaction_scheduler = (
                 lambda session, run_id, current_agent=agent: (
                     _schedule_background_compaction_task(
@@ -792,7 +818,12 @@ async def get_or_create_agent(
             )
             runtime_state.active_agents[session_id] = agent
 
-        return runtime_state.active_agents.get(session_id)
+        agent = runtime_state.active_agents.get(session_id)
+
+    if stale_llm is not None:
+        await _close_llm_instance(stale_llm)
+
+    return agent
 
 
 @app.websocket("/ws")

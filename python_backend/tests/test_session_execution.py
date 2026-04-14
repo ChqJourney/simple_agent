@@ -100,6 +100,11 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
             "runtime": {},
         }
         backend_main.runtime_state.default_workspace = self.temp_dir.name
+        default_scenario_key = backend_main._scenario_cache_key(
+            backend_main.get_scenario_spec("default")
+        )
+        setattr(self.agent_a, "_scenario_cache_key", default_scenario_key)
+        setattr(self.agent_b, "_scenario_cache_key", default_scenario_key)
         backend_main.runtime_state.active_agents = {
             "session-a": self.agent_a,
             "session-b": self.agent_b,
@@ -467,6 +472,38 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
                 and message.get("execution_mode") == "free"
                 for message in self.messages
             )
+        )
+
+    async def test_get_or_create_agent_rebuilds_cached_agent_when_scenario_changes(self) -> None:
+        first_llm = ClosableLLM()
+        second_llm = ClosableLLM()
+        llm_instances = iter([first_llm, second_llm])
+        backend_main.create_llm_for_profile = lambda profile, runtime_policy=None: next(llm_instances)
+        backend_main.runtime_state.active_agents.pop("session-a", None)
+        execution_spec = backend_main.build_execution_spec(
+            backend_main.runtime_state.current_config,
+            "conversation",
+        )
+
+        first_agent = await backend_main.get_or_create_agent(
+            "session-a",
+            execution_spec,
+            backend_main.get_scenario_spec("default"),
+        )
+        second_agent = await backend_main.get_or_create_agent(
+            "session-a",
+            execution_spec,
+            backend_main.get_scenario_spec("standard_qa"),
+        )
+
+        self.assertIsNotNone(first_agent)
+        self.assertIsNotNone(second_agent)
+        self.assertIsNot(first_agent, second_agent)
+        self.assertTrue(first_llm.closed)
+        self.assertFalse(second_llm.closed)
+        self.assertEqual(
+            "standard_qa",
+            getattr(second_agent, "_scenario_cache_key")[0],
         )
 
     async def test_handle_message_falls_back_to_session_scope_for_invalid_tool_confirm_scope(self) -> None:

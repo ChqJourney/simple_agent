@@ -39,9 +39,10 @@ from runtime.router import (
     lock_ref_from_profile,
     session_lock_matches_profile,
 )
+from runtime.scenarios import get_scenario_spec
 from runtime.session_titles import run_session_title_task
 from skills.local_loader import default_skill_search_roots
-from tools.base import ToolRegistry
+from tools.base import BaseTool, ToolRegistry
 from tools.ask_question import AskQuestionTool
 from tools.delegate_task import DelegateTaskTool
 from tools.file_read import FileReadTool
@@ -59,6 +60,7 @@ from tools.pdf_tools import (
 )
 from tools.python_execute import PythonExecuteTool
 from tools.read_document_segment import ReadDocumentSegmentTool
+from tools.reference_library import ReadReferenceSegmentTool, SearchReferenceLibraryTool
 from tools.search_documents import SearchDocumentsTool
 from tools.skill_loader import SkillLoaderTool
 from tools.shell_execute import ShellExecuteTool
@@ -121,6 +123,12 @@ tool_registry = ToolRegistry()
 tool_registry.register(ListDirectoryTreeTool())
 tool_registry.register(SearchDocumentsTool())
 tool_registry.register(ReadDocumentSegmentTool())
+tool_registry.register(
+    SearchReferenceLibraryTool(config_getter=lambda: runtime_state.current_config)
+)
+tool_registry.register(
+    ReadReferenceSegmentTool(config_getter=lambda: runtime_state.current_config)
+)
 tool_registry.register(GetDocumentStructureTool())
 tool_registry.register(PdfGetInfoTool())
 tool_registry.register(PdfGetOutlineTool())
@@ -193,6 +201,7 @@ SESSION_TASK_RESERVED = object()
 TOOL_CONFIRM_DECISIONS: Set[str] = {"approve_once", "approve_always", "reject"}
 TOOL_CONFIRM_SCOPES: Set[str] = {"session", "workspace"}
 EXECUTION_MODES: Set[str] = {"regular", "free"}
+SCENARIO_IDS: Set[str] = {"default", "standard_qa", "checklist_evaluation"}
 SUPPORTED_PROVIDERS: Set[str] = {"openai", "deepseek", "kimi", "glm", "minimax", "qwen"}
 
 
@@ -292,6 +301,20 @@ def _normalize_execution_mode(value: Any) -> Optional[Literal["regular", "free"]
     if normalized in EXECUTION_MODES:
         return cast(Literal["regular", "free"], normalized)
     return None
+
+
+def _normalize_scenario_id(value: Any) -> str:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in SCENARIO_IDS:
+            return normalized
+    return "default"
+
+
+def _normalize_scenario_version(value: Any) -> int:
+    if isinstance(value, int) and value > 0:
+        return value
+    return 1
 
 
 def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -688,6 +711,7 @@ async def _schedule_background_compaction_task(
 async def get_or_create_agent(
     session_id: str,
     execution_spec: Dict[str, Any],
+    scenario_spec: Dict[str, Any],
 ) -> Optional[Agent]:
     async with state_lock:
         if not runtime_state.current_config:
@@ -699,6 +723,29 @@ async def get_or_create_agent(
                 if isinstance(execution_spec.get("runtime"), dict)
                 else {}
             )
+            scenario_allowlist = (
+                scenario_spec.get("tool_allowlist")
+                if isinstance(scenario_spec.get("tool_allowlist"), list)
+                else None
+            )
+            scenario_denylist = (
+                scenario_spec.get("tool_denylist")
+                if isinstance(scenario_spec.get("tool_denylist"), list)
+                else None
+            )
+            scenario_prompt_addendum = (
+                scenario_spec.get("system_prompt_addendum")
+                if isinstance(scenario_spec.get("system_prompt_addendum"), str)
+                else ""
+            )
+
+            def scenario_tool_filter(tool: BaseTool) -> bool:
+                if scenario_allowlist is not None and tool.name not in scenario_allowlist:
+                    return False
+                if scenario_denylist is not None and tool.name in scenario_denylist:
+                    return False
+                return True
+
             agent = Agent(
                 llm=create_llm_for_execution_spec(execution_spec),
                 tool_registry=tool_registry,
@@ -707,9 +754,11 @@ async def get_or_create_agent(
                 custom_system_prompt=str(
                     runtime_state.current_config.get("system_prompt") or ""
                 ),
+                scenario_system_prompt=str(scenario_prompt_addendum or ""),
                 tool_filter=(
                     lambda tool, current_config=dict(runtime_state.current_config): (
                         _is_tool_enabled_for_config(tool.name, current_config)
+                        and scenario_tool_filter(tool)
                     )
                 ),
                 compaction_llm_factory=(
@@ -852,6 +901,10 @@ async def handle_message(
         await handle_set_execution_mode(data, send_callback)
     elif message_type == "set_workspace":
         await handle_set_workspace(data, send_callback, connection_id)
+    elif message_type == "create_session":
+        await handle_create_session(data, send_callback, connection_id)
+    elif message_type == "update_session_scenario":
+        await handle_update_session_scenario(data, send_callback, connection_id)
     else:
         await send_callback(
             {
@@ -1058,7 +1111,8 @@ async def handle_user_message(
                 )
                 return
 
-        agent = await get_or_create_agent(session_id, conversation_spec)
+        scenario_spec = get_scenario_spec(getattr(session, "scenario_id", None))
+        agent = await get_or_create_agent(session_id, conversation_spec, scenario_spec)
         if not agent:
             await _release_reserved_session(session_id)
             await send_callback(
@@ -1292,6 +1346,94 @@ async def handle_set_execution_mode(
         "Execution mode updated: session=%s mode=%s",
         session_id,
         effective_mode,
+    )
+
+
+async def handle_create_session(
+    data: Dict[str, Any],
+    send_callback: SendCallback,
+    connection_id: str,
+) -> None:
+    session_id = _normalize_non_empty_string(data.get("session_id"))
+    workspace_path = _normalize_non_empty_string(data.get("workspace_path"))
+    scenario_id = _normalize_scenario_id(data.get("scenario_id"))
+    scenario_version = _normalize_scenario_version(data.get("scenario_version"))
+    scenario_label = _normalize_non_empty_string(data.get("scenario_label"))
+
+    if not session_id:
+        await send_callback({"type": "error", "error": "Missing or invalid session_id"})
+        return
+
+    if not workspace_path:
+        await send_callback(
+            {"type": "error", "session_id": session_id, "error": "Missing workspace_path"}
+        )
+        return
+
+    session = user_manager.get_session(session_id)
+    if not session:
+        session = await user_manager.create_session(workspace_path, session_id)
+
+    session.scenario_id = scenario_id
+    session.scenario_version = scenario_version
+    session.scenario_label = scenario_label
+    await session.save_metadata_async()
+    await user_manager.bind_session_to_connection(session_id, connection_id)
+
+    await send_callback(
+        {
+            "type": "session_created",
+            "session_id": session_id,
+            "workspace_path": workspace_path,
+            "scenario_id": scenario_id,
+            "scenario_version": scenario_version,
+            "scenario_label": scenario_label,
+        }
+    )
+
+
+async def handle_update_session_scenario(
+    data: Dict[str, Any],
+    send_callback: SendCallback,
+    connection_id: str,
+) -> None:
+    session_id = _normalize_non_empty_string(data.get("session_id"))
+    workspace_path = _normalize_non_empty_string(data.get("workspace_path"))
+    scenario_id = _normalize_scenario_id(data.get("scenario_id"))
+    scenario_version = _normalize_scenario_version(data.get("scenario_version"))
+    scenario_label = _normalize_non_empty_string(data.get("scenario_label"))
+
+    if not session_id:
+        await send_callback({"type": "error", "error": "Missing or invalid session_id"})
+        return
+
+    session = user_manager.get_session(session_id)
+    if not session:
+        if not workspace_path:
+            await send_callback(
+                {
+                    "type": "error",
+                    "session_id": session_id,
+                    "error": "Missing workspace_path",
+                }
+            )
+            return
+        session = await user_manager.create_session(workspace_path, session_id)
+
+    session.scenario_id = scenario_id
+    session.scenario_version = scenario_version
+    session.scenario_label = scenario_label
+    await session.save_metadata_async()
+    await user_manager.bind_session_to_connection(session_id, connection_id)
+
+    await send_callback(
+        {
+            "type": "session_scenario_updated",
+            "session_id": session_id,
+            "scenario_id": scenario_id,
+            "scenario_version": scenario_version,
+            "scenario_label": scenario_label,
+        }
     )
 
 

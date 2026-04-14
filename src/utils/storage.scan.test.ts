@@ -28,6 +28,9 @@ describe("storage session access", () => {
           provider: "openai",
           model: "gpt-4o-mini",
         },
+        scenario_id: "standard_qa",
+        scenario_version: 1,
+        scenario_label: "Standard QA",
       },
     ]);
 
@@ -41,6 +44,7 @@ describe("storage session access", () => {
         session_id: "session-1",
         workspace_path: "/workspace-a",
         title: "Metadata title",
+        scenario_id: "standard_qa",
       }),
     ]);
   });

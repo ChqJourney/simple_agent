@@ -6,7 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from runtime.config import normalize_runtime_config
+from runtime.config import get_enabled_reference_library_roots, normalize_runtime_config
 from runtime.contracts import (
     LockedModelRef,
     ReplayPlan,
@@ -163,6 +163,49 @@ class RuntimeContractTests(unittest.TestCase):
 
         self.assertEqual("Prefer concise answers.", normalized["system_prompt"])
 
+    def test_reference_library_helpers_only_return_enabled_matching_roots(self) -> None:
+        normalized = normalize_runtime_config(
+            {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_key": "test-key",
+                "base_url": "https://api.openai.com/v1",
+                "enable_reasoning": False,
+                "reference_library": {
+                    "roots": [
+                        {
+                            "id": "std-root",
+                            "label": "Standards",
+                            "path": "/refs/standards",
+                            "enabled": True,
+                            "kinds": ["standard"],
+                        },
+                        {
+                            "id": "check-root",
+                            "label": "Checklists",
+                            "path": "/refs/checklists",
+                            "enabled": False,
+                            "kinds": ["checklist"],
+                        },
+                    ],
+                },
+            }
+        )
+
+        self.assertEqual(
+            [
+                {
+                    "id": "std-root",
+                    "label": "Standards",
+                    "path": "/refs/standards",
+                    "enabled": True,
+                    "kinds": ["standard"],
+                }
+            ],
+            get_enabled_reference_library_roots(normalized, kind="standard"),
+        )
+        self.assertEqual([], get_enabled_reference_library_roots(normalized, kind="checklist"))
+
     def test_build_execution_spec_merges_shared_and_role_runtime(self) -> None:
         normalized = normalize_runtime_config(
             {
@@ -278,6 +321,9 @@ class RuntimeContractTests(unittest.TestCase):
                 provider="openai",
                 model="gpt-4o-mini",
             ),
+            scenario_id="standard_qa",
+            scenario_version=1,
+            scenario_label="Standard QA",
         )
 
         serialized = metadata.model_dump(mode="json")
@@ -285,6 +331,9 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual("Investigate routing", serialized["title"])
         self.assertEqual("primary", serialized["locked_model"]["profile_name"])
         self.assertEqual("gpt-4o-mini", serialized["locked_model"]["model"])
+        self.assertEqual("standard_qa", serialized["scenario_id"])
+        self.assertEqual(1, serialized["scenario_version"])
+        self.assertEqual("Standard QA", serialized["scenario_label"])
 
     def test_session_memory_snapshot_serializes_structured_memory_fields(self) -> None:
         snapshot = SessionMemorySnapshot(

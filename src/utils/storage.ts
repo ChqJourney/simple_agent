@@ -1,5 +1,5 @@
 import { Attachment, Message, ToolCall } from '../types';
-import { LockedModelRef } from '../types';
+import { LockedModelRef, ScenarioId } from '../types';
 import { formatDateTime } from '../i18n';
 import {
   createToolDecisionSummary,
@@ -282,6 +282,9 @@ interface SessionMeta {
   updated_at: string;
   title?: string;
   locked_model?: LockedModelRef;
+  scenario_id?: ScenarioId;
+  scenario_version?: number;
+  scenario_label?: string;
 }
 
 export async function scanSessions(workspacePath: string): Promise<SessionMeta[]> {

@@ -55,6 +55,9 @@ class Session:
         workspace_path: str,
         title: Optional[str] = None,
         locked_model: Optional[LockedModelRef] = None,
+        scenario_id: str = "default",
+        scenario_version: int = 1,
+        scenario_label: Optional[str] = None,
     ):
         self.session_id = validate_session_id(session_id)
         self.workspace_path = workspace_path
@@ -63,6 +66,9 @@ class Session:
         self.updated_at = datetime.now(timezone.utc)
         self.title = title
         self.locked_model = locked_model
+        self.scenario_id = scenario_id
+        self.scenario_version = scenario_version
+        self.scenario_label = scenario_label
         self.file_path = self._get_file_path()
         self.metadata_file_path = self._get_metadata_file_path()
         self.memory_file_path = self.get_memory_file_path()
@@ -75,12 +81,18 @@ class Session:
         workspace_path: str,
         title: Optional[str] = None,
         locked_model: Optional[LockedModelRef] = None,
+        scenario_id: str = "default",
+        scenario_version: int = 1,
+        scenario_label: Optional[str] = None,
     ) -> "Session":
         session = cls(
             session_id,
             workspace_path,
             title=title,
             locked_model=locked_model,
+            scenario_id=scenario_id,
+            scenario_version=scenario_version,
+            scenario_label=scenario_label,
         )
         session._load_from_disk()
         return session
@@ -92,6 +104,9 @@ class Session:
         workspace_path: str,
         title: Optional[str] = None,
         locked_model: Optional[LockedModelRef] = None,
+        scenario_id: str = "default",
+        scenario_version: int = 1,
+        scenario_label: Optional[str] = None,
     ) -> "Session":
         return await asyncio.to_thread(
             cls.from_disk,
@@ -99,6 +114,9 @@ class Session:
             workspace_path,
             title,
             locked_model,
+            scenario_id,
+            scenario_version,
+            scenario_label,
         )
 
     def _get_file_path(self) -> Path:
@@ -154,6 +172,9 @@ class Session:
             self.updated_at = metadata.updated_at
             self.title = metadata.title
             self.locked_model = metadata.locked_model
+            self.scenario_id = metadata.scenario_id
+            self.scenario_version = metadata.scenario_version
+            self.scenario_label = metadata.scenario_label
         except Exception as e:
             logger.warning(f"Failed to load session metadata: {e}")
 
@@ -366,6 +387,9 @@ class Session:
             updated_at=self.updated_at,
             title=self.title,
             locked_model=self.locked_model,
+            scenario_id=self.scenario_id,
+            scenario_version=self.scenario_version,
+            scenario_label=self.scenario_label,
         )
 
 

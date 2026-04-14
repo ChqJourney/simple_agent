@@ -58,6 +58,8 @@ describe("sessionStore", () => {
       workspace_path: "/workspace-a",
       created_at: "2026-03-12T10:00:00.000Z",
       updated_at: "2026-03-12T10:00:00.000Z",
+      scenario_id: "standard_qa",
+      scenario_version: 1,
     });
 
     useSessionStore.getState().updateSession("session-a", {
@@ -71,6 +73,8 @@ describe("sessionStore", () => {
 
     expect(useSessionStore.getState().sessions[0]?.title).toBe("Investigate runtime contracts");
     expect(useSessionStore.getState().sessions[0]?.locked_model?.model).toBe("gpt-4o-mini");
+    expect(useSessionStore.getState().sessions[0]?.scenario_id).toBe("standard_qa");
+    expect(useSessionStore.getState().sessions[0]?.scenario_version).toBe(1);
   });
 
   it("moves the most recently updated session to the front", () => {

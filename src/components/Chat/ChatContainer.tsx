@@ -11,6 +11,7 @@ import { useSession } from '../../hooks/useSession';
 import { Attachment, ExecutionMode, Message, PendingQuestion, ToolDecision, ToolDecisionScope } from '../../types';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
+import { ScenarioBadgeBar, ScenarioOption } from './ScenarioBadgeBar';
 import { PendingQuestionCard, ToolConfirmModal } from '../Tools';
 import {
   hasConfiguredModelProfile,
@@ -42,7 +43,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 export const ChatContainer = () => {
   const { t } = useI18n();
-  const { currentSessionId, createSession } = useSession();
+  const { currentSessionId, createSession, updateSessionScenario } = useSession();
   const { sendMessage, answerQuestion, isConnected, confirmTool, interrupt, setExecutionMode } = useWebSocket();
   const { currentWorkspace } = useWorkspaceStore();
   const config = useConfigStore((state) => state.config);
@@ -118,6 +119,24 @@ export const ChatContainer = () => {
         : []
     ))
   );
+  const activeScenarioId = activeSessionMeta?.scenario_id ?? 'default';
+  const scenarioOptions: ScenarioOption[] = [
+    {
+      id: 'default',
+      label: t('scenario.default'),
+      description: t('scenario.defaultDesc'),
+    },
+    {
+      id: 'standard_qa',
+      label: t('scenario.standardQa'),
+      description: t('scenario.standardQaDesc'),
+    },
+    {
+      id: 'checklist_evaluation',
+      label: t('scenario.checklistEvaluation'),
+      description: t('scenario.checklistEvaluationDesc'),
+    },
+  ];
 
   const handleSend = useCallback((content: string, attachments?: Attachment[], displayContent?: string) => {
     if (!canSendMessage) {
@@ -179,6 +198,40 @@ export const ChatContainer = () => {
   const activeExecutionMode = currentSessionId
     ? (sessionExecutionModes[currentSessionId] || draftExecutionMode)
     : draftExecutionMode;
+
+  const isCurrentSessionEmpty = Boolean(
+    !currentSessionId
+    || (
+      messages.length === 0
+      && !isStreaming
+      && !streamingContent
+      && !reasoningContent
+      && !pendingToolConfirm
+      && !pendingQuestion
+    )
+  );
+
+  const handleScenarioSelect = useCallback((scenarioId: ScenarioOption['id']) => {
+    const scenario = scenarioOptions.find((option) => option.id === scenarioId);
+    if (!scenario) {
+      return;
+    }
+
+    if (currentSessionId && isCurrentSessionEmpty) {
+      updateSessionScenario(currentSessionId, {
+        id: scenario.id,
+        version: 1,
+        label: scenario.label,
+      });
+      return;
+    }
+
+    createSession({
+      id: scenario.id,
+      version: 1,
+      label: scenario.label,
+    });
+  }, [createSession, currentSessionId, isCurrentSessionEmpty, scenarioOptions, updateSessionScenario]);
 
   const handleToolDecision = useCallback((decision: ToolDecision, scope: ToolDecisionScope = 'session') => {
     if (!currentSessionId || !pendingToolConfirm) return;
@@ -256,6 +309,13 @@ export const ChatContainer = () => {
           </div>
         </div>
       )}
+
+      <ScenarioBadgeBar
+        scenarios={scenarioOptions}
+        activeScenarioId={activeScenarioId}
+        onSelect={handleScenarioSelect}
+        disabled={!currentWorkspace?.path}
+      />
 
       <MessageInput
         onSend={handleSend}

@@ -11,6 +11,7 @@ import type {
   Message,
   PendingQuestion,
   RunEventRecord,
+  ScenarioId,
   TokenUsage,
   ToolCall,
   Workspace,
@@ -23,6 +24,9 @@ type SessionMetaFixture = {
   updated_at: string;
   title?: string;
   locked_model?: LockedModelRef;
+  scenario_id?: ScenarioId;
+  scenario_version?: number;
+  scenario_label?: string;
 };
 
 type ChatSessionFixture = {

@@ -17,6 +17,9 @@ class SessionMetadata(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     title: Optional[str] = None
     locked_model: Optional[LockedModelRef] = None
+    scenario_id: str = "default"
+    scenario_version: int = 1
+    scenario_label: Optional[str] = None
 
 
 class SessionMemorySnapshot(BaseModel):

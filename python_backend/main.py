@@ -674,6 +674,21 @@ async def _release_reserved_session(session_id: str) -> None:
             runtime_state.active_session_tasks.pop(session_id, None)
 
 
+async def _session_scenario_mutation_error(session: Session) -> Optional[str]:
+    if session.messages:
+        return "Cannot change scenario for a non-empty session. Create a new session instead."
+
+    async with state_lock:
+        active_task = runtime_state.active_session_tasks.get(session.session_id)
+
+    if active_task is SESSION_TASK_RESERVED:
+        return "Cannot change scenario while the session is starting a run."
+    if isinstance(active_task, asyncio.Task) and not active_task.done():
+        return "Cannot change scenario while the session has an active run."
+
+    return None
+
+
 async def _run_title_task_with_cleanup(
     session: Session,
     llm: BaseLLM,
@@ -1409,6 +1424,13 @@ async def handle_create_session(
     if not session:
         session = await user_manager.create_session(workspace_path, session_id)
 
+    scenario_error = await _session_scenario_mutation_error(session)
+    if scenario_error:
+        await send_callback(
+            {"type": "error", "session_id": session_id, "error": scenario_error}
+        )
+        return
+
     session.scenario_id = scenario_id
     session.scenario_version = scenario_version
     session.scenario_label = scenario_label
@@ -1454,6 +1476,13 @@ async def handle_update_session_scenario(
             )
             return
         session = await user_manager.create_session(workspace_path, session_id)
+
+    scenario_error = await _session_scenario_mutation_error(session)
+    if scenario_error:
+        await send_callback(
+            {"type": "error", "session_id": session_id, "error": scenario_error}
+        )
+        return
 
     session.scenario_id = scenario_id
     session.scenario_version = scenario_version

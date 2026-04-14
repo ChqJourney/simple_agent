@@ -474,6 +474,67 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_update_session_scenario_rejects_non_empty_session(self) -> None:
+        session = await backend_main.user_manager.create_session(self.temp_dir.name, "session-a")
+        await session.add_message_async(Message(role="user", content="existing"))
+
+        await backend_main.handle_update_session_scenario(
+            {
+                "session_id": "session-a",
+                "scenario_id": "standard_qa",
+                "scenario_version": 1,
+                "scenario_label": "Standard QA",
+            },
+            self.send_callback,
+            "conn-a",
+        )
+
+        self.assertEqual("default", session.scenario_id)
+        self.assertEqual(1, session.scenario_version)
+        self.assertIsNone(session.scenario_label)
+        self.assertTrue(
+            any(
+                message.get("type") == "error"
+                and message.get("session_id") == "session-a"
+                and "non-empty session" in message.get("error", "")
+                for message in self.messages
+            )
+        )
+        self.assertFalse(
+            any(message.get("type") == "session_scenario_updated" for message in self.messages)
+        )
+
+    async def test_create_session_rejects_existing_non_empty_session(self) -> None:
+        session = await backend_main.user_manager.create_session(self.temp_dir.name, "session-a")
+        await session.add_message_async(Message(role="user", content="existing"))
+
+        await backend_main.handle_create_session(
+            {
+                "session_id": "session-a",
+                "workspace_path": self.temp_dir.name,
+                "scenario_id": "checklist_evaluation",
+                "scenario_version": 1,
+                "scenario_label": "Checklist Evaluation",
+            },
+            self.send_callback,
+            "conn-a",
+        )
+
+        self.assertEqual("default", session.scenario_id)
+        self.assertEqual(1, session.scenario_version)
+        self.assertIsNone(session.scenario_label)
+        self.assertTrue(
+            any(
+                message.get("type") == "error"
+                and message.get("session_id") == "session-a"
+                and "non-empty session" in message.get("error", "")
+                for message in self.messages
+            )
+        )
+        self.assertFalse(
+            any(message.get("type") == "session_created" for message in self.messages)
+        )
+
     async def test_get_or_create_agent_rebuilds_cached_agent_when_scenario_changes(self) -> None:
         first_llm = ClosableLLM()
         second_llm = ClosableLLM()

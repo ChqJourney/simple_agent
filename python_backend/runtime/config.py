@@ -104,6 +104,45 @@ def _normalize_ocr_config(data: Dict[str, Any]) -> Dict[str, bool]:
     }
 
 
+def _normalize_reference_library(data: Dict[str, Any]) -> Dict[str, Any]:
+    raw_config = data.get("reference_library")
+    if not isinstance(raw_config, dict):
+        return {"roots": []}
+
+    raw_roots = raw_config.get("roots")
+    if not isinstance(raw_roots, list):
+        return {"roots": []}
+
+    normalized_roots = []
+    allowed_kinds = {"standard", "checklist", "guidance"}
+    for root in raw_roots:
+        if not isinstance(root, dict):
+            continue
+        path = str(root.get("path") or "").strip()
+        if not path:
+            continue
+        label = str(root.get("label") or "").strip() or path
+        root_id = str(root.get("id") or "").strip() or path
+        entry: Dict[str, Any] = {
+            "id": root_id,
+            "label": label,
+            "path": path,
+            "enabled": _to_bool(root.get("enabled"), True),
+        }
+        kinds = root.get("kinds")
+        if isinstance(kinds, list):
+            normalized_kinds = []
+            for kind in kinds:
+                normalized = str(kind or "").strip().lower()
+                if normalized in allowed_kinds and normalized not in normalized_kinds:
+                    normalized_kinds.append(normalized)
+            if normalized_kinds:
+                entry["kinds"] = normalized_kinds
+        normalized_roots.append(entry)
+
+    return {"roots": normalized_roots}
+
+
 def _normalize_runtime_policy(data: Dict[str, Any]) -> Dict[str, Any]:
     def normalize_runtime_value(source: Dict[str, Any], key: str, fallback: Optional[int] = None) -> Optional[int]:
         candidate = _to_int(source.get(key))
@@ -284,6 +323,7 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
         "appearance": appearance,
         "context_providers": _normalize_context_providers(data),
         "ocr": _normalize_ocr_config(data),
+        "reference_library": _normalize_reference_library(data),
     }
 
     return normalized

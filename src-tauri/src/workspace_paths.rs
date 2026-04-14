@@ -113,6 +113,13 @@ pub fn authorize_workspace_path<R: Runtime, M: Manager<R>>(
     })
 }
 
+pub fn authorize_reference_library_path<R: Runtime, M: Manager<R>>(
+    manager: &M,
+    selected_path: &Path,
+) -> Result<AuthorizedWorkspacePath, WorkspacePrepareError> {
+    authorize_workspace_path(manager, selected_path)
+}
+
 impl fmt::Display for WorkspacePrepareError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

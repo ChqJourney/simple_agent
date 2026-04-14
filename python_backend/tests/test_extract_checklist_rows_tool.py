@@ -158,6 +158,50 @@ class ExtractChecklistRowsToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("8.1", result.output["rows"][0]["clause_id"])
             self.assertEqual("Guard present", result.output["rows"][0]["requirement"])
 
+    async def test_extracts_headerless_text_checklist_rows_without_dropping_first_row(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            csv_path = root / "headerless-checklist.csv"
+            csv_path.write_text(
+                "8.1,Guard present,Visual inspection,Pass\n"
+                "8.2,Label durable,Rub test,Pass\n",
+                encoding="utf-8",
+            )
+
+            result = await ExtractChecklistRowsTool(lambda: None).execute(
+                tool_call_id="checklist-headerless",
+                workspace_path=temp_dir,
+                path="headerless-checklist.csv",
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(2, result.output["summary"]["row_count"])
+            self.assertEqual("8.1", result.output["rows"][0]["clause_id"])
+            self.assertEqual("Guard present", result.output["rows"][0]["requirement"])
+            self.assertEqual("8.2", result.output["rows"][1]["clause_id"])
+
+    async def test_ignores_plain_two_column_csv_that_is_not_a_checklist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            csv_path = root / "plain-table.csv"
+            csv_path.write_text(
+                "name,value\n"
+                "alpha,1\n"
+                "beta,2\n",
+                encoding="utf-8",
+            )
+
+            result = await ExtractChecklistRowsTool(lambda: None).execute(
+                tool_call_id="checklist-plain-table",
+                workspace_path=temp_dir,
+                path="plain-table.csv",
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(0, result.output["summary"]["row_count"])
+            self.assertEqual(0, result.output["summary"]["containers_matched"])
+            self.assertEqual([], result.output["rows"])
+
     async def test_max_rows_does_not_report_truncation_when_exactly_one_row_matches(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -91,6 +91,16 @@ def _is_likely_checklist_shape(headers: List[str], roles: Dict[str, List[int]], 
     return len(non_empty) >= 3 and (_looks_like_clause_id(non_empty[0]) or _looks_like_verdict(non_empty[-1]))
 
 
+def _looks_like_checklist_header(headers: List[str], roles: Dict[str, List[int]]) -> bool:
+    if roles["requirement"] and (roles["clause"] or roles["judgement"] or roles["evidence"]):
+        return True
+    if headers and len([header for header in headers if _normalize_text(header)]) >= 3:
+        matched_roles = sum(1 for key in ("clause", "requirement", "evidence", "judgement") if roles[key])
+        if matched_roles >= 2:
+            return True
+    return False
+
+
 def _extract_field_by_role(cells: List[str], indexes: List[int]) -> str:
     values = [cells[index] for index in indexes if 0 <= index < len(cells) and cells[index]]
     return " | ".join(values)
@@ -445,7 +455,20 @@ class ExtractChecklistRowsTool(BaseTool):
 
         headers = rows[0]
         roles = _infer_header_roles(headers)
-        header_like = _is_likely_checklist_shape(headers, roles, headers)
+        empty_roles = _infer_header_roles([])
+        header_like = _looks_like_checklist_header(headers, roles)
+        preview_rows = rows[1:4] if header_like else rows[:3]
+        container_like = header_like or any(
+            _is_likely_checklist_shape([], empty_roles, row) for row in preview_rows
+        )
+        if not container_like:
+            return [], {
+                "containers_scanned": 1,
+                "containers_matched": 0,
+                "skipped_rows": 0,
+                "truncated": False,
+            }
+
         data_rows = rows[1:] if header_like else rows
         extracted_rows: List[Dict[str, Any]] = []
         skipped_rows = 0
@@ -454,10 +477,13 @@ class ExtractChecklistRowsTool(BaseTool):
         for offset, row in enumerate(data_rows, start=2 if header_like else 1):
             if not self._within_requested_rows(offset, row_start, row_end):
                 continue
+            if not header_like and not _is_likely_checklist_shape([], empty_roles, row):
+                skipped_rows += 1
+                continue
             extracted = _build_checklist_row(
                 cells=row,
                 headers=headers if header_like else [],
-                roles=roles if header_like else _infer_header_roles([]),
+                roles=roles if header_like else empty_roles,
                 row_id=f"{file_path.stem}:row-{offset}",
                 locator={
                     "type": "text_table_row",
@@ -474,7 +500,7 @@ class ExtractChecklistRowsTool(BaseTool):
 
         return extracted_rows, {
             "containers_scanned": 1,
-            "containers_matched": 1 if extracted_rows else 0,
+            "containers_matched": 1,
             "skipped_rows": skipped_rows,
             "truncated": truncated,
         }

@@ -314,13 +314,13 @@ class ExtractChecklistRowsTool(BaseTool):
                 if extracted is None:
                     skipped_rows += 1
                     continue
+                if len(extracted_rows) >= max_rows:
+                    truncated = True
+                    break
                 extracted["table_index"] = int(table["table_index"])
                 extracted["table_title"] = str(table.get("title") or "")
                 extracted["table_type"] = str(table.get("table_type") or "grid")
                 extracted_rows.append(extracted)
-                if len(extracted_rows) >= max_rows:
-                    truncated = True
-                    break
             if len(extracted_rows) >= max_rows:
                 break
 
@@ -388,11 +388,11 @@ class ExtractChecklistRowsTool(BaseTool):
                 if extracted is None:
                     skipped_rows += 1
                     continue
-                extracted["sheet_name"] = str(sheet["sheet_name"])
-                extracted_rows.append(extracted)
                 if len(extracted_rows) >= max_rows:
                     truncated = True
                     break
+                extracted["sheet_name"] = str(sheet["sheet_name"])
+                extracted_rows.append(extracted)
             if len(extracted_rows) >= max_rows:
                 break
 
@@ -467,10 +467,10 @@ class ExtractChecklistRowsTool(BaseTool):
             if extracted is None:
                 skipped_rows += 1
                 continue
-            extracted_rows.append(extracted)
             if len(extracted_rows) >= max_rows:
                 truncated = True
                 break
+            extracted_rows.append(extracted)
 
         return extracted_rows, {
             "containers_scanned": 1,

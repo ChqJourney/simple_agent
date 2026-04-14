@@ -158,6 +158,26 @@ class ExtractChecklistRowsToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("8.1", result.output["rows"][0]["clause_id"])
             self.assertEqual("Guard present", result.output["rows"][0]["requirement"])
 
+    async def test_max_rows_does_not_report_truncation_when_exactly_one_row_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            csv_path = root / "single-row.csv"
+            csv_path.write_text(
+                "Clause,Requirement,Evidence,Result\n8.1,Guard present,Visual inspection,Pass\n",
+                encoding="utf-8",
+            )
+
+            result = await ExtractChecklistRowsTool(lambda: None).execute(
+                tool_call_id="checklist-4",
+                workspace_path=temp_dir,
+                path="single-row.csv",
+                max_rows=1,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(1, result.output["summary"]["row_count"])
+            self.assertFalse(result.output["truncated"])
+
 
 if __name__ == "__main__":
     unittest.main()

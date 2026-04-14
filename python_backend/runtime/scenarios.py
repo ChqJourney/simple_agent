@@ -22,6 +22,7 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
         "system_prompt_addendum": "",
         "tool_allowlist": None,
         "tool_denylist": [
+            "extract_checklist_rows",
             "read_reference_segment",
             "search_reference_library",
         ],
@@ -64,15 +65,30 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
         "label": "Checklist Evaluation",
         "description": "Evaluate checklist items with evidence and judgements.",
         "system_prompt_addendum": (
-            "You are in Checklist Evaluation mode. Extract checklist items, gather evidence "
-            "for each clause, and produce structured judgements. If required evidence is "
-            "missing, ask concise follow-up questions."
+            "You are in Checklist Evaluation mode. First extract checklist rows, then gather "
+            "evidence for each clause before judging it. Prefer workspace documents and approved "
+            "reference materials over assumptions. If required evidence is missing, ask concise "
+            "follow-up questions that group the missing information efficiently. For substantive "
+            "outputs, structure each evaluated row with these fields: clause_id, requirement, "
+            "evidence, judgement, confidence, and missing_info."
         ),
-        "tool_allowlist": None,
-        "tool_denylist": [
+        "tool_allowlist": [
+            "ask_question",
+            "extract_checklist_rows",
+            "file_read",
+            "get_document_structure",
+            "list_directory_tree",
+            "pdf_get_info",
+            "pdf_get_outline",
+            "pdf_read_lines",
+            "pdf_read_pages",
+            "pdf_search",
+            "read_document_segment",
             "read_reference_segment",
+            "search_documents",
             "search_reference_library",
         ],
+        "tool_denylist": None,
         "runtime_overrides": {},
         "loop_strategy": "checklist_evaluation",
     },

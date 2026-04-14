@@ -8,6 +8,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from tools.ask_question import AskQuestionTool
 from tools.delegate_task import DelegateTaskTool
+from tools.extract_checklist_rows import ExtractChecklistRowsTool
 from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
 from tools.ocr_extract import OcrExtractTool
@@ -46,6 +47,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         registry.register(ListDirectoryTreeTool())
         registry.register(SearchDocumentsTool())
         registry.register(ReadDocumentSegmentTool())
+        registry.register(ExtractChecklistRowsTool(empty_config))
         registry.register(SearchReferenceLibraryTool(empty_config))
         registry.register(ReadReferenceSegmentTool(empty_config))
         registry.register(GetDocumentStructureTool())
@@ -64,6 +66,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             [
                 "ask_question",
                 "delegate_task",
+                "extract_checklist_rows",
                 "get_document_structure",
                 "list_directory_tree",
                 "ocr_extract",
@@ -97,6 +100,10 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         reference_search_descriptor = next(d for d in descriptors if d.name == "search_reference_library")
         self.assertTrue(reference_search_descriptor.read_only)
         self.assertIn("reference materials", reference_search_descriptor.description)
+
+        checklist_descriptor = next(d for d in descriptors if d.name == "extract_checklist_rows")
+        self.assertTrue(checklist_descriptor.read_only)
+        self.assertIn("structured checklist rows", checklist_descriptor.description)
 
         pdf_search_descriptor = next(d for d in descriptors if d.name == "pdf_search")
         self.assertIn("search_mode='page'", pdf_search_descriptor.description)

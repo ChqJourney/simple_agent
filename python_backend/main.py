@@ -45,6 +45,7 @@ from skills.local_loader import default_skill_search_roots
 from tools.base import BaseTool, ToolRegistry
 from tools.ask_question import AskQuestionTool
 from tools.delegate_task import DelegateTaskTool
+from tools.extract_checklist_rows import ExtractChecklistRowsTool
 from tools.file_read import FileReadTool
 from tools.file_write import FileWriteTool
 from tools.get_document_structure import GetDocumentStructureTool
@@ -123,6 +124,9 @@ tool_registry = ToolRegistry()
 tool_registry.register(ListDirectoryTreeTool())
 tool_registry.register(SearchDocumentsTool())
 tool_registry.register(ReadDocumentSegmentTool())
+tool_registry.register(
+    ExtractChecklistRowsTool(config_getter=lambda: runtime_state.current_config)
+)
 tool_registry.register(
     SearchReferenceLibraryTool(config_getter=lambda: runtime_state.current_config)
 )
@@ -315,6 +319,18 @@ def _normalize_scenario_version(value: Any) -> int:
     if isinstance(value, int) and value > 0:
         return value
     return 1
+
+
+def _scenario_cache_key(scenario_spec: Dict[str, Any]) -> tuple[Any, ...]:
+    allowlist = scenario_spec.get("tool_allowlist")
+    denylist = scenario_spec.get("tool_denylist")
+    return (
+        str(scenario_spec.get("scenario_id") or "default").strip().lower(),
+        str(scenario_spec.get("loop_strategy") or "").strip().lower(),
+        str(scenario_spec.get("system_prompt_addendum") or "").strip(),
+        tuple(allowlist) if isinstance(allowlist, list) else None,
+        tuple(denylist) if isinstance(denylist, list) else None,
+    )
 
 
 def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -658,6 +674,21 @@ async def _release_reserved_session(session_id: str) -> None:
             runtime_state.active_session_tasks.pop(session_id, None)
 
 
+async def _session_scenario_mutation_error(session: Session) -> Optional[str]:
+    if session.messages:
+        return "Cannot change scenario for a non-empty session. Create a new session instead."
+
+    async with state_lock:
+        active_task = runtime_state.active_session_tasks.get(session.session_id)
+
+    if active_task is SESSION_TASK_RESERVED:
+        return "Cannot change scenario while the session is starting a run."
+    if isinstance(active_task, asyncio.Task) and not active_task.done():
+        return "Cannot change scenario while the session has an active run."
+
+    return None
+
+
 async def _run_title_task_with_cleanup(
     session: Session,
     llm: BaseLLM,
@@ -713,9 +744,22 @@ async def get_or_create_agent(
     execution_spec: Dict[str, Any],
     scenario_spec: Dict[str, Any],
 ) -> Optional[Agent]:
+    scenario_key = _scenario_cache_key(scenario_spec)
+    stale_llm: Optional[BaseLLM] = None
+
     async with state_lock:
         if not runtime_state.current_config:
             return None
+
+        cached_agent = runtime_state.active_agents.get(session_id)
+        cached_scenario_key = (
+            getattr(cached_agent, "_scenario_cache_key", None)
+            if cached_agent is not None
+            else None
+        )
+        if cached_agent is not None and cached_scenario_key != scenario_key:
+            runtime_state.active_agents.pop(session_id, None)
+            stale_llm = getattr(cached_agent, "llm", None)
 
         if session_id not in runtime_state.active_agents:
             effective_runtime_policy = (
@@ -777,6 +821,7 @@ async def get_or_create_agent(
                     effective_runtime_policy, "max_retries", 3
                 ),
             )
+            setattr(agent, "_scenario_cache_key", scenario_key)
             agent.background_compaction_scheduler = (
                 lambda session, run_id, current_agent=agent: (
                     _schedule_background_compaction_task(
@@ -788,7 +833,12 @@ async def get_or_create_agent(
             )
             runtime_state.active_agents[session_id] = agent
 
-        return runtime_state.active_agents.get(session_id)
+        agent = runtime_state.active_agents.get(session_id)
+
+    if stale_llm is not None:
+        await _close_llm_instance(stale_llm)
+
+    return agent
 
 
 @app.websocket("/ws")
@@ -1374,6 +1424,13 @@ async def handle_create_session(
     if not session:
         session = await user_manager.create_session(workspace_path, session_id)
 
+    scenario_error = await _session_scenario_mutation_error(session)
+    if scenario_error:
+        await send_callback(
+            {"type": "error", "session_id": session_id, "error": scenario_error}
+        )
+        return
+
     session.scenario_id = scenario_id
     session.scenario_version = scenario_version
     session.scenario_label = scenario_label
@@ -1419,6 +1476,13 @@ async def handle_update_session_scenario(
             )
             return
         session = await user_manager.create_session(workspace_path, session_id)
+
+    scenario_error = await _session_scenario_mutation_error(session)
+    if scenario_error:
+        await send_callback(
+            {"type": "error", "session_id": session_id, "error": scenario_error}
+        )
+        return
 
     session.scenario_id = scenario_id
     session.scenario_version = scenario_version

@@ -22,6 +22,13 @@ class ScenarioRegistryTests(unittest.TestCase):
         self.assertIn("read_reference_segment", spec["tool_allowlist"])
         self.assertIn("Conclusion, Evidence, Uncertainties, and Needed Information", spec["system_prompt_addendum"])
 
+    def test_returns_checklist_evaluation_spec(self) -> None:
+        spec = get_scenario_spec("checklist_evaluation")
+        self.assertEqual("checklist_evaluation", spec["scenario_id"])
+        self.assertIn("extract_checklist_rows", spec["tool_allowlist"])
+        self.assertIn("search_reference_library", spec["tool_allowlist"])
+        self.assertIn("clause_id, requirement, evidence, judgement, confidence, and missing_info", spec["system_prompt_addendum"])
+
     def test_unknown_scenario_falls_back_to_default(self) -> None:
         spec = get_scenario_spec("unknown")
         self.assertEqual("default", spec["scenario_id"])

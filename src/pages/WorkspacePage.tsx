@@ -14,6 +14,7 @@ import { ChatContainer } from '../components/Chat';
 import { RunTimeline } from '../components/Run';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { backendHealthUrl, backendHttpBase } from '../utils/backendEndpoint';
+import { buildChecklistResultViewModel } from '../utils/checklistResults';
 import { loadSessionHistory } from '../utils/storage';
 import { useChatStore } from '../stores/chatStore';
 import { RunEventRecord } from '../types';
@@ -144,7 +145,10 @@ export const WorkspacePage: React.FC = () => {
     leftPanelWidth,
     rightPanelCollapsed,
     rightPanelWidth,
+    rightPanelTab,
     setLeftPanelWidth,
+    setRightPanelCollapsed,
+    setRightPanelTab,
     resetLeftPanelWidth,
     setRightPanelWidth,
     resetRightPanelWidth,
@@ -163,9 +167,22 @@ export const WorkspacePage: React.FC = () => {
   const workspaceLoadRequestIdRef = useRef(0);
   const activeResizeSideRef = useRef<ResizeSide | null>(null);
   const leaveNavigationPendingRef = useRef(false);
+  const autoFocusedChecklistSessionsRef = useRef<Set<string>>(new Set());
 
   const effectiveLeftPanelWidth = leftPanelPreviewWidth ?? leftPanelWidth;
   const effectiveRightPanelWidth = rightPanelPreviewWidth ?? rightPanelWidth;
+  const activeSessionMeta = currentSessionId
+    ? sessions.find((session) => session.session_id === currentSessionId)
+    : undefined;
+  const activeSessionMessages = currentSessionId
+    ? chatSessions[currentSessionId]?.messages || []
+    : [];
+  const checklistResult = buildChecklistResultViewModel({
+    scenarioId: activeSessionMeta?.scenario_id,
+    messages: activeSessionMessages,
+  });
+  const hasChecklistResult = Boolean(checklistResult);
+  const isChecklistPanelFocused = hasChecklistResult && !rightPanelCollapsed && rightPanelTab === 'checklist';
   const normalizedWorkspacePath = currentWorkspace?.path
     ? normalizeComparableWorkspacePath(currentWorkspace.path)
     : null;
@@ -450,6 +467,20 @@ export const WorkspacePage: React.FC = () => {
     };
   }, [leftPanelPreviewWidth, rightPanelPreviewWidth, setLeftPanelWidth, setRightPanelWidth]);
 
+  useEffect(() => {
+    if (!currentSessionId || !hasChecklistResult) {
+      return;
+    }
+
+    if (autoFocusedChecklistSessionsRef.current.has(currentSessionId)) {
+      return;
+    }
+
+    autoFocusedChecklistSessionsRef.current.add(currentSessionId);
+    setRightPanelCollapsed(false);
+    setRightPanelTab('checklist');
+  }, [currentSessionId, hasChecklistResult, setRightPanelCollapsed, setRightPanelTab]);
+
   const startResize = (side: ResizeSide) => (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     activeResizeSideRef.current = side;
@@ -496,7 +527,15 @@ export const WorkspacePage: React.FC = () => {
           />
         )}
 
-        <main className="flex-1 overflow-hidden">
+        <main
+          data-testid="workspace-main-panel"
+          className={[
+            'relative flex-1 overflow-hidden transition-colors duration-300',
+            hasChecklistResult
+              ? 'border-r border-sky-200/80 shadow-[inset_-18px_0_30px_-28px_rgba(14,116,144,0.7)] dark:border-sky-900/80 dark:shadow-[inset_-18px_0_30px_-28px_rgba(56,189,248,0.35)]'
+              : '',
+          ].join(' ')}
+        >
           {workspaceAccessError ? (
             <div className="flex h-full items-center justify-center p-4 text-center text-sm text-red-700 dark:text-red-200">
               <div className="max-w-md rounded-lg border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900 dark:bg-red-950">
@@ -524,7 +563,14 @@ export const WorkspacePage: React.FC = () => {
             role="separator"
             aria-orientation="vertical"
             aria-label={t('workspace.resizeRightPanel')}
-            className="w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-200/70 dark:hover:bg-blue-900/70"
+            className={[
+              'w-1 cursor-col-resize bg-transparent transition-colors',
+              isChecklistPanelFocused
+                ? 'bg-sky-300/70 hover:bg-sky-400/80 dark:bg-sky-700/80 dark:hover:bg-sky-600/80'
+                : hasChecklistResult
+                  ? 'hover:bg-sky-200/70 dark:hover:bg-sky-900/70'
+                  : 'hover:bg-blue-200/70 dark:hover:bg-blue-900/70',
+            ].join(' ')}
             onMouseDown={startResize('right')}
             onDoubleClick={resetRightPanelWidth}
           />
@@ -533,7 +579,14 @@ export const WorkspacePage: React.FC = () => {
         {!rightPanelCollapsed && (
           <div
             data-testid="workspace-right-panel"
-            className="bg-white/70 dark:bg-gray-900/60"
+            className={[
+              'bg-white/70 transition-all duration-300 dark:bg-gray-900/60',
+              isChecklistPanelFocused
+                ? 'border-l border-sky-200/90 shadow-[-20px_0_40px_-32px_rgba(14,116,144,0.75)] dark:border-sky-900/90 dark:shadow-[-20px_0_40px_-32px_rgba(56,189,248,0.45)]'
+                : hasChecklistResult
+                  ? 'border-l border-sky-100/80 dark:border-sky-950/80'
+                  : '',
+            ].join(' ')}
             style={{ width: `${effectiveRightPanelWidth}px`, minWidth: `${effectiveRightPanelWidth}px` }}
           >
             <RightPanel />

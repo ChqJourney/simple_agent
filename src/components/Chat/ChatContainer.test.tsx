@@ -4,6 +4,7 @@ import { ChatContainer } from "./ChatContainer";
 import { useChatStore } from "../../stores/chatStore";
 import { useConfigStore } from "../../stores/configStore";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useUIStore } from "../../stores/uiStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 
 const sendMessageMock = vi.hoisted(() => vi.fn());
@@ -143,6 +144,11 @@ describe("ChatContainer", () => {
         },
       },
     });
+    useUIStore.setState((state) => ({
+      ...state,
+      rightPanelCollapsed: true,
+      rightPanelTab: "filetree",
+    }));
   });
 
   it("keeps pending questions visible until the backend confirms the answer", () => {
@@ -579,5 +585,56 @@ describe("ChatContainer", () => {
       label: "Standard QA",
     });
     expect(updateSessionScenarioMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a checklist notice and opens the checklist tab from the message area", () => {
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/tauri_agent",
+          created_at: "2026-03-13T09:00:00.000Z",
+          updated_at: "2026-03-13T10:00:00.000Z",
+          scenario_id: "checklist_evaluation",
+          scenario_version: 1,
+          scenario_label: "Checklist Evaluation",
+        },
+      ],
+    }));
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              content: `
+\`\`\`json
+{"rows":[{"clause":"5.1","requirement":"Durable marking","judgement":"pass"}]}
+\`\`\`
+`,
+              status: "completed",
+            },
+          ],
+          currentStreamingContent: "",
+          currentReasoningContent: "",
+          isStreaming: false,
+          assistantStatus: "idle",
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
+        },
+      },
+    });
+
+    render(<ChatContainer />);
+
+    expect(screen.getByText("Checklist results are ready in the right panel")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open checklist" }));
+
+    expect(useUIStore.getState().rightPanelCollapsed).toBe(false);
+    expect(useUIStore.getState().rightPanelTab).toBe("checklist");
   });
 });

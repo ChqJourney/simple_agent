@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RightPanel } from "./RightPanel";
 import { useSessionStore, useTaskStore, useUIStore } from "../../stores";
-import { resetFrontendTestState } from "../../test/frontendTestState";
+import { useChatStore } from "../../stores/chatStore";
+import { createChatSessionFixture, createSessionMetaFixture, resetFrontendTestState } from "../../test/frontendTestState";
 
 vi.mock("./FileTree", () => ({
   FileTree: () => <div>FileTree Content</div>,
@@ -10,6 +11,10 @@ vi.mock("./FileTree", () => ({
 
 vi.mock("./TaskList", () => ({
   TaskList: () => <div>TaskList Content</div>,
+}));
+
+vi.mock("../Checklist", () => ({
+  ChecklistResultPanel: () => <div>Checklist Content</div>,
 }));
 
 describe("RightPanel", () => {
@@ -23,9 +28,14 @@ describe("RightPanel", () => {
     }));
     useSessionStore.setState((state) => ({
       ...state,
-      sessions: [],
+      sessions: [createSessionMetaFixture()],
       currentSessionId: "session-a",
     }));
+    useChatStore.setState({
+      sessions: {
+        "session-a": createChatSessionFixture(),
+      },
+    });
     useTaskStore.setState({
       tasks: [],
       visibleTaskTabSessionIds: {},
@@ -69,6 +79,100 @@ describe("RightPanel", () => {
 
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Tasks" })).toBeNull();
+      expect(screen.getByText("FileTree Content")).toBeTruthy();
+      expect(useUIStore.getState().rightPanelTab).toBe("filetree");
+    });
+  });
+
+  it("shows the checklist tab for checklist sessions with parseable results", () => {
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        createSessionMetaFixture({
+          scenario_id: "checklist_evaluation",
+          scenario_version: 1,
+          scenario_label: "Checklist Evaluation",
+        }),
+      ],
+    }));
+    useChatStore.setState({
+      sessions: {
+        "session-a": createChatSessionFixture({
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              content: `
+\`\`\`json
+{"rows":[{"clause":"5.1","requirement":"Durable marking","judgement":"pass"}]}
+\`\`\`
+`,
+              status: "completed",
+            },
+          ],
+        }),
+      },
+    });
+
+    render(<RightPanel />);
+
+    expect(screen.getByRole("button", { name: "Checklist" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Checklist" }));
+
+    expect(screen.getByText("Checklist Content")).toBeTruthy();
+  });
+
+  it("falls back to file tree when the checklist tab is no longer available", async () => {
+    useUIStore.setState((state) => ({
+      ...state,
+      rightPanelTab: "checklist",
+    }));
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        createSessionMetaFixture({
+          scenario_id: "checklist_evaluation",
+          scenario_version: 1,
+          scenario_label: "Checklist Evaluation",
+        }),
+      ],
+    }));
+    useChatStore.setState({
+      sessions: {
+        "session-a": createChatSessionFixture({
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              content: `
+\`\`\`json
+{"rows":[{"clause":"5.1","requirement":"Durable marking","judgement":"pass"}]}
+\`\`\`
+`,
+              status: "completed",
+            },
+          ],
+        }),
+      },
+    });
+
+    render(<RightPanel />);
+
+    expect(screen.getByText("Checklist Content")).toBeTruthy();
+
+    act(() => {
+      useChatStore.setState({
+        sessions: {
+          "session-a": createChatSessionFixture({
+            messages: [],
+          }),
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Checklist" })).toBeNull();
       expect(screen.getByText("FileTree Content")).toBeTruthy();
       expect(useUIStore.getState().rightPanelTab).toBe("filetree");
     });

@@ -251,6 +251,46 @@ describe("WorkspacePage", () => {
     expect((screen.getByTestId("workspace-right-panel") as HTMLDivElement).style.width).toBe("344px");
   });
 
+  it("auto-focuses the checklist tab and highlights the right side when checklist results appear", async () => {
+    scanSessionsMock.mockResolvedValueOnce([
+      createSessionMetaFixture({
+        scenario_id: "checklist_evaluation",
+        scenario_version: 1,
+        scenario_label: "Checklist Evaluation",
+        workspace_path: "C:/Users/patri/source/repos/repo",
+      }),
+    ]);
+    loadSessionHistoryMock.mockResolvedValueOnce([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: `
+\`\`\`json
+{"rows":[{"clause":"5.1","requirement":"Durable marking","judgement":"pass"}]}
+\`\`\`
+`,
+        status: "completed",
+      },
+    ]);
+    useUIStore.setState((state) => ({
+      ...state,
+      rightPanelCollapsed: true,
+      rightPanelTab: "filetree",
+    }));
+
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(useUIStore.getState().rightPanelCollapsed).toBe(false);
+      expect(useUIStore.getState().rightPanelTab).toBe("checklist");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("workspace-main-panel").className).toContain("border-r");
+      expect(screen.getByTestId("workspace-right-panel").className).toContain("border-l");
+    });
+  });
+
   it("only persists the left panel width after the resize drag completes", async () => {
     render(<WorkspacePage />);
 

@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useRunStore } from '../../stores/runStore';
+import { useUIStore } from '../../stores/uiStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useWebSocket } from '../../contexts/WebSocketContext';
@@ -12,6 +13,7 @@ import { Attachment, ExecutionMode, Message, PendingQuestion, ToolDecision, Tool
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { ScenarioBadgeBar, ScenarioOption } from './ScenarioBadgeBar';
+import { ChecklistResultNotice } from '../Checklist';
 import { PendingQuestionCard, ToolConfirmModal } from '../Tools';
 import {
   hasConfiguredModelProfile,
@@ -19,6 +21,7 @@ import {
   resolveProfileForRole,
   supportsImageAttachmentsForRole,
 } from '../../utils/config';
+import { buildChecklistResultViewModel } from '../../utils/checklistResults';
 
 const emptySession = {
   messages: [] as never[],
@@ -46,6 +49,7 @@ export const ChatContainer = () => {
   const { currentSessionId, createSession, updateSessionScenario } = useSession();
   const { sendMessage, answerQuestion, isConnected, confirmTool, interrupt, setExecutionMode } = useWebSocket();
   const { currentWorkspace } = useWorkspaceStore();
+  const { rightPanelCollapsed, setRightPanelCollapsed, setRightPanelTab } = useUIStore();
   const config = useConfigStore((state) => state.config);
   const updateSession = useSessionStore((state) => state.updateSession);
   const activeSessionMeta = useSessionStore((state) => (
@@ -120,6 +124,10 @@ export const ChatContainer = () => {
     ))
   );
   const activeScenarioId = activeSessionMeta?.scenario_id ?? 'default';
+  const checklistResult = buildChecklistResultViewModel({
+    scenarioId: activeScenarioId,
+    messages,
+  });
   const scenarioOptions: ScenarioOption[] = [
     {
       id: 'default',
@@ -264,8 +272,22 @@ export const ChatContainer = () => {
     }
   }, [answerQuestion, currentSessionId, pendingQuestion]);
 
+  const handleOpenChecklistPanel = useCallback(() => {
+    if (rightPanelCollapsed) {
+      setRightPanelCollapsed(false);
+    }
+    setRightPanelTab('checklist');
+  }, [rightPanelCollapsed, setRightPanelCollapsed, setRightPanelTab]);
+
   return (
-    <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_45%)] dark:bg-[radial-gradient(circle_at_top,_rgba(142,160,182,0.14),_transparent_38%)]">
+    <div className="relative flex h-full flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_45%)] dark:bg-[radial-gradient(circle_at_top,_rgba(142,160,182,0.14),_transparent_38%)]">
+      {checklistResult && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-sky-200/35 via-sky-100/10 to-transparent dark:from-sky-500/15 dark:via-sky-500/5"
+        />
+      )}
+
       <MessageList
         messages={messages}
         currentStreamingContent={streamingContent}
@@ -277,6 +299,10 @@ export const ChatContainer = () => {
         runEvents={runEvents}
         onRetryMessage={handleRetryMessage}
       />
+
+      {checklistResult && (
+        <ChecklistResultNotice result={checklistResult} onOpenChecklist={handleOpenChecklistPanel} />
+      )}
 
       {pendingQuestion && (
         <PendingQuestionCard

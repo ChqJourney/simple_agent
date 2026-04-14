@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { AppLocale, resolveAppLocale } from '../i18n/locale';
 import { normalizeBaseFontSize } from '../utils/config';
 
-export type RightPanelTab = 'filetree' | 'tasklist';
+export type RightPanelTab = 'filetree' | 'tasklist' | 'checklist';
 
 export const DEFAULT_LEFT_PANEL_WIDTH = 256;
 export const DEFAULT_RIGHT_PANEL_WIDTH = 288;
@@ -34,6 +34,7 @@ interface UIState {
   setLeftPanelWidth: (width: number) => void;
   resetLeftPanelWidth: () => void;
   toggleRightPanel: () => void;
+  setRightPanelCollapsed: (collapsed: boolean) => void;
   setRightPanelWidth: (width: number) => void;
   resetRightPanelWidth: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
@@ -64,6 +65,7 @@ export const useUIStore = create<UIState>()(
 
       toggleRightPanel: () =>
         set((state) => ({ rightPanelCollapsed: !state.rightPanelCollapsed })),
+      setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
       setRightPanelWidth: (width) =>
         set({ rightPanelWidth: normalizePanelWidth(width, DEFAULT_RIGHT_PANEL_WIDTH) }),
       resetRightPanelWidth: () => set({ rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH }),

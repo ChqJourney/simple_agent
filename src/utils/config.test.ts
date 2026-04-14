@@ -209,7 +209,7 @@ describe("normalizeProviderConfig", () => {
           },
         ],
       },
-    });
+    } as never);
 
     expect(normalized.reference_library).toEqual({
       roots: [

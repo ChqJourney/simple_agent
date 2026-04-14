@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useI18n } from '../../i18n';
 import { useChatStore } from '../../stores/chatStore';
+import { useChecklistStore } from '../../stores/checklistStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useRunStore } from '../../stores/runStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -21,7 +22,7 @@ import {
   resolveProfileForRole,
   supportsImageAttachmentsForRole,
 } from '../../utils/config';
-import { buildChecklistResultViewModel } from '../../utils/checklistResults';
+import { buildChecklistResultViewModel, createChecklistResultSignature } from '../../utils/checklistResults';
 
 const emptySession = {
   messages: [] as never[],
@@ -49,8 +50,17 @@ export const ChatContainer = () => {
   const { currentSessionId, createSession, updateSessionScenario } = useSession();
   const { sendMessage, answerQuestion, isConnected, confirmTool, interrupt, setExecutionMode } = useWebSocket();
   const { currentWorkspace } = useWorkspaceStore();
-  const { rightPanelCollapsed, setRightPanelCollapsed, setRightPanelTab } = useUIStore();
+  const rightPanelCollapsed = useUIStore((state) => state.rightPanelCollapsed);
+  const rightPanelTab = useUIStore((state) => state.rightPanelTab);
+  const setRightPanelCollapsed = useUIStore((state) => state.setRightPanelCollapsed);
+  const setRightPanelTab = useUIStore((state) => state.setRightPanelTab);
   const config = useConfigStore((state) => state.config);
+  const dismissedNoticeSignature = useChecklistStore((state) => (
+    currentSessionId
+      ? state.sessions[currentSessionId]?.dismissedNoticeSignature
+      : undefined
+  ));
+  const markNoticeDismissed = useChecklistStore((state) => state.markNoticeDismissed);
   const updateSession = useSessionStore((state) => state.updateSession);
   const activeSessionMeta = useSessionStore((state) => (
     currentSessionId
@@ -128,6 +138,19 @@ export const ChatContainer = () => {
     scenarioId: activeScenarioId,
     messages,
   });
+  const checklistResultSignature = checklistResult
+    ? createChecklistResultSignature(checklistResult)
+    : null;
+  const isChecklistPanelFocused = Boolean(
+    checklistResult && !rightPanelCollapsed && rightPanelTab === 'checklist'
+  );
+  const showChecklistNotice = Boolean(
+    currentSessionId
+    && checklistResult
+    && checklistResultSignature
+    && dismissedNoticeSignature !== checklistResultSignature
+    && !isChecklistPanelFocused
+  );
   const scenarioOptions: ScenarioOption[] = [
     {
       id: 'default',
@@ -277,7 +300,32 @@ export const ChatContainer = () => {
       setRightPanelCollapsed(false);
     }
     setRightPanelTab('checklist');
-  }, [rightPanelCollapsed, setRightPanelCollapsed, setRightPanelTab]);
+    if (currentSessionId && checklistResultSignature) {
+      markNoticeDismissed(currentSessionId, checklistResultSignature);
+    }
+  }, [
+    checklistResultSignature,
+    currentSessionId,
+    markNoticeDismissed,
+    rightPanelCollapsed,
+    setRightPanelCollapsed,
+    setRightPanelTab,
+  ]);
+
+  const handleDismissChecklistNotice = useCallback(() => {
+    if (!currentSessionId || !checklistResultSignature) {
+      return;
+    }
+    markNoticeDismissed(currentSessionId, checklistResultSignature);
+  }, [checklistResultSignature, currentSessionId, markNoticeDismissed]);
+
+  useEffect(() => {
+    if (!currentSessionId || !checklistResultSignature || !isChecklistPanelFocused) {
+      return;
+    }
+
+    markNoticeDismissed(currentSessionId, checklistResultSignature);
+  }, [checklistResultSignature, currentSessionId, isChecklistPanelFocused, markNoticeDismissed]);
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_45%)] dark:bg-[radial-gradient(circle_at_top,_rgba(142,160,182,0.14),_transparent_38%)]">
@@ -300,8 +348,12 @@ export const ChatContainer = () => {
         onRetryMessage={handleRetryMessage}
       />
 
-      {checklistResult && (
-        <ChecklistResultNotice result={checklistResult} onOpenChecklist={handleOpenChecklistPanel} />
+      {showChecklistNotice && checklistResult && (
+        <ChecklistResultNotice
+          result={checklistResult}
+          onOpenChecklist={handleOpenChecklistPanel}
+          onDismiss={handleDismissChecklistNotice}
+        />
       )}
 
       {pendingQuestion && (

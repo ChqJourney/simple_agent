@@ -1,26 +1,31 @@
 import React, { useEffect } from 'react';
 import { useI18n } from '../../i18n';
 import { useChatStore } from '../../stores/chatStore';
+import type { Message } from '../../types';
 import { buildChecklistResultViewModel } from '../../utils/checklistResults';
 import { useSessionStore, useTaskStore, useUIStore, type RightPanelTab } from '../../stores';
 import { ChecklistResultPanel } from '../Checklist';
 import { FileTree } from './FileTree';
 import { TaskList } from './TaskList';
 
+const EMPTY_MESSAGES: Message[] = [];
+
 export const RightPanel: React.FC = () => {
   const { t } = useI18n();
-  const { rightPanelTab, setRightPanelTab } = useUIStore();
+  const rightPanelTab = useUIStore((state) => state.rightPanelTab);
+  const setRightPanelTab = useUIStore((state) => state.setRightPanelTab);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const activeSessionMeta = useSessionStore((state) => (
     currentSessionId
       ? state.sessions.find((session) => session.session_id === currentSessionId)
       : undefined
   ));
-  const messages = useChatStore((state) => (
+  const sessionMessages = useChatStore((state) => (
     currentSessionId
-      ? state.sessions[currentSessionId]?.messages || []
-      : []
+      ? state.sessions[currentSessionId]?.messages
+      : undefined
   ));
+  const messages = sessionMessages ?? EMPTY_MESSAGES;
   const showTaskTab = useTaskStore((state) =>
     currentSessionId ? state.isTaskTabVisible(currentSessionId) : false
   );
@@ -34,15 +39,18 @@ export const RightPanel: React.FC = () => {
     ...(showChecklistTab ? [{ value: 'checklist' as const, label: t('checklist.panel.tab') }] : []),
     ...(showTaskTab ? [{ value: 'tasklist' as const, label: t('workspace.rightPanel.tasks') }] : []),
   ];
-  const activeTab: RightPanelTab = tabs.some((tab) => tab.value === rightPanelTab)
-    ? rightPanelTab
-    : 'filetree';
+  const hasActiveTab = (
+    rightPanelTab === 'filetree'
+    || (rightPanelTab === 'checklist' && showChecklistTab)
+    || (rightPanelTab === 'tasklist' && showTaskTab)
+  );
+  const activeTab: RightPanelTab = hasActiveTab ? rightPanelTab : 'filetree';
 
   useEffect(() => {
-    if (!tabs.some((tab) => tab.value === rightPanelTab)) {
+    if (!hasActiveTab) {
       setRightPanelTab('filetree');
     }
-  }, [rightPanelTab, setRightPanelTab, tabs]);
+  }, [hasActiveTab, setRightPanelTab]);
 
   return (
     <div className="flex flex-col h-full">
@@ -66,7 +74,9 @@ export const RightPanel: React.FC = () => {
 
       <div className="flex-1 overflow-hidden px-3 pb-3">
         {activeTab === 'filetree' && <FileTree />}
-        {activeTab === 'checklist' && checklistResult && <ChecklistResultPanel result={checklistResult} />}
+        {activeTab === 'checklist' && checklistResult && (
+          <ChecklistResultPanel result={checklistResult} sessionId={currentSessionId} />
+        )}
         {activeTab === 'tasklist' && <TaskList />}
       </div>
     </div>

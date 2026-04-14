@@ -54,6 +54,41 @@ Here is the evaluation summary.
     expect(result?.rows[1]?.missingInformation).toEqual(['Final photo set']);
   });
 
+  it('parses checklist rows from clause sections with field tables', () => {
+    const result = parseChecklistResultFromAssistantMessage(`
+## 检查清单评估结果
+
+### 条款 5.1
+| 字段 | 内容 |
+|------|------|
+| **clause_id** | 5.1 |
+| **requirement** | 产品标识应经久耐用，在正常操作后保持清晰可辨 |
+| **evidence** | 1) 后部产品标签印有型号名称<br>2) 干布擦拭测试后文字保持清晰可辨 |
+| **judgement** | **PASS** |
+| **confidence** | High |
+| **missing_info** | 无 |
+
+### 条款 5.2
+| 字段 | 内容 |
+|------|------|
+| **clause_id** | 5.2 |
+| **requirement** | 警告标签应在安装时从用户面向的一侧可见 |
+| **evidence** | 标签位于侧面板；靠墙安装后不可见 |
+| **judgement** | **FAIL** |
+| **confidence** | High |
+| **missing_info** | 需要确认是否可由说明书补足 |
+`);
+
+    expect(result).not.toBeNull();
+    expect(result?.source).toBe('assistant_clause_sections');
+    expect(result?.summary.total).toBe(2);
+    expect(result?.summary.pass).toBe(1);
+    expect(result?.summary.fail).toBe(1);
+    expect(result?.summary.missing).toBe(1);
+    expect(result?.rows[0]?.missingInformation).toEqual([]);
+    expect(result?.rows[1]?.missingInformation).toEqual(['需要确认是否可由说明书补足']);
+  });
+
   it('ignores unrelated markdown content', () => {
     const result = parseChecklistResultFromAssistantMessage(`
 # Notes

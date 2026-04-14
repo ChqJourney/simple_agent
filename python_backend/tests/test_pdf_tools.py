@@ -194,6 +194,39 @@ class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("markdown", mocked.call_args.kwargs["mode"])
             self.assertEqual("markdown", result.output["summary"]["mode"])
 
+    async def test_pdf_read_pages_tool_falls_back_when_markdown_dependency_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "manual.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7")
+
+            with patch(
+                "tools.pdf_tools.read_pdf_pages",
+                side_effect=[
+                    RuntimeError("PyMuPDF4LLM is not installed. Install matching `pymupdf` and `pymupdf4llm` versions to use markdown PDF reads."),
+                    {
+                        "pdf_path": str(pdf_path),
+                        "page_count": 12,
+                        "pages": [2],
+                        "mode": "page_text",
+                        "filters": {},
+                        "items": [{"page_number": 2, "text": "Scope text", "total_lines": 14}],
+                    },
+                ],
+            ) as mocked:
+                result = await PdfReadPagesTool().execute(
+                    tool_call_id="pdf-pages-fallback",
+                    workspace_path=temp_dir,
+                    path="manual.pdf",
+                    pages="2",
+                    mode="markdown",
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual("markdown", mocked.call_args_list[0].kwargs["mode"])
+            self.assertEqual("page_text", mocked.call_args_list[1].kwargs["mode"])
+            self.assertEqual("page_text", result.output["summary"]["mode"])
+            self.assertEqual("markdown", result.output["summary"]["fallback_from_mode"])
+
     async def test_pdf_read_lines_tool_returns_line_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             pdf_path = Path(temp_dir) / "manual.pdf"

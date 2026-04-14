@@ -14,7 +14,9 @@
 - 支持工具审批、交互式追问、会话级执行模式切换
 - 支持本地 skills catalog 与按需 `skill_loader`
 - 支持图片附件、文件树拖拽路径引用、任务面板
+- 支持 workspace 场景标签：`常规 / 标准问答 / Checklist Evaluation`
 - 支持可选安装的 OCR sidecar，用于图片和扫描版 PDF OCR
+- 支持全局 `Reference Library`，用于标准、checklist、guidance 资料检索
 - 支持中英文界面、主题切换和基础字号调整
 
 ## 当前实现概览
@@ -31,6 +33,7 @@
   - tool result
   - delegated worker 卡片
 - 右侧文件树与任务面板
+- `Checklist Evaluation` 场景下的右侧 checklist 结果面板
 - 顶栏状态：
   - token usage
   - OCR 状态
@@ -38,14 +41,41 @@
   - 当前模型
   - 会话 compaction 状态
   - run timeline 入口
-- 设置页六个标签：
+- 设置页七个标签：
   - `Model`
   - `Runtime`
   - `Tools`
   - `Skills`
+  - `Reference Library`
   - `OCR`
   - `UI`
 - About 页版本信息与更新检查界面
+
+### Workspace 场景标签
+
+workspace 聊天输入区上方现在有三个场景标签：
+
+- `常规`：默认通用 agent 行为
+- `标准问答`：围绕标准问答设计，优先结合用户输入、workspace 文档和全局标准库证据回答
+- `Checklist Evaluation`：围绕 checklist 逐项判断设计，适合 IEC/UL/TRF 一类条款化检查场景
+
+当前行为约束：
+
+- 只有空白 session 会被复用
+- 已有消息的 session 点击场景标签时会新建 session
+- session 一旦开始对话后，场景不可切换
+
+对应的 runtime 差异：
+
+- `常规`：通用工具集与通用 prompt
+- `标准问答`：启用 workspace 文档工具、标准库只读工具、`ask_question`
+- `Checklist Evaluation`：启用 checklist 提取与逐项评估链路
+
+在 `Checklist Evaluation` 下，如果 assistant 产出可解析 checklist 结果：
+
+- 右侧面板会动态出现 `Checklist` 标签
+- message 区会出现一个引导卡片，提示用户查看右侧结构化结果
+- 中间聊天区和右侧面板边界会出现联动高亮
 
 ### 模型与 Provider
 
@@ -155,6 +185,25 @@
 
 - workspace skills 不在设置页逐条开关
 - 当本地 skills provider 被整体关闭时，system skills 和 workspace skills 都不会参与运行时注入
+
+### Reference Library
+
+`Reference Library` 是全局设置，不属于单个 workspace。
+
+当前实现支持：
+
+- 在 Settings 中维护多个全局资料根目录
+- 每个根目录可设置：
+  - `label`
+  - `enabled`
+  - `kinds`: `standard / checklist / guidance`
+- `standard_qa` 场景使用标准类资料做证据优先问答
+- `checklist_evaluation` 场景可从 checklist 类资料中提取 checklist 行
+
+这意味着：
+
+- 你可以在多个 workspace 中复用同一套标准资料
+- workspace 本地文件和全局标准库资料会在不同场景中以不同策略参与运行时
 
 ### OCR
 

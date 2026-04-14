@@ -1,4 +1,5 @@
 import { useConfigStore } from "../stores/configStore";
+import { useChecklistStore } from "../stores/checklistStore";
 import { useRunStore } from "../stores/runStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useTaskStore } from "../stores/taskStore";
@@ -84,6 +85,7 @@ export function resetFrontendTestState(): void {
     currentSessionId: null,
   }));
   useChatStore.setState({ sessions: {} });
+  useChecklistStore.setState({ sessions: {} });
   useRunStore.setState({ sessions: {} });
   useTaskStore.setState({
     tasks: [],

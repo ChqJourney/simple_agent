@@ -15,6 +15,8 @@
 - 以工作区目录为边界进行文件访问
 - 前后端通过 WebSocket 长连接驱动实时 agent loop
 - 对话、工具、运行日志都能在工作区 `.agent/` 下落盘
+- workspace 会话支持场景化入口：`default / standard_qa / checklist_evaluation`
+- 全局 `Reference Library` 为标准问答与 checklist 评估提供只读资料来源
 - 支持双 profile 模型配置、长会话压缩、可选 OCR
 
 ## 2. 总体架构
@@ -153,12 +155,14 @@ ocr_sidecar/
 
 - `configStore`
   - 持久化模型配置、runtime、tools/skills/OCR 设置
+  - 持久化全局 `reference_library` 设置
 - `workspaceStore`
   - 工作区列表
   - 当前工作区
   - 被 agent 写入过的文件高亮
 - `sessionStore`
   - 会话元数据
+  - `scenario_id / scenario_version / scenario_label`
   - 当前会话 id
   - 从磁盘恢复会话列表
 - `chatStore`
@@ -170,6 +174,7 @@ ocr_sidecar/
   - `todo_task` 生成的任务树
 - `uiStore`
   - 左右面板宽度
+  - 右侧面板当前 tab
   - 主题
   - 语言
   - 字号
@@ -189,12 +194,25 @@ ocr_sidecar/
 
 - 顶栏：工作区名、模型、OCR、WS、token usage、timeline
 - 左侧：工作区信息、skills、tools、session list
-- 中间：聊天区
-- 右侧：文件树 / 任务面板
+- 中间：聊天区、场景标签栏、在 checklist 结果出现时的右侧引导 UI
+- 右侧：文件树 / 任务面板 / 动态 checklist 结果面板
+
+workspace 场景标签位于输入区上方，前端通过 `ScenarioBadgeBar` 和 `useSession` 协调：
+
+- 空白 session 允许复用并更新场景元数据
+- 非空 session 点击标签时创建新 session
+- session 一旦开始对话，前端不再提供切换入口
+
+当当前 session 为 `checklist_evaluation` 且 assistant/tool 结果可解析为 checklist 结构时：
+
+- `RightPanel` 动态插入 `checklist` tab
+- `WorkspacePage` 自动展开右侧面板并聚焦 `checklist` tab
+- `ChatContainer` 渲染一张引导卡片，提示用户查看右侧结果
+- 主聊天区与右侧面板边界进入强调态
 
 ### 4.4 设置页
 
-当前有六个标签页：
+当前有七个标签页：
 
 - `Model`
   - `primary` / `background` profile
@@ -214,6 +232,9 @@ ocr_sidecar/
   - 是否启用 local skill provider
   - system skills 开关
   - system skill roots 展示
+- `Reference Library`
+  - 全局标准库 / checklist / guidance 根目录
+  - 每个根目录的 label、enabled、kind 设置
 - `OCR`
   - OCR 功能开关
   - OCR sidecar 安装状态
@@ -235,12 +256,20 @@ ocr_sidecar/
 - 发送 `question_response`
 - 发送 `interrupt`
 - 发送 `set_execution_mode`
+- 发送 `create_session`
+- 发送 `update_session_scenario`
 - 处理后端所有消息并分发到各个 store
 
 它还会在工具结果后做两类前端副作用：
 
 - `file_write` -> 标记文件树变更
 - `todo_task` -> 更新任务面板
+
+在当前实现里，checklist 结果 UI 仍是前端推导型能力：
+
+- 从 assistant 消息中保守解析 JSON code block 或 markdown table
+- 或从 `extract_checklist_rows` 工具结果中回退构造只读 checklist 视图
+- 没有引入新的 WebSocket 结果协议
 
 ## 5. Tauri / 宿主层架构
 
@@ -322,6 +351,12 @@ Tauri updater 接口已经接入 About 页，但当前 `src-tauri/tauri.conf.jso
 - `connection_workspaces`
 - `active_session_tasks`
 - `active_session_compaction_tasks`
+
+其中与场景化 session 相关的关键点是：
+
+- session metadata 中持久化 `scenario_id / scenario_version / scenario_label`
+- agent cache 不再只按 `session_id` 复用，而会对场景签名变化做失效重建
+- 后端拒绝对非空 session 执行场景切换，避免 prompt/tool policy 与历史消息错配
 
 ### 6.2 HTTP 接口
 

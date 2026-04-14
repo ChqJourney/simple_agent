@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatContainer } from "./ChatContainer";
 import { useChatStore } from "../../stores/chatStore";
+import { useChecklistStore } from "../../stores/checklistStore";
 import { useConfigStore } from "../../stores/configStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore } from "../../stores/uiStore";
@@ -101,6 +102,7 @@ describe("ChatContainer", () => {
     messageInputPropsMock.mockReset();
     messageListPropsMock.mockReset();
     useConfigStore.setState({ config: null as never });
+    useChecklistStore.setState({ sessions: {} });
     useSessionStore.setState((state) => ({
       ...state,
       currentSessionId: "session-a",
@@ -636,5 +638,108 @@ describe("ChatContainer", () => {
 
     expect(useUIStore.getState().rightPanelCollapsed).toBe(false);
     expect(useUIStore.getState().rightPanelTab).toBe("checklist");
+    expect(screen.queryByText("Checklist results are ready in the right panel")).toBeNull();
+  });
+
+  it("allows dismissing the checklist notice without opening the panel", () => {
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/tauri_agent",
+          created_at: "2026-03-13T09:00:00.000Z",
+          updated_at: "2026-03-13T10:00:00.000Z",
+          scenario_id: "checklist_evaluation",
+          scenario_version: 1,
+          scenario_label: "Checklist Evaluation",
+        },
+      ],
+    }));
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              content: `
+\`\`\`json
+{"rows":[{"clause":"5.1","requirement":"Durable marking","judgement":"pass"}]}
+\`\`\`
+`,
+              status: "completed",
+            },
+          ],
+          currentStreamingContent: "",
+          currentReasoningContent: "",
+          isStreaming: false,
+          assistantStatus: "idle",
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
+        },
+      },
+    });
+
+    render(<ChatContainer />);
+
+    expect(screen.getByText("Checklist results are ready in the right panel")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    expect(screen.queryByText("Checklist results are ready in the right panel")).toBeNull();
+    expect(useUIStore.getState().rightPanelTab).toBe("filetree");
+  });
+
+  it("does not show the checklist notice while the checklist panel is already focused", () => {
+    useUIStore.setState((state) => ({
+      ...state,
+      rightPanelCollapsed: false,
+      rightPanelTab: "checklist",
+    }));
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        {
+          session_id: "session-a",
+          workspace_path: "C:/Users/patri/source/repos/tauri_agent",
+          created_at: "2026-03-13T09:00:00.000Z",
+          updated_at: "2026-03-13T10:00:00.000Z",
+          scenario_id: "checklist_evaluation",
+          scenario_version: 1,
+          scenario_label: "Checklist Evaluation",
+        },
+      ],
+    }));
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              content: `
+\`\`\`json
+{"rows":[{"clause":"5.1","requirement":"Durable marking","judgement":"pass"}]}
+\`\`\`
+`,
+              status: "completed",
+            },
+          ],
+          currentStreamingContent: "",
+          currentReasoningContent: "",
+          isStreaming: false,
+          assistantStatus: "idle",
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          pendingQuestion: undefined,
+        },
+      },
+    });
+
+    render(<ChatContainer />);
+
+    expect(screen.queryByText("Checklist results are ready in the right panel")).toBeNull();
   });
 });

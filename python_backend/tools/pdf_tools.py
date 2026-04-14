@@ -354,11 +354,13 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
         if failure:
             return failure
 
+        effective_mode = mode
+        fallback_from_mode: str | None = None
         try:
             result = read_pdf_pages(
                 file_path,
                 pages=pages,
-                mode=mode,
+                mode=effective_mode,
                 exclude_header_footer=exclude_header_footer,
                 header_ratio=header_ratio,
                 footer_ratio=footer_ratio,
@@ -378,7 +380,51 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
                 asset_root=self._markdown_asset_root(workspace_path),
             )
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
-            return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))
+            if effective_mode == "markdown" and "PyMuPDF4LLM is not installed" in str(exc):
+                try:
+                    fallback_from_mode = effective_mode
+                    effective_mode = "page_text"
+                    result = read_pdf_pages(
+                        file_path,
+                        pages=pages,
+                        mode=effective_mode,
+                        exclude_header_footer=exclude_header_footer,
+                        header_ratio=header_ratio,
+                        footer_ratio=footer_ratio,
+                        exclude_watermark=exclude_watermark,
+                        angle_threshold=angle_threshold,
+                        exclude_tables=exclude_tables,
+                        y_tolerance=y_tolerance,
+                        write_images=write_images,
+                        embed_images=embed_images,
+                        image_format=image_format,
+                        dpi=dpi,
+                        force_text=force_text,
+                        ignore_graphics=ignore_graphics,
+                        detect_bg_color=detect_bg_color,
+                        ignore_alpha=ignore_alpha,
+                        table_strategy=table_strategy,
+                        asset_root=self._markdown_asset_root(workspace_path),
+                    )
+                except (FileNotFoundError, RuntimeError, ValueError) as fallback_exc:
+                    return ToolResult(
+                        tool_call_id=tool_call_id,
+                        tool_name=self.name,
+                        success=False,
+                        output=None,
+                        error=str(fallback_exc),
+                    )
+            else:
+                return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))
+
+        summary = {
+            "page_count": result["page_count"],
+            "requested_pages": result["pages"],
+            "mode": result["mode"],
+            "returned_items": len(result["items"]),
+        }
+        if fallback_from_mode:
+            summary["fallback_from_mode"] = fallback_from_mode
 
         return ToolResult(
             tool_call_id=tool_call_id,
@@ -387,12 +433,7 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
             output={
                 "event": "pdf_pages",
                 "path": str(file_path),
-                "summary": {
-                    "page_count": result["page_count"],
-                    "requested_pages": result["pages"],
-                    "mode": result["mode"],
-                    "returned_items": len(result["items"]),
-                },
+                "summary": summary,
                 **result,
             },
         )

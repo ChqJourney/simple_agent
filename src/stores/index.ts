@@ -1,4 +1,5 @@
 export { useChatStore } from './chatStore';
+export { useChecklistStore } from './checklistStore';
 export { useRunStore } from './runStore';
 export { useSessionStore } from './sessionStore';
 export { useConfigStore } from './configStore';

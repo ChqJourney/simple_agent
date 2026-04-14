@@ -26,8 +26,13 @@ class ScenarioRegistryTests(unittest.TestCase):
         spec = get_scenario_spec("checklist_evaluation")
         self.assertEqual("checklist_evaluation", spec["scenario_id"])
         self.assertIn("extract_checklist_rows", spec["tool_allowlist"])
+        self.assertIn("file_write", spec["tool_allowlist"])
         self.assertIn("search_reference_library", spec["tool_allowlist"])
+        self.assertIn("Treat checklist extraction as an AI-first task", spec["system_prompt_addendum"])
+        self.assertIn("Prioritize checklist files and evidence files that the user explicitly names", spec["system_prompt_addendum"])
+        self.assertIn("must begin with a single ```json fenced block", spec["system_prompt_addendum"])
         self.assertIn("clause_id, requirement, evidence, judgement, confidence, and missing_info", spec["system_prompt_addendum"])
+        self.assertIn("use file_write directly", spec["system_prompt_addendum"])
 
     def test_unknown_scenario_falls_back_to_default(self) -> None:
         spec = get_scenario_spec("unknown")

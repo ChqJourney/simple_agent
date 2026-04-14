@@ -136,17 +136,20 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                 user_manager,
                 skill_provider=None,
                 custom_system_prompt="",
+                scenario_system_prompt="",
                 compaction_llm_factory=None,
                 background_compaction_scheduler=None,
                 tool_filter=None,
                 max_tool_rounds=10,
                 max_retries=3,
+                **_kwargs,
             ) -> None:
                 agent_self.llm = llm
                 agent_self.tool_registry = tool_registry
                 agent_self.user_manager = user_manager
                 agent_self.skill_provider = skill_provider
                 agent_self.custom_system_prompt = custom_system_prompt
+                agent_self.scenario_system_prompt = scenario_system_prompt
                 agent_self.compaction_llm_factory = compaction_llm_factory
                 agent_self.background_compaction_scheduler = background_compaction_scheduler
                 agent_self.tool_filter = tool_filter

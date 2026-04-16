@@ -272,7 +272,10 @@ def _get_table_regions(page: "pymupdf_types.Page") -> list[list[float]]:
         return regions
 
     for table in tables:
-        bbox = getattr(table, "bbox", None)
+        try:
+            bbox = getattr(table, "bbox", None)
+        except Exception:
+            continue
         if bbox and len(bbox) == 4:
             regions.append(_coerce_bbox(bbox))
     return regions

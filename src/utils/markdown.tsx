@@ -120,6 +120,9 @@ export const markdownComponents: Components = {
   blockquote({ children }) {
     return <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic my-2">{children}</blockquote>;
   },
+  hr() {
+    return <hr className="my-4 border-t border-gray-200/40 dark:border-gray-700/40" />;
+  },
 };
 
 export const markdownRemarkPlugins = [remarkGfm, remarkBreaks];

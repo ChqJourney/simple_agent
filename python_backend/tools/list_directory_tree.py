@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .base import BaseTool, ToolResult
-from .path_utils import resolve_workspace_path
+from .path_utils import is_within_workspace, resolve_workspace_path
 
 
 class ListDirectoryTreeTool(BaseTool):
@@ -130,6 +130,12 @@ class ListDirectoryTreeTool(BaseTool):
                 if truncated:
                     return
                 if child == root_path:
+                    continue
+                try:
+                    child_resolved = child.resolve()
+                except (OSError, RuntimeError):
+                    continue
+                if not is_within_workspace(child_resolved, root_path):
                     continue
                 if not should_include(child):
                     continue

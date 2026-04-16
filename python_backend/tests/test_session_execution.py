@@ -309,6 +309,37 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(str(workspace_a.resolve()), session_a.workspace_path)
         self.assertEqual(str(workspace_b.resolve()), session_b.workspace_path)
 
+    async def test_rejects_existing_session_from_different_workspace(self) -> None:
+        workspace_a = Path(self.temp_dir.name) / "workspace-a"
+        workspace_b = Path(self.temp_dir.name) / "workspace-b"
+        workspace_a.mkdir()
+        workspace_b.mkdir()
+
+        await backend_main.user_manager.create_session(str(workspace_a), "shared-session")
+        backend_main.runtime_state.connection_workspaces["conn-b"] = str(workspace_b.resolve())
+
+        await backend_main.handle_user_message(
+            {
+                "session_id": "shared-session",
+                "content": "beta",
+            },
+            self.send_callback,
+            "conn-b",
+        )
+
+        self.assertEqual([], self.run_invocations)
+        self.assertIsNone(
+            backend_main.runtime_state.active_session_tasks.get("shared-session")
+        )
+        self.assertTrue(
+            any(
+                message.get("type") == "error"
+                and message.get("session_id") == "shared-session"
+                and "different workspace" in message.get("error", "")
+                for message in self.messages
+            )
+        )
+
     async def test_handle_config_cancels_active_tasks_and_clears_task_registries(self) -> None:
         await backend_main.handle_user_message(
             {

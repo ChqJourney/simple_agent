@@ -321,6 +321,13 @@ def _normalize_scenario_version(value: Any) -> int:
     return 1
 
 
+def _workspace_paths_match(left: str, right: str) -> bool:
+    try:
+        return Path(left).resolve() == Path(right).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return str(left).strip() == str(right).strip()
+
+
 def _scenario_cache_key(scenario_spec: Dict[str, Any]) -> tuple[Any, ...]:
     allowlist = scenario_spec.get("tool_allowlist")
     denylist = scenario_spec.get("tool_denylist")
@@ -1080,6 +1087,19 @@ async def handle_user_message(
 
     try:
         session = user_manager.get_session(session_id)
+        if session and not _workspace_paths_match(session.workspace_path, workspace):
+            await _release_reserved_session(session_id)
+            await send_callback(
+                {
+                    "type": "error",
+                    "session_id": session_id,
+                    "error": (
+                        f"Session {session_id} belongs to a different workspace. "
+                        "Create a new session for this workspace."
+                    ),
+                }
+            )
+            return
         if not session:
             session = await user_manager.create_session(workspace, session_id)
 

@@ -72,6 +72,28 @@ class ListDirectoryTreeToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(result.success)
             self.assertIn("Path must be inside workspace", result.error or "")
 
+    async def test_does_not_traverse_symlinked_directory_outside_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
+            root = Path(temp_dir)
+            outside = Path(outside_dir)
+            (outside / "secret.txt").write_text("secret", encoding="utf-8")
+            try:
+                (root / "outside-link").symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            result = await ListDirectoryTreeTool().execute(
+                tool_call_id="tree-5",
+                workspace_path=temp_dir,
+                max_depth=2,
+                include_hidden=True,
+            )
+
+            self.assertTrue(result.success)
+            paths = [entry["path"] for entry in result.output["entries"]]
+            self.assertNotIn("outside-link", paths)
+            self.assertNotIn("outside-link/secret.txt", paths)
+
 
 if __name__ == "__main__":
     unittest.main()

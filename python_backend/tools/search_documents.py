@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -51,6 +52,7 @@ class SearchDocumentsTool(BaseTool):
     description = (
         "Search across workspace documents and return structured matches with location metadata. "
         "Supports text documents, PDF files, Word documents, Excel workbooks, and PowerPoint decks. "
+        "By default hidden files and directories are skipped unless include_hidden=true. "
         "Use mode='plain' for literal keyword search and mode='regex' only for true regular expressions."
     )
     display_name = "Search Documents"
@@ -99,6 +101,11 @@ class SearchDocumentsTool(BaseTool):
                 "type": "integer",
                 "default": 2,
                 "description": "Amount of nearby context to include. For text and PDF this means lines; for Word and Excel this means paragraphs or rows.",
+            },
+            "include_hidden": {
+                "type": "boolean",
+                "default": False,
+                "description": "Whether to include hidden files and directories such as .agent or dotfiles when searching a directory.",
             },
         },
         "required": ["query"],
@@ -384,6 +391,179 @@ class SearchDocumentsTool(BaseTool):
                 return True
         return False
 
+    def _search_documents_sync(
+        self,
+        *,
+        root_path: Path,
+        query: str,
+        mode: str,
+        file_glob: Optional[str],
+        case_sensitive: bool,
+        max_results: int,
+        context_lines: int,
+        include_hidden: bool,
+    ) -> dict[str, Any]:
+        pattern = self._compile_pattern(query, mode, case_sensitive)
+        search_root = root_path if root_path.is_dir() else root_path.parent
+
+        def should_include(candidate: Path) -> bool:
+            if include_hidden:
+                return True
+            try:
+                relative_parts = candidate.relative_to(search_root).parts
+            except ValueError:
+                return True
+            return not any(part.startswith(".") for part in relative_parts)
+
+        candidate_files: List[Path] = []
+        if root_path.is_file():
+            candidate_files = [root_path]
+        else:
+            for candidate in search_root.rglob("*"):
+                if not candidate.is_file():
+                    continue
+                if not should_include(candidate):
+                    continue
+                if file_glob and not candidate.match(file_glob):
+                    continue
+                candidate_files.append(candidate)
+
+        results: List[Dict[str, Any]] = []
+        matched_files: set[str] = set()
+        skipped_unsupported = 0
+        skipped_large = 0
+        skipped_decode = 0
+        skipped_parse_errors = 0
+        truncated = False
+
+        for candidate in sorted(candidate_files):
+            if len(results) >= max_results:
+                truncated = True
+                break
+
+            doc_type = self._document_type(candidate)
+            if doc_type == "unsupported":
+                skipped_unsupported += 1
+                continue
+
+            try:
+                stat = candidate.stat()
+            except OSError:
+                continue
+
+            if doc_type == "pdf":
+                size_limit = MAX_PDF_SEARCH_FILE_BYTES
+            elif doc_type == "docx":
+                size_limit = MAX_WORD_SEARCH_FILE_BYTES
+            elif doc_type == "xlsx":
+                size_limit = MAX_EXCEL_SEARCH_FILE_BYTES
+            elif doc_type == "pptx":
+                size_limit = MAX_PPTX_SEARCH_FILE_BYTES
+            else:
+                size_limit = MAX_TEXT_SEARCH_FILE_BYTES
+            if stat.st_size > size_limit:
+                skipped_large += 1
+                continue
+
+            path_str = self._relative_path(candidate, root_path, search_root)
+            result_count_before = len(results)
+
+            if doc_type == "text":
+                file_skipped_decode, file_truncated = self._search_text_file(
+                    candidate,
+                    path_str=path_str,
+                    pattern=pattern,
+                    max_results=max_results,
+                    context_lines=context_lines,
+                    results=results,
+                )
+                skipped_decode += file_skipped_decode
+                truncated = truncated or file_truncated
+            elif doc_type == "docx":
+                try:
+                    file_truncated = self._search_word_file(
+                        candidate,
+                        path_str=path_str,
+                        query=query,
+                        mode=mode,
+                        case_sensitive=case_sensitive,
+                        max_results=max_results,
+                        context_lines=context_lines,
+                        results=results,
+                    )
+                    truncated = truncated or file_truncated
+                except (RuntimeError, ValueError, OSError):
+                    skipped_parse_errors += 1
+                    continue
+            elif doc_type == "xlsx":
+                try:
+                    file_truncated = self._search_excel_file(
+                        candidate,
+                        path_str=path_str,
+                        query=query,
+                        mode=mode,
+                        case_sensitive=case_sensitive,
+                        max_results=max_results,
+                        context_lines=context_lines,
+                        results=results,
+                    )
+                    truncated = truncated or file_truncated
+                except (RuntimeError, ValueError, OSError):
+                    skipped_parse_errors += 1
+                    continue
+            elif doc_type == "pptx":
+                try:
+                    file_truncated = self._search_pptx_file(
+                        candidate,
+                        path_str=path_str,
+                        query=query,
+                        mode=mode,
+                        case_sensitive=case_sensitive,
+                        max_results=max_results,
+                        results=results,
+                    )
+                    truncated = truncated or file_truncated
+                except (RuntimeError, ValueError, OSError):
+                    skipped_parse_errors += 1
+                    continue
+            else:
+                try:
+                    file_truncated = self._search_pdf_file(
+                        candidate,
+                        path_str=path_str,
+                        pattern=pattern,
+                        max_results=max_results,
+                        context_lines=context_lines,
+                        results=results,
+                    )
+                    truncated = truncated or file_truncated
+                except (RuntimeError, ValueError, OSError):
+                    skipped_parse_errors += 1
+                    continue
+
+            if len(results) > result_count_before:
+                for item in results[result_count_before:]:
+                    item["absolute_path"] = str(candidate)
+                    item["resolved_root_path"] = str(root_path)
+                matched_files.add(path_str)
+
+        return {
+            "event": "document_search_results",
+            "query": query,
+            "mode": mode,
+            "resolved_root_path": str(root_path),
+            "truncated": truncated,
+            "results": results,
+            "summary": {
+                "hit_count": len(results),
+                "file_count": len(matched_files),
+                "skipped_unsupported": skipped_unsupported,
+                "skipped_large": skipped_large,
+                "skipped_decode_errors": skipped_decode,
+                "skipped_parse_errors": skipped_parse_errors,
+            },
+        }
+
     async def execute(
         self,
         query: str,
@@ -393,6 +573,7 @@ class SearchDocumentsTool(BaseTool):
         case_sensitive: bool = False,
         max_results: int = 50,
         context_lines: int = 2,
+        include_hidden: bool = False,
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
         reference_library_roots: Optional[list[str]] = None,
@@ -432,7 +613,26 @@ class SearchDocumentsTool(BaseTool):
             )
 
         try:
-            pattern = self._compile_pattern(query, mode, case_sensitive)
+            normalized_max_results = max(1, min(500, int(max_results)))
+        except (TypeError, ValueError):
+            normalized_max_results = 50
+        try:
+            normalized_context_lines = max(0, min(10, int(context_lines)))
+        except (TypeError, ValueError):
+            normalized_context_lines = 2
+
+        try:
+            output = await asyncio.to_thread(
+                self._search_documents_sync,
+                root_path=root_path,
+                query=query,
+                mode=mode,
+                file_glob=file_glob,
+                case_sensitive=case_sensitive,
+                max_results=normalized_max_results,
+                context_lines=normalized_context_lines,
+                include_hidden=include_hidden,
+            )
         except re.error as exc:
             return ToolResult(
                 tool_call_id=tool_call_id,
@@ -442,164 +642,9 @@ class SearchDocumentsTool(BaseTool):
                 error=f"Invalid regular expression: {exc}",
             )
 
-        try:
-            normalized_max_results = max(1, min(500, int(max_results)))
-        except (TypeError, ValueError):
-            normalized_max_results = 50
-        try:
-            normalized_context_lines = max(0, min(10, int(context_lines)))
-        except (TypeError, ValueError):
-            normalized_context_lines = 2
-
-        search_root = root_path if root_path.is_dir() else root_path.parent
-        candidate_files: List[Path] = []
-        if root_path.is_file():
-            candidate_files = [root_path]
-        else:
-            for candidate in search_root.rglob("*"):
-                if not candidate.is_file():
-                    continue
-                if file_glob and not candidate.match(file_glob):
-                    continue
-                candidate_files.append(candidate)
-
-        results: List[Dict[str, Any]] = []
-        matched_files: set[str] = set()
-        skipped_unsupported = 0
-        skipped_large = 0
-        skipped_decode = 0
-        skipped_parse_errors = 0
-        truncated = False
-
-        for candidate in sorted(candidate_files):
-            if len(results) >= normalized_max_results:
-                truncated = True
-                break
-
-            doc_type = self._document_type(candidate)
-            if doc_type == "unsupported":
-                skipped_unsupported += 1
-                continue
-
-            try:
-                stat = candidate.stat()
-            except OSError:
-                continue
-
-            if doc_type == "pdf":
-                size_limit = MAX_PDF_SEARCH_FILE_BYTES
-            elif doc_type == "docx":
-                size_limit = MAX_WORD_SEARCH_FILE_BYTES
-            elif doc_type == "xlsx":
-                size_limit = MAX_EXCEL_SEARCH_FILE_BYTES
-            elif doc_type == "pptx":
-                size_limit = MAX_PPTX_SEARCH_FILE_BYTES
-            else:
-                size_limit = MAX_TEXT_SEARCH_FILE_BYTES
-            if stat.st_size > size_limit:
-                skipped_large += 1
-                continue
-
-            path_str = self._relative_path(candidate, root_path, search_root)
-            result_count_before = len(results)
-
-            if doc_type == "text":
-                file_skipped_decode, file_truncated = self._search_text_file(
-                    candidate,
-                    path_str=path_str,
-                    pattern=pattern,
-                    max_results=normalized_max_results,
-                    context_lines=normalized_context_lines,
-                    results=results,
-                )
-                skipped_decode += file_skipped_decode
-                truncated = truncated or file_truncated
-            elif doc_type == "docx":
-                try:
-                    file_truncated = self._search_word_file(
-                        candidate,
-                        path_str=path_str,
-                        query=query,
-                        mode=mode,
-                        case_sensitive=case_sensitive,
-                        max_results=normalized_max_results,
-                        context_lines=normalized_context_lines,
-                        results=results,
-                    )
-                    truncated = truncated or file_truncated
-                except (RuntimeError, ValueError, OSError):
-                    skipped_parse_errors += 1
-                    continue
-            elif doc_type == "xlsx":
-                try:
-                    file_truncated = self._search_excel_file(
-                        candidate,
-                        path_str=path_str,
-                        query=query,
-                        mode=mode,
-                        case_sensitive=case_sensitive,
-                        max_results=normalized_max_results,
-                        context_lines=normalized_context_lines,
-                        results=results,
-                    )
-                    truncated = truncated or file_truncated
-                except (RuntimeError, ValueError, OSError):
-                    skipped_parse_errors += 1
-                    continue
-            elif doc_type == "pptx":
-                try:
-                    file_truncated = self._search_pptx_file(
-                        candidate,
-                        path_str=path_str,
-                        query=query,
-                        mode=mode,
-                        case_sensitive=case_sensitive,
-                        max_results=normalized_max_results,
-                        results=results,
-                    )
-                    truncated = truncated or file_truncated
-                except (RuntimeError, ValueError, OSError):
-                    skipped_parse_errors += 1
-                    continue
-            else:
-                try:
-                    file_truncated = self._search_pdf_file(
-                        candidate,
-                        path_str=path_str,
-                        pattern=pattern,
-                        max_results=normalized_max_results,
-                        context_lines=normalized_context_lines,
-                        results=results,
-                    )
-                    truncated = truncated or file_truncated
-                except (RuntimeError, ValueError, OSError):
-                    skipped_parse_errors += 1
-                    continue
-
-            if len(results) > result_count_before:
-                for item in results[result_count_before:]:
-                    item["absolute_path"] = str(candidate)
-                    item["resolved_root_path"] = str(root_path)
-                matched_files.add(path_str)
-
         return ToolResult(
             tool_call_id=tool_call_id,
             tool_name=self.name,
             success=True,
-            output={
-                "event": "document_search_results",
-                "query": query,
-                "mode": mode,
-                "resolved_root_path": str(root_path),
-                "truncated": truncated,
-                "results": results,
-                "summary": {
-                    "hit_count": len(results),
-                    "file_count": len(matched_files),
-                    "skipped_unsupported": skipped_unsupported,
-                    "skipped_large": skipped_large,
-                    "skipped_decode_errors": skipped_decode,
-                    "skipped_parse_errors": skipped_parse_errors,
-                },
-            },
+            output=output,
         )

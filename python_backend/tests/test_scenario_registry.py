@@ -21,6 +21,9 @@ class ScenarioRegistryTests(unittest.TestCase):
         self.assertIn("search_documents", spec["tool_allowlist"])
         self.assertIn("Conclusion, Evidence, Uncertainties, and Needed Information", spec["system_prompt_addendum"])
         self.assertIn("absolute_path", spec["system_prompt_addendum"])
+        self.assertIn("Avoid hidden workspace metadata such as .agent", spec["system_prompt_addendum"])
+        self.assertIn("Do not launch multiple expensive PDF searches or page reads in parallel", spec["system_prompt_addendum"])
+        self.assertIn("pdf_get_info, pdf_get_outline, or get_document_structure", spec["system_prompt_addendum"])
 
     def test_returns_checklist_evaluation_spec(self) -> None:
         spec = get_scenario_spec("checklist_evaluation")
@@ -34,6 +37,8 @@ class ScenarioRegistryTests(unittest.TestCase):
         self.assertIn("clause_id, requirement, evidence, judgement, confidence, and missing_info", spec["system_prompt_addendum"])
         self.assertIn("use file_write directly", spec["system_prompt_addendum"])
         self.assertIn("absolute_path", spec["system_prompt_addendum"])
+        self.assertIn("Avoid hidden workspace metadata such as .agent", spec["system_prompt_addendum"])
+        self.assertIn("Do not launch multiple expensive PDF searches or page reads in parallel", spec["system_prompt_addendum"])
 
     def test_unknown_scenario_falls_back_to_default(self) -> None:
         spec = get_scenario_spec("unknown")

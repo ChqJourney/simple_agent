@@ -1,3 +1,5 @@
+import asyncio
+import json
 import sys
 import tempfile
 import threading
@@ -20,11 +22,41 @@ from tools.pdf_tools import (
 from document_readers.pdf_reader import parse_page_spec
 from core.agent import Agent
 from core.user import UserManager
-from tools.base import ToolRegistry
+from tools.base import BaseTool, ToolRegistry, ToolResult
 
 
 class DummyLLM:
     pass
+
+
+class TrackingPdfSearchTool(BaseTool):
+    name = "pdf_search"
+    description = "Test-only PDF search tool."
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "query": {"type": "string"},
+        },
+        "required": ["path", "query"],
+        "additionalProperties": False,
+    }
+
+    def __init__(self, state: dict[str, int]) -> None:
+        super().__init__()
+        self.state = state
+
+    async def execute(self, path: str, query: str, tool_call_id: str = "", **kwargs):
+        self.state["active"] += 1
+        self.state["max_active"] = max(self.state["max_active"], self.state["active"])
+        await asyncio.sleep(0.05)
+        self.state["active"] -= 1
+        return ToolResult(
+            tool_call_id=tool_call_id,
+            tool_name=self.name,
+            success=True,
+            output={"path": path, "query": query},
+        )
 
 
 class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
@@ -386,6 +418,43 @@ class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
                             "query": "scope",
                         },
                     )
+
+    def test_heavy_pdf_tools_use_extended_default_timeout(self) -> None:
+        self.assertEqual(60, PdfReadPagesTool().policy.timeout_seconds)
+        self.assertEqual(60, PdfSearchTool().policy.timeout_seconds)
+
+    async def test_agent_serializes_heavy_pdf_tool_calls_within_same_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            user_manager = UserManager()
+            session = await user_manager.create_session(temp_dir, "session-heavy-pdf")
+            registry = ToolRegistry()
+            state = {"active": 0, "max_active": 0}
+            registry.register(TrackingPdfSearchTool(state))
+            agent = Agent(DummyLLM(), registry, user_manager)
+
+            results = await agent._execute_tools(
+                [
+                    {
+                        "id": "pdf-tool-1",
+                        "function": {
+                            "name": "pdf_search",
+                            "arguments": json.dumps({"path": "manual.pdf", "query": "Clause 16"}),
+                        },
+                    },
+                    {
+                        "id": "pdf-tool-2",
+                        "function": {
+                            "name": "pdf_search",
+                            "arguments": json.dumps({"path": "manual.pdf", "query": "electric strength"}),
+                        },
+                    },
+                ],
+                session,
+                run_id="run-heavy-pdf",
+            )
+
+            self.assertEqual(2, len(results))
+            self.assertEqual(1, state["max_active"])
 
     async def test_pdf_tools_reject_non_pdf_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

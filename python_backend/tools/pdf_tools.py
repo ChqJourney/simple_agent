@@ -14,6 +14,7 @@ from document_readers.pdf_reader import (
 
 from .base import BaseTool, ToolResult
 from .path_utils import resolve_workspace_path
+from .policies import ToolExecutionPolicy
 
 
 def _filter_properties() -> dict[str, dict[str, Any]]:
@@ -304,6 +305,7 @@ class PdfGetOutlineTool(PdfToolMixin, BaseTool):
 
 class PdfReadPagesTool(PdfToolMixin, BaseTool):
     name = "pdf_read_pages"
+    policy = ToolExecutionPolicy(timeout_seconds=60)
     description = (
         "Read PDF pages by page selector, preferring markdown output that preserves headings, tables, and layout. "
         "Use pages='all' for the whole file, or selectors like '23', '34-40', or '1-3,8-10'. "
@@ -569,6 +571,7 @@ class PdfReadLinesTool(PdfToolMixin, BaseTool):
 
 class PdfSearchTool(PdfToolMixin, BaseTool):
     name = "pdf_search"
+    policy = ToolExecutionPolicy(timeout_seconds=60)
     description = (
         "Search PDF content with structured location metadata. "
         "Use search_mode='page' for broad page-level discovery and search_mode='line' for precise visual-line matches."

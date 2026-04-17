@@ -11,6 +11,7 @@ from document_readers.word_reader import read_word_paragraphs, read_word_table_r
 
 from .base import BaseTool, ToolResult
 from .path_utils import resolve_workspace_path
+from .policies import ToolExecutionPolicy
 from .search_documents import EXCEL_EXTENSIONS, PDF_EXTENSIONS, PPTX_EXTENSIONS, TEXT_EXTENSIONS, WORD_EXTENSIONS
 
 MAX_SEGMENT_CHARS = 64 * 1024
@@ -19,6 +20,7 @@ MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024
 
 class ReadDocumentSegmentTool(BaseTool):
     name = "read_document_segment"
+    policy = ToolExecutionPolicy(timeout_seconds=60)
     description = (
         "Read a narrow segment from a workspace document using a structured locator. "
         "Supports text documents, PDF files, Word documents, Excel workbooks, and PowerPoint decks. "

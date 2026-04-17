@@ -1,5 +1,6 @@
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -72,6 +73,85 @@ class SearchDocumentsToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result.output["truncated"])
             self.assertEqual(1, len(result.output["results"]))
             self.assertEqual("a.md", result.output["results"][0]["path"])
+
+    async def test_hidden_directories_are_skipped_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "visible.md").write_text("IEC 60335\n", encoding="utf-8")
+            hidden_dir = root / ".agent"
+            hidden_dir.mkdir()
+            (hidden_dir / "session.md").write_text("IEC 60335 hidden\n", encoding="utf-8")
+
+            result = await SearchDocumentsTool().execute(
+                tool_call_id="search-hidden-default",
+                workspace_path=temp_dir,
+                query="IEC 60335",
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(1, result.output["summary"]["hit_count"])
+            self.assertEqual("visible.md", result.output["results"][0]["path"])
+
+    async def test_hidden_directories_can_be_included_explicitly(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            hidden_dir = root / ".agent"
+            hidden_dir.mkdir()
+            (hidden_dir / "session.md").write_text("IEC 60335 hidden\n", encoding="utf-8")
+
+            result = await SearchDocumentsTool().execute(
+                tool_call_id="search-hidden-include",
+                workspace_path=temp_dir,
+                query="IEC 60335",
+                include_hidden=True,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(1, result.output["summary"]["hit_count"])
+            self.assertEqual(".agent/session.md", result.output["results"][0]["path"])
+
+    async def test_search_runs_in_background_thread(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "a.md").write_text("IEC 60335\n", encoding="utf-8")
+            main_thread_id = threading.get_ident()
+            observed_thread_ids: list[int] = []
+
+            def fake_search_text_file(
+                self,
+                candidate,
+                *,
+                path_str,
+                pattern,
+                max_results,
+                context_lines,
+                results,
+            ):
+                observed_thread_ids.append(threading.get_ident())
+                results.append(
+                    {
+                        "path": path_str,
+                        "document_type": "text",
+                        "locator": {"line": 1, "column": 1},
+                        "line": 1,
+                        "column": 1,
+                        "match_text": "IEC 60335",
+                        "context_before": "",
+                        "context_after": "",
+                    }
+                )
+                return 0, False
+
+            with patch.object(SearchDocumentsTool, "_search_text_file", new=fake_search_text_file):
+                result = await SearchDocumentsTool().execute(
+                    tool_call_id="search-thread",
+                    workspace_path=temp_dir,
+                    query="IEC 60335",
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual(1, len(observed_thread_ids))
+            self.assertNotEqual(main_thread_id, observed_thread_ids[0])
 
     async def test_searches_pdf_lines_with_structured_locators(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

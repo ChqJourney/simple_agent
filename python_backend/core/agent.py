@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_EXECUTION_TIMEOUT_SECONDS = 120
 MAX_DELEGATED_TASK_TIMEOUT_SECONDS = 600
 TOOL_CANCEL_GRACE_SECONDS = 0.5
+SERIAL_HEAVY_PDF_TOOLS = {"pdf_search", "pdf_read_pages", "read_document_segment"}
 BACKGROUND_COMPACTION_USAGE_THRESHOLD = 0.60
 FORCED_COMPACTION_USAGE_THRESHOLD = 0.75
 RECENT_RAW_MESSAGE_COUNT = 8
@@ -726,11 +727,11 @@ class Agent:
         session: Session,
         run_id: str,
     ) -> List[ToolResult]:
-        tasks: List[asyncio.Task[ToolResult]] = []
-        scheduled_calls: List[Tuple[str, str]] = []
-        tool_results: List[ToolResult] = []
+        parallel_tasks: List[Tuple[int, str, str, asyncio.Task[ToolResult]]] = []
+        serial_calls: List[Tuple[int, str, BaseTool, Dict[str, Any]]] = []
+        indexed_results: Dict[int, ToolResult] = {}
 
-        for tool_call in tool_calls:
+        for index, tool_call in enumerate(tool_calls):
             if self._interrupt_event.is_set():
                 break
 
@@ -749,7 +750,7 @@ class Agent:
                     output=None,
                     error=f"Invalid JSON in arguments: {e}"
                 )
-                tool_results.append(result)
+                indexed_results[index] = result
                 await self._emit_pre_execution_tool_failure(session, run_id, result)
                 continue
 
@@ -763,7 +764,7 @@ class Agent:
                     output=None,
                     error=f"Unknown tool: {function_name}"
                 )
-                tool_results.append(result)
+                indexed_results[index] = result
                 await self._emit_pre_execution_tool_failure(session, run_id, result)
                 continue
 
@@ -777,34 +778,62 @@ class Agent:
                     output=None,
                     error=validation_error,
                 )
-                tool_results.append(result)
+                indexed_results[index] = result
                 await self._emit_pre_execution_tool_failure(session, run_id, result)
                 continue
 
-            scheduled_calls.append((tool_call_id, function_name))
-            tasks.append(asyncio.create_task(
-                self._execute_single_tool(tool_call_id, tool, arguments, session, run_id)
-            ))
+            if self._should_serialize_tool_execution(function_name, arguments):
+                serial_calls.append((index, tool_call_id, tool, arguments))
+            else:
+                parallel_tasks.append(
+                    (
+                        index,
+                        tool_call_id,
+                        function_name,
+                        asyncio.create_task(
+                            self._execute_single_tool(tool_call_id, tool, arguments, session, run_id)
+                        ),
+                    )
+                )
 
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+        if parallel_tasks:
+            results = await asyncio.gather(
+                *(task for _, _, _, task in parallel_tasks),
+                return_exceptions=True,
+            )
 
-            for i, result in enumerate(results):
-                call_id, call_name = scheduled_calls[i]
+            for scheduled, result in zip(parallel_tasks, results):
+                index, call_id, call_name, _ = scheduled
                 if isinstance(result, RunInterrupted):
                     raise result
                 if isinstance(result, Exception):
-                    tool_results.append(ToolResult(
+                    indexed_results[index] = ToolResult(
                         tool_call_id=call_id,
                         tool_name=call_name,
                         success=False,
                         output=None,
                         error=str(result)
-                    ))
+                    )
                 elif isinstance(result, ToolResult):
-                    tool_results.append(result)
+                    indexed_results[index] = result
 
-        return tool_results
+        for index, tool_call_id, tool, arguments in serial_calls:
+            result = await self._execute_single_tool(tool_call_id, tool, arguments, session, run_id)
+            indexed_results[index] = result
+
+        return [indexed_results[index] for index in sorted(indexed_results)]
+
+    @staticmethod
+    def _should_serialize_tool_execution(function_name: str, arguments: Dict[str, Any]) -> bool:
+        if function_name not in SERIAL_HEAVY_PDF_TOOLS:
+            return False
+
+        path = str(arguments.get("path") or "").strip().lower()
+        if not path:
+            return False
+        if function_name == "read_document_segment":
+            return path.endswith(".pdf")
+        return True
 
     async def _emit_pre_execution_tool_failure(
         self,

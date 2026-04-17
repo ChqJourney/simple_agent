@@ -23,8 +23,6 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
         "tool_allowlist": None,
         "tool_denylist": [
             "extract_checklist_rows",
-            "read_reference_segment",
-            "search_reference_library",
         ],
         "runtime_overrides": {},
         "loop_strategy": "default_chat",
@@ -36,6 +34,8 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
         "system_prompt_addendum": (
             "You are in Standard QA mode. Prioritize evidence from workspace documents "
             "and approved reference materials. Prefer retrieving evidence before answering. "
+            "When search_documents returns matches, prefer using the returned absolute_path "
+            "for follow-up reads so you keep the file target unambiguous. "
             "If the available evidence is insufficient, ask the user a focused clarifying "
             "question before answering. Distinguish confirmed facts from assumptions, and "
             "structure substantive answers using these sections when applicable: Conclusion, "
@@ -52,9 +52,7 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
             "pdf_read_pages",
             "pdf_search",
             "read_document_segment",
-            "read_reference_segment",
             "search_documents",
-            "search_reference_library",
         ],
         "tool_denylist": None,
         "runtime_overrides": {},
@@ -71,6 +69,8 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
             "read the checklist source directly and derive the rows yourself from the document content. "
             "Then gather evidence for each clause before judging it. Prioritize checklist files and "
             "evidence files that the user explicitly names before exploring unrelated workspace files. "
+            "When search_documents returns matches, prefer using the returned absolute_path "
+            "for follow-up reads so you keep the file target unambiguous. "
             "Prefer workspace documents and approved reference materials over assumptions. If required evidence is missing, ask "
             "concise follow-up questions that group the missing information efficiently. Your final "
             "answer must begin with a single ```json fenced block containing an object with optional "
@@ -94,9 +94,7 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
             "pdf_read_pages",
             "pdf_search",
             "read_document_segment",
-            "read_reference_segment",
             "search_documents",
-            "search_reference_library",
         ],
         "tool_denylist": None,
         "runtime_overrides": {},

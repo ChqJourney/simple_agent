@@ -29,6 +29,9 @@ class SearchDocumentsToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(2, result.output["summary"]["hit_count"])
             self.assertEqual(2, result.output["summary"]["file_count"])
             self.assertEqual("text", result.output["results"][0]["document_type"])
+            self.assertEqual(str(root.resolve()), result.output["resolved_root_path"])
+            self.assertEqual(str((root / "a.md").resolve()), result.output["results"][0]["absolute_path"])
+            self.assertEqual(str(root.resolve()), result.output["results"][0]["resolved_root_path"])
 
     async def test_regex_and_case_sensitivity_are_supported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -266,6 +269,26 @@ class SearchDocumentsToolTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertFalse(result.success)
             self.assertIn("Invalid regular expression", result.error or "")
+
+    async def test_search_supports_reference_library_roots_with_absolute_follow_up_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir, tempfile.TemporaryDirectory() as ref_dir:
+            reference_root = Path(ref_dir)
+            target = reference_root / "iec-62368.md"
+            target.write_text("Clause 4.1\nThe enclosure shall resist impact.\n", encoding="utf-8")
+
+            result = await SearchDocumentsTool().execute(
+                tool_call_id="search-11",
+                workspace_path=workspace_dir,
+                reference_library_roots=[ref_dir],
+                query="impact",
+                path=ref_dir,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(str(reference_root.resolve()), result.output["resolved_root_path"])
+            self.assertEqual(str(target.resolve()), result.output["results"][0]["absolute_path"])
+            self.assertEqual(str(reference_root.resolve()), result.output["results"][0]["resolved_root_path"])
+            self.assertEqual("iec-62368.md", result.output["results"][0]["path"])
 
 
 if __name__ == "__main__":

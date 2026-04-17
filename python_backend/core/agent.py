@@ -67,6 +67,7 @@ class Agent:
         tool_filter: Optional[Callable[[BaseTool], bool]] = None,
         max_tool_rounds: int = 10,
         max_retries: int = 3,
+        reference_library_roots: Optional[List[str]] = None,
     ):
         self.llm = llm
         self.tool_registry = tool_registry
@@ -79,6 +80,7 @@ class Agent:
         self.tool_filter = tool_filter
         self.max_tool_rounds = max_tool_rounds
         self.max_retries = max_retries
+        self.reference_library_roots = reference_library_roots
         self._interrupt_event = asyncio.Event()
 
     def interrupt(self) -> None:
@@ -914,6 +916,7 @@ class Agent:
             tool.execute(
                 tool_call_id=tool_call_id,
                 workspace_path=workspace_path,
+                reference_library_roots=self.reference_library_roots,
                 **arguments,
             )
         )

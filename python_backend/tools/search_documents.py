@@ -395,9 +395,15 @@ class SearchDocumentsTool(BaseTool):
         context_lines: int = 2,
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **_: Any,
     ) -> ToolResult:
-        root_path, resolve_error = resolve_workspace_path(path, workspace_path)
+        root_path, resolve_error = resolve_workspace_path(
+            path,
+            workspace_path,
+            reference_library_roots=reference_library_roots,
+            allow_reference_library=True,
+        )
         if resolve_error or root_path is None:
             return ToolResult(
                 tool_call_id=tool_call_id,
@@ -571,6 +577,9 @@ class SearchDocumentsTool(BaseTool):
                     continue
 
             if len(results) > result_count_before:
+                for item in results[result_count_before:]:
+                    item["absolute_path"] = str(candidate)
+                    item["resolved_root_path"] = str(root_path)
                 matched_files.add(path_str)
 
         return ToolResult(
@@ -581,6 +590,7 @@ class SearchDocumentsTool(BaseTool):
                 "event": "document_search_results",
                 "query": query,
                 "mode": mode,
+                "resolved_root_path": str(root_path),
                 "truncated": truncated,
                 "results": results,
                 "summary": {

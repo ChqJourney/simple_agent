@@ -128,6 +128,7 @@ class PdfToolsTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(result.success)
             self.assertEqual("markdown", mocked.call_args.kwargs["mode"])
+            self.assertFalse(mocked.call_args.kwargs["write_images"])
             self.assertEqual("markdown", result.output["summary"]["mode"])
 
     async def test_pdf_read_pages_tool_allows_all_pages_keyword(self) -> None:

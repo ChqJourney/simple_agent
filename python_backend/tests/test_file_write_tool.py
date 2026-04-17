@@ -49,6 +49,23 @@ class FileWriteToolTests(unittest.IsolatedAsyncioTestCase):
 
         temp_dir.cleanup()
 
+    async def test_write_rejects_reference_library_paths_outside_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir, tempfile.TemporaryDirectory() as ref_dir:
+            tool = FileWriteTool()
+            reference_target = Path(ref_dir) / 'standard.md'
+
+            result = await tool.execute(
+                path=str(reference_target),
+                content='do not overwrite',
+                tool_call_id='tool-3',
+                workspace_path=workspace_dir,
+                reference_library_roots=[ref_dir],
+            )
+
+            self.assertFalse(result.success)
+            self.assertIn('inside workspace', result.error or '')
+            self.assertFalse(reference_target.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

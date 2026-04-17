@@ -28,6 +28,7 @@ from runtime.config import (
     DEFAULT_BASE_URLS,
     DEFAULT_RUNTIME_POLICY,
     get_disabled_tool_names,
+    get_enabled_reference_library_roots,
     get_primary_profile_config,
     is_ocr_enabled,
     normalize_runtime_config,
@@ -61,7 +62,6 @@ from tools.pdf_tools import (
 )
 from tools.python_execute import PythonExecuteTool
 from tools.read_document_segment import ReadDocumentSegmentTool
-from tools.reference_library import ReadReferenceSegmentTool, SearchReferenceLibraryTool
 from tools.search_documents import SearchDocumentsTool
 from tools.skill_loader import SkillLoaderTool
 from tools.shell_execute import ShellExecuteTool
@@ -126,12 +126,6 @@ tool_registry.register(SearchDocumentsTool())
 tool_registry.register(ReadDocumentSegmentTool())
 tool_registry.register(
     ExtractChecklistRowsTool(config_getter=lambda: runtime_state.current_config)
-)
-tool_registry.register(
-    SearchReferenceLibraryTool(config_getter=lambda: runtime_state.current_config)
-)
-tool_registry.register(
-    ReadReferenceSegmentTool(config_getter=lambda: runtime_state.current_config)
 )
 tool_registry.register(GetDocumentStructureTool())
 tool_registry.register(PdfGetInfoTool())
@@ -328,7 +322,10 @@ def _workspace_paths_match(left: str, right: str) -> bool:
         return str(left).strip() == str(right).strip()
 
 
-def _scenario_cache_key(scenario_spec: Dict[str, Any]) -> tuple[Any, ...]:
+def _scenario_cache_key(
+    scenario_spec: Dict[str, Any],
+    reference_library_signature: Optional[tuple[tuple[str, str, tuple[str, ...]], ...]] = None,
+) -> tuple[Any, ...]:
     allowlist = scenario_spec.get("tool_allowlist")
     denylist = scenario_spec.get("tool_denylist")
     return (
@@ -337,7 +334,44 @@ def _scenario_cache_key(scenario_spec: Dict[str, Any]) -> tuple[Any, ...]:
         str(scenario_spec.get("system_prompt_addendum") or "").strip(),
         tuple(allowlist) if isinstance(allowlist, list) else None,
         tuple(denylist) if isinstance(denylist, list) else None,
+        reference_library_signature or (),
     )
+
+
+def _build_reference_library_context(
+    config: Optional[Dict[str, Any]],
+) -> tuple[str, list[str], tuple[tuple[str, str, tuple[str, ...]], ...]]:
+    root_lines: list[str] = []
+    root_paths: list[str] = []
+    signature_items: list[tuple[str, str, tuple[str, ...]]] = []
+
+    for root in get_enabled_reference_library_roots(config):
+        path = str(root.get("path") or "").strip()
+        if not path:
+            continue
+        label = str(root.get("label") or "").strip() or path
+        kinds = tuple(
+            str(item or "").strip().lower()
+            for item in (root.get("kinds") or [])
+            if str(item or "").strip()
+        )
+        if kinds:
+            root_lines.append(f"- {label} ({', '.join(kinds)}): {path}")
+        else:
+            root_lines.append(f"- {label}: {path}")
+        root_paths.append(path)
+        signature_items.append((label, path, kinds))
+
+    if not root_lines:
+        return "", [], ()
+
+    prompt_suffix = (
+        "\n\nConfigured reference library roots:\n"
+        + "\n".join(root_lines)
+        + "\nUse these roots with generic read/search tools. Prefer search_documents first, "
+        + "then use the returned absolute_path for follow-up reads."
+    )
+    return prompt_suffix, root_paths, tuple(signature_items)
 
 
 def _normalize_provider_config(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -751,12 +785,19 @@ async def get_or_create_agent(
     execution_spec: Dict[str, Any],
     scenario_spec: Dict[str, Any],
 ) -> Optional[Agent]:
-    scenario_key = _scenario_cache_key(scenario_spec)
     stale_llm: Optional[BaseLLM] = None
 
     async with state_lock:
         if not runtime_state.current_config:
             return None
+
+        reference_prompt_suffix, ref_root_paths, reference_signature = (
+            _build_reference_library_context(runtime_state.current_config)
+        )
+        scenario_key = _scenario_cache_key(
+            scenario_spec,
+            reference_library_signature=reference_signature,
+        )
 
         cached_agent = runtime_state.active_agents.get(session_id)
         cached_scenario_key = (
@@ -784,11 +825,14 @@ async def get_or_create_agent(
                 if isinstance(scenario_spec.get("tool_denylist"), list)
                 else None
             )
-            scenario_prompt_addendum = (
+            raw_prompt_addendum = (
                 scenario_spec.get("system_prompt_addendum")
                 if isinstance(scenario_spec.get("system_prompt_addendum"), str)
                 else ""
             )
+            raw_prompt_addendum = raw_prompt_addendum + reference_prompt_suffix
+
+            scenario_prompt_addendum = raw_prompt_addendum
 
             def scenario_tool_filter(tool: BaseTool) -> bool:
                 if scenario_allowlist is not None and tool.name not in scenario_allowlist:
@@ -806,6 +850,7 @@ async def get_or_create_agent(
                     runtime_state.current_config.get("system_prompt") or ""
                 ),
                 scenario_system_prompt=str(scenario_prompt_addendum or ""),
+                reference_library_roots=ref_root_paths if ref_root_paths else None,
                 tool_filter=(
                     lambda tool, current_config=dict(runtime_state.current_config): (
                         _is_tool_enabled_for_config(tool.name, current_config)

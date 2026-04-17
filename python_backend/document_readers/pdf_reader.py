@@ -44,7 +44,7 @@ class ExtractionOptions:
 
 @dataclass(frozen=True)
 class MarkdownOptions:
-    write_images: bool = True
+    write_images: bool = False
     embed_images: bool = False
     image_format: str = "png"
     dpi: int = 150
@@ -916,7 +916,7 @@ def read_pdf_pages(
     angle_threshold: float = 5.0,
     exclude_tables: bool = True,
     y_tolerance: float = 3.0,
-    write_images: bool = True,
+    write_images: bool = False,
     embed_images: bool = False,
     image_format: str = "png",
     dpi: int = 150,

@@ -330,7 +330,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     openTab("Runtime");
-    fireEvent.change(screen.getByLabelText("Additional Instructions"), {
+    fireEvent.change(screen.getByLabelText("Global Instructions"), {
       target: { value: "  Prefer concise answers.  " },
     });
     fireEvent.click(screen.getByText("Save"));

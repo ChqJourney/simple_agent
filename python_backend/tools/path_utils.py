@@ -36,6 +36,8 @@ def resolve_workspace_path(
     path: str,
     workspace_path: Optional[str],
     *,
+    reference_library_roots: Optional[list[str]] = None,
+    allow_reference_library: bool = False,
     require_absolute_without_workspace: bool = False,
 ) -> Tuple[Optional[Path], Optional[str]]:
     raw = path.strip()
@@ -57,12 +59,24 @@ def resolve_workspace_path(
 
     if workspace_root:
         resolved = input_path.resolve() if input_path.is_absolute() else (workspace_root / input_path).resolve()
-        if not is_within_workspace(resolved, workspace_root):
-            return None, f"Path must be inside workspace: {workspace_root}"
-        return resolved, None
+        if is_within_workspace(resolved, workspace_root):
+            return resolved, None
+        if allow_reference_library and reference_library_roots:
+            for root_str in reference_library_roots:
+                root = Path(root_str).resolve()
+                if is_within_workspace(resolved, root):
+                    return resolved, None
+        return None, f"Path must be inside workspace: {workspace_root}"
 
     if require_absolute_without_workspace and not input_path.is_absolute():
         return None, f"Path must be absolute when workspace is unavailable: {path}"
+
+    if allow_reference_library and reference_library_roots:
+        resolved = input_path.resolve()
+        for root_str in reference_library_roots:
+            root = Path(root_str).resolve()
+            if is_within_workspace(resolved, root):
+                return resolved, None
 
     return input_path.resolve(), None
 

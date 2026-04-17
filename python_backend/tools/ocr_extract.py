@@ -96,9 +96,15 @@ class OcrExtractTool(BaseTool):
         detail_level: str = "lines",
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **_: Any,
     ) -> ToolResult:
-        file_path, resolve_error = resolve_workspace_path(path, workspace_path)
+        file_path, resolve_error = resolve_workspace_path(
+            path,
+            workspace_path,
+            reference_library_roots=reference_library_roots,
+            allow_reference_library=True,
+        )
         if resolve_error or file_path is None:
             return ToolResult(
                 tool_call_id=tool_call_id,

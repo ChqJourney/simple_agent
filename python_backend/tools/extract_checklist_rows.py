@@ -233,6 +233,7 @@ class ExtractChecklistRowsTool(BaseTool):
         path: str,
         workspace_path: Optional[str],
         reference_root_id: Optional[str],
+        reference_library_roots: Optional[list[str]] = None,
     ) -> tuple[Optional[Path], Dict[str, Any], Optional[str]]:
         if reference_root_id:
             root, root_error = self._resolve_reference_root(reference_root_id)
@@ -249,7 +250,12 @@ class ExtractChecklistRowsTool(BaseTool):
             }
             return file_path, metadata, resolve_error
 
-        file_path, resolve_error = resolve_workspace_path(path, workspace_path)
+        file_path, resolve_error = resolve_workspace_path(
+            path,
+            workspace_path,
+            reference_library_roots=reference_library_roots,
+            allow_reference_library=True,
+        )
         return file_path, {"source": "workspace"}, resolve_error
 
     @staticmethod
@@ -510,6 +516,7 @@ class ExtractChecklistRowsTool(BaseTool):
         path: str,
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         reference_root_id: Optional[str] = None,
         table_index: Optional[int] = None,
         sheet_name: Optional[str] = None,
@@ -523,6 +530,7 @@ class ExtractChecklistRowsTool(BaseTool):
             path=path,
             workspace_path=workspace_path,
             reference_root_id=reference_root_id,
+            reference_library_roots=reference_library_roots,
         )
         if resolve_error or file_path is None:
             return ToolResult(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
@@ -129,8 +130,14 @@ class ReadDocumentSegmentTool(BaseTool):
         workspace_path: Optional[str],
         tool_call_id: str,
         tool_name: str,
+        reference_library_roots: Optional[list[str]] = None,
     ) -> tuple[Optional[Path], Optional[ToolResult]]:
-        file_path, resolve_error = resolve_workspace_path(path, workspace_path)
+        file_path, resolve_error = resolve_workspace_path(
+            path,
+            workspace_path,
+            reference_library_roots=reference_library_roots,
+            allow_reference_library=True,
+        )
         if resolve_error or file_path is None:
             return None, ToolResult(
                 tool_call_id=tool_call_id,
@@ -241,6 +248,7 @@ class ReadDocumentSegmentTool(BaseTool):
             file_path,
             pages=page_spec,
             mode="markdown",
+            write_images=False,
             asset_root=asset_root,
         )
         blocks = []
@@ -591,9 +599,13 @@ class ReadDocumentSegmentTool(BaseTool):
         encoding: str = "utf-8",
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **_: Any,
     ) -> ToolResult:
-        file_path, failure = self._resolve_file_path(path, workspace_path, tool_call_id, self.name)
+        file_path, failure = self._resolve_file_path(
+            path, workspace_path, tool_call_id, self.name,
+            reference_library_roots=reference_library_roots,
+        )
         if failure:
             return failure
 
@@ -623,28 +635,32 @@ class ReadDocumentSegmentTool(BaseTool):
             elif suffix in WORD_EXTENSIONS:
                 locator_type = str(locator.get("type") or "")
                 if locator_type == "word_table_range" or locator.get("table_index") is not None:
-                    segment = self._read_word_table_segment(
+                    segment = await asyncio.to_thread(
+                        self._read_word_table_segment,
                         file_path,
                         locator,
                         include_context=include_context,
                         max_chars=normalized_max_chars,
                     )
                 else:
-                    segment = self._read_word_segment(
+                    segment = await asyncio.to_thread(
+                        self._read_word_segment,
                         file_path,
                         locator,
                         include_context=include_context,
                         max_chars=normalized_max_chars,
                     )
             elif suffix in EXCEL_EXTENSIONS:
-                segment = self._read_excel_segment(
+                segment = await asyncio.to_thread(
+                    self._read_excel_segment,
                     file_path,
                     locator,
                     include_context=include_context,
                     max_chars=normalized_max_chars,
                 )
             elif suffix in PPTX_EXTENSIONS:
-                segment = self._read_pptx_segment(
+                segment = await asyncio.to_thread(
+                    self._read_pptx_segment,
                     file_path,
                     locator,
                     max_chars=normalized_max_chars,
@@ -654,14 +670,16 @@ class ReadDocumentSegmentTool(BaseTool):
                 if locator_type == "pdf_line_range" or (
                     not locator_type and locator.get("page_number") is not None
                 ):
-                    segment = self._read_pdf_line_segment(
+                    segment = await asyncio.to_thread(
+                        self._read_pdf_line_segment,
                         file_path,
                         locator,
                         include_context=include_context,
                         max_chars=normalized_max_chars,
                     )
                 else:
-                    segment = self._read_pdf_page_segment(
+                    segment = await asyncio.to_thread(
+                        self._read_pdf_page_segment,
                         file_path,
                         locator,
                         workspace_path=workspace_path,

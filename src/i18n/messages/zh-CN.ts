@@ -402,10 +402,10 @@ export const zhCNMessages: MessageDictionary = {
     '最大输出 Tokens（{output}）超过了当前生效的上下文长度（{context}）。后端会在运行时自动收紧。',
   'settings.runtime.contextExceedsModel':
     '上下文长度（{context}）高于已知的 {provider}/{model} 窗口（{knownContext}）。后端会在运行时自动收紧。',
-  'settings.runtime.customPromptTitle': '自定义系统提示词',
-  'settings.runtime.customPromptDescription': '这段文本会追加到内置系统指令之后。留空则只使用默认提示词。',
-  'settings.runtime.additionalInstructions': '附加指令',
-  'settings.runtime.customPromptPlaceholder': '示例：优先给出简洁回答；在实现细节前先说明风险。',
+  'settings.runtime.customPromptTitle': '全局附加指令',
+  'settings.runtime.customPromptDescription': '这些指令会应用到所有场景。如果与当前场景 guidance 冲突，以场景 guidance 为准。',
+  'settings.runtime.additionalInstructions': '全局指令',
+  'settings.runtime.customPromptPlaceholder': '示例：优先给出简洁回答；在实现细节前先说明风险。不要在这里放仅适用于某个场景的输出规则。',
 
   'settings.tools.title': '工具',
   'settings.tools.description': '控制运行时暴露给模型的工具。禁用后的工具会真正不可用，而不只是隐藏。',

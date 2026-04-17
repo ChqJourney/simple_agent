@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -150,9 +151,15 @@ class GetDocumentStructureTool(BaseTool):
         max_nodes: int = 200,
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **_: Any,
     ) -> ToolResult:
-        file_path, resolve_error = resolve_workspace_path(path, workspace_path)
+        file_path, resolve_error = resolve_workspace_path(
+            path,
+            workspace_path,
+            reference_library_roots=reference_library_roots,
+            allow_reference_library=True,
+        )
         if resolve_error or file_path is None:
             return ToolResult(
                 tool_call_id=tool_call_id,
@@ -205,22 +212,38 @@ class GetDocumentStructureTool(BaseTool):
                 document_type = "text"
                 nodes = self._build_text_nodes(lines, normalized_max_nodes)
             elif suffix in PDF_SUPPORTED_EXTENSIONS:
-                structure_type, nodes = self._build_pdf_nodes(file_path, normalized_max_nodes)
+                structure_type, nodes = await asyncio.to_thread(
+                    self._build_pdf_nodes,
+                    file_path,
+                    normalized_max_nodes,
+                )
                 document_type = "pdf"
             elif suffix in WORD_SUPPORTED_EXTENSIONS:
-                structure = get_word_structure(file_path, max_nodes=normalized_max_nodes)
+                structure = await asyncio.to_thread(
+                    get_word_structure,
+                    file_path,
+                    max_nodes=normalized_max_nodes,
+                )
                 structure_type = str(structure.get("structure_type") or "word_heading_map")
                 document_type = "docx"
                 nodes = list(structure.get("items") or [])
                 table_count = int(structure.get("table_count") or 0)
             elif suffix in EXCEL_SUPPORTED_EXTENSIONS:
-                structure = get_excel_structure(file_path, max_nodes=normalized_max_nodes)
+                structure = await asyncio.to_thread(
+                    get_excel_structure,
+                    file_path,
+                    max_nodes=normalized_max_nodes,
+                )
                 structure_type = str(structure.get("structure_type") or "excel_workbook_map")
                 document_type = "xlsx"
                 nodes = list(structure.get("items") or [])
                 sheet_count = int(structure.get("sheet_count") or 0)
             elif suffix in PPTX_SUPPORTED_EXTENSIONS:
-                structure = get_pptx_structure(file_path, max_nodes=normalized_max_nodes)
+                structure = await asyncio.to_thread(
+                    get_pptx_structure,
+                    file_path,
+                    max_nodes=normalized_max_nodes,
+                )
                 structure_type = str(structure.get("structure_type") or "pptx_slide_map")
                 document_type = "pptx"
                 nodes = list(structure.get("items") or [])

@@ -60,8 +60,8 @@ def _markdown_properties() -> dict[str, dict[str, Any]]:
     return {
         "write_images": {
             "type": "boolean",
-            "default": True,
-            "description": "When mode='markdown', save extracted image assets and reference them from markdown.",
+            "default": False,
+            "description": "When mode='markdown', save extracted image assets and reference them from markdown. Leave this disabled unless image extraction is specifically needed.",
         },
         "embed_images": {
             "type": "boolean",
@@ -115,8 +115,14 @@ class PdfToolMixin:
         workspace_path: Optional[str],
         tool_call_id: str,
         tool_name: str,
+        reference_library_roots: Optional[list[str]] = None,
     ) -> tuple[Optional[Path], Optional[ToolResult]]:
-        file_path, resolve_error = resolve_workspace_path(path, workspace_path)
+        file_path, resolve_error = resolve_workspace_path(
+            path,
+            workspace_path,
+            reference_library_roots=reference_library_roots,
+            allow_reference_library=True,
+        )
         if resolve_error or file_path is None:
             return None, ToolResult(
                 tool_call_id=tool_call_id,
@@ -192,14 +198,18 @@ class PdfGetInfoTool(PdfToolMixin, BaseTool):
         path: str,
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **_: Any,
     ) -> ToolResult:
-        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        file_path, failure = self._resolve_pdf_path(
+            path, workspace_path, tool_call_id, self.name,
+            reference_library_roots=reference_library_roots,
+        )
         if failure:
             return failure
 
         try:
-            info = get_pdf_info(file_path)
+            info = await asyncio.to_thread(get_pdf_info, file_path)
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))
 
@@ -256,15 +266,23 @@ class PdfGetOutlineTool(PdfToolMixin, BaseTool):
         max_depth: int = 4,
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **_: Any,
     ) -> ToolResult:
-        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        file_path, failure = self._resolve_pdf_path(
+            path, workspace_path, tool_call_id, self.name,
+            reference_library_roots=reference_library_roots,
+        )
         if failure:
             return failure
 
         try:
             normalized_max_depth = max(1, int(max_depth)) if max_depth is not None else None
-            outline = get_pdf_outline(file_path, max_depth=normalized_max_depth)
+            outline = await asyncio.to_thread(
+                get_pdf_outline,
+                file_path,
+                max_depth=normalized_max_depth,
+            )
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             return ToolResult(tool_call_id=tool_call_id, tool_name=self.name, success=False, output=None, error=str(exc))
 
@@ -287,16 +305,17 @@ class PdfGetOutlineTool(PdfToolMixin, BaseTool):
 class PdfReadPagesTool(PdfToolMixin, BaseTool):
     name = "pdf_read_pages"
     description = (
-        "Read PDF pages by page selector, preferring markdown output that preserves headings, tables, images, and layout. "
+        "Read PDF pages by page selector, preferring markdown output that preserves headings, tables, and layout. "
         "Use pages='all' for the whole file, or selectors like '23', '34-40', or '1-3,8-10'. "
-        "Prefer mode='markdown' for normal reading. Use other modes only when you specifically need plain page text, visual lines, or text blocks."
+        "Prefer mode='markdown' for normal reading. Use other modes only when you specifically need plain page text, visual lines, or text blocks. "
+        "Image extraction is optional and disabled by default."
     )
     display_name = "PDF Read Pages"
     category = "workspace"
     read_only = True
     risk_level = "low"
     preferred_order = 15
-    use_when = "Use when you need page-level PDF reading. Prefer the default markdown mode because it best preserves structure, tables, and images for LLM consumption."
+    use_when = "Use when you need page-level PDF reading. Prefer the default markdown mode because it best preserves structure and tables for LLM consumption without the overhead of image extraction."
     avoid_when = "Avoid when you only need a few specific visual lines or a keyword search."
     user_summary_template = "Reading PDF pages from {path}"
     result_preview_fields = ["summary", "items"]
@@ -316,7 +335,7 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
                 "type": "string",
                 "enum": ["page_text", "visual_lines", "blocks", "markdown"],
                 "default": "markdown",
-                "description": "Preferred output shape. 'markdown' is the default and should be used for normal PDF reading because it preserves headings, tables, images, and layout. 'page_text' returns flattened text, 'visual_lines' returns visual lines, and 'blocks' returns text blocks.",
+                "description": "Preferred output shape. 'markdown' is the default and should be used for normal PDF reading because it preserves headings, tables, and layout. 'page_text' returns flattened text, 'visual_lines' returns visual lines, and 'blocks' returns text blocks.",
             },
             **_filter_properties(),
             **_markdown_properties(),
@@ -337,7 +356,7 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
         angle_threshold: float = 5.0,
         exclude_tables: bool = True,
         y_tolerance: float = 3.0,
-        write_images: bool = True,
+        write_images: bool = False,
         embed_images: bool = False,
         image_format: str = "png",
         dpi: int = 150,
@@ -348,16 +367,21 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
         table_strategy: str = "lines_strict",
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **_: Any,
     ) -> ToolResult:
-        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        file_path, failure = self._resolve_pdf_path(
+            path, workspace_path, tool_call_id, self.name,
+            reference_library_roots=reference_library_roots,
+        )
         if failure:
             return failure
 
         effective_mode = mode
         fallback_from_mode: str | None = None
         try:
-            result = read_pdf_pages(
+            result = await asyncio.to_thread(
+                read_pdf_pages,
                 file_path,
                 pages=pages,
                 mode=effective_mode,
@@ -384,7 +408,8 @@ class PdfReadPagesTool(PdfToolMixin, BaseTool):
                 try:
                     fallback_from_mode = effective_mode
                     effective_mode = "page_text"
-                    result = read_pdf_pages(
+                    result = await asyncio.to_thread(
+                        read_pdf_pages,
                         file_path,
                         pages=pages,
                         mode=effective_mode,
@@ -497,14 +522,19 @@ class PdfReadLinesTool(PdfToolMixin, BaseTool):
         y_tolerance: float = 3.0,
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **_: Any,
     ) -> ToolResult:
-        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        file_path, failure = self._resolve_pdf_path(
+            path, workspace_path, tool_call_id, self.name,
+            reference_library_roots=reference_library_roots,
+        )
         if failure:
             return failure
 
         try:
-            result = read_pdf_lines(
+            result = await asyncio.to_thread(
+                read_pdf_lines,
                 file_path,
                 page_number=page_number,
                 line_numbers=line_numbers,
@@ -601,9 +631,13 @@ class PdfSearchTool(PdfToolMixin, BaseTool):
         y_tolerance: float = 3.0,
         tool_call_id: str = "",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **_: Any,
     ) -> ToolResult:
-        file_path, failure = self._resolve_pdf_path(path, workspace_path, tool_call_id, self.name)
+        file_path, failure = self._resolve_pdf_path(
+            path, workspace_path, tool_call_id, self.name,
+            reference_library_roots=reference_library_roots,
+        )
         if failure:
             return failure
 

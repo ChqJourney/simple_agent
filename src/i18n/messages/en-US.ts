@@ -411,12 +411,12 @@ export const enUSMessages = {
     'Max output tokens ({output}) exceeds the effective context length ({context}). The backend will clamp it at run time.',
   'settings.runtime.contextExceedsModel':
     'Context length ({context}) is higher than the known {provider}/{model} window ({knownContext}). The backend will clamp it at run time.',
-  'settings.runtime.customPromptTitle': 'Custom System Prompt',
+  'settings.runtime.customPromptTitle': 'Global Additional Instructions',
   'settings.runtime.customPromptDescription':
-    'This text is appended after the built-in system instructions. Leave blank to use the default prompt only.',
-  'settings.runtime.additionalInstructions': 'Additional Instructions',
+    'Apply these instructions to every scenario. If they conflict with the active scenario guidance, the scenario guidance takes precedence.',
+  'settings.runtime.additionalInstructions': 'Global Instructions',
   'settings.runtime.customPromptPlaceholder':
-    'Example: Prefer concise answers. Mention risks before implementation details.',
+    'Example: Prefer concise answers. Mention risks before implementation details. Avoid putting scenario-specific output rules here.',
 
   'settings.tools.title': 'Tools',
   'settings.tools.description':

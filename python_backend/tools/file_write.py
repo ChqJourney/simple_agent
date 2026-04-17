@@ -50,6 +50,7 @@ class FileWriteTool(BaseTool):
         tool_call_id: str = "",
         encoding: str = "utf-8",
         workspace_path: Optional[str] = None,
+        reference_library_roots: Optional[list[str]] = None,
         **kwargs,
     ) -> ToolResult:
         try:

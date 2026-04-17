@@ -101,7 +101,10 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         }
         backend_main.runtime_state.default_workspace = self.temp_dir.name
         default_scenario_key = backend_main._scenario_cache_key(
-            backend_main.get_scenario_spec("default")
+            backend_main.get_scenario_spec("default"),
+            reference_library_signature=backend_main._build_reference_library_context(
+                backend_main.runtime_state.current_config
+            )[2],
         )
         setattr(self.agent_a, "_scenario_cache_key", default_scenario_key)
         setattr(self.agent_b, "_scenario_cache_key", default_scenario_key)
@@ -597,6 +600,64 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
             "standard_qa",
             getattr(second_agent, "_scenario_cache_key")[0],
         )
+
+    async def test_get_or_create_agent_rebuilds_cached_agent_when_reference_library_changes(self) -> None:
+        first_llm = ClosableLLM()
+        second_llm = ClosableLLM()
+        llm_instances = iter([first_llm, second_llm])
+        backend_main.create_llm_for_profile = lambda profile, runtime_policy=None: next(llm_instances)
+        backend_main.runtime_state.active_agents.pop("session-a", None)
+        first_root = Path(self.temp_dir.name) / "reference-a"
+        second_root = Path(self.temp_dir.name) / "reference-b"
+        first_root.mkdir()
+        second_root.mkdir()
+        backend_main.runtime_state.current_config["reference_library"] = {
+            "roots": [
+                {
+                    "id": "std-a",
+                    "label": "Standards A",
+                    "path": str(first_root),
+                    "enabled": True,
+                    "kinds": ["standard"],
+                }
+            ]
+        }
+        execution_spec = backend_main.build_execution_spec(
+            backend_main.runtime_state.current_config,
+            "conversation",
+        )
+
+        first_agent = await backend_main.get_or_create_agent(
+            "session-a",
+            execution_spec,
+            backend_main.get_scenario_spec("standard_qa"),
+        )
+
+        backend_main.runtime_state.current_config["reference_library"] = {
+            "roots": [
+                {
+                    "id": "std-b",
+                    "label": "Standards B",
+                    "path": str(second_root),
+                    "enabled": True,
+                    "kinds": ["standard"],
+                }
+            ]
+        }
+        second_agent = await backend_main.get_or_create_agent(
+            "session-a",
+            execution_spec,
+            backend_main.get_scenario_spec("standard_qa"),
+        )
+
+        self.assertIsNotNone(first_agent)
+        self.assertIsNotNone(second_agent)
+        self.assertIsNot(first_agent, second_agent)
+        self.assertTrue(first_llm.closed)
+        self.assertFalse(second_llm.closed)
+        self.assertEqual([str(second_root)], second_agent.reference_library_roots)
+        self.assertIn(str(second_root), second_agent.scenario_system_prompt)
+        self.assertIn("absolute_path", second_agent.scenario_system_prompt)
 
     async def test_handle_message_falls_back_to_session_scope_for_invalid_tool_confirm_scope(self) -> None:
         await backend_main.user_manager.bind_session_to_connection("session-a", "conn-a")

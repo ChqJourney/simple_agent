@@ -11,9 +11,11 @@ if str(PROJECT_ROOT) not in sys.path:
 from core.agent import Agent
 from core.user import UserManager
 from llms.base import BaseLLM
+from runtime.reference_index import reference_root_catalog_path
 from skills.local_loader import LocalSkillLoader
 from tools.base import ToolRegistry
 from tools.delegate_task import DelegateTaskTool
+from tools.search_standard_catalog import SearchStandardCatalogTool
 from tools.skill_loader import SkillLoaderTool
 
 
@@ -209,6 +211,71 @@ class SkillRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Delegation guidance:", first_request_messages[0]["content"])
         self.assertIn("`delegate_task` is for bounded, read-only background subtasks.", first_request_messages[0]["content"])
         self.assertIn("minimal structured context needed", first_request_messages[0]["content"])
+
+    async def test_agent_includes_reference_catalog_guidance_when_catalog_tool_is_available(self) -> None:
+        session = await self.user_manager.create_session(self.temp_dir.name, "session-reference-catalog")
+        await self.user_manager.bind_session_to_connection("session-reference-catalog", "conn-1")
+
+        llm = RecordingLLM()
+        registry = ToolRegistry()
+        registry.register(SearchStandardCatalogTool())
+        agent = Agent(
+            llm,
+            registry,
+            self.user_manager,
+            reference_library_roots=[self.temp_dir.name],
+        )
+
+        await agent.run("Which standard should I inspect first?", session)
+
+        first_request_messages = llm.captured_messages[0]
+        self.assertEqual("system", first_request_messages[0]["role"])
+        self.assertIn("Reference-library routing guidance:", first_request_messages[0]["content"])
+        self.assertIn("use `search_standard_catalog` first", first_request_messages[0]["content"])
+        self.assertIn(str(reference_root_catalog_path(self.temp_dir.name)), first_request_messages[0]["content"])
+
+    async def test_standard_catalog_tool_results_are_serialized_as_actionable_guidance(self) -> None:
+        serialized = Agent._serialize_tool_message_content(
+            {
+                "event": "standard_catalog_search_results",
+                "query": "household appliance safety",
+                "summary": {
+                    "indexed_root_count": 1,
+                    "indexed_document_count": 24,
+                    "hit_count": 2,
+                },
+                "recommended_next_actions": [
+                    {
+                        "standard_code": "IEC 60335-1",
+                        "title": "Household appliance safety",
+                        "path": "/tmp/IEC-60335-1.pdf",
+                        "tool": "pdf_read_pages",
+                        "reason": "Read the Scope pages first to confirm applicability.",
+                        "page_start": 5,
+                        "page_end": 6,
+                    }
+                ],
+                "results": [
+                    {
+                        "standard_code": "IEC 60335-1",
+                        "title": "Household appliance safety",
+                        "path": "/tmp/IEC-60335-1.pdf",
+                        "score": 31.5,
+                        "scope_summary": "Safety requirements for household appliances.",
+                        "recommended_follow_up": {
+                            "tool": "pdf_read_pages",
+                            "reason": "Read the Scope pages first to confirm applicability.",
+                        },
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("Standard catalog search results for: household appliance safety", serialized)
+        self.assertIn("Recommended next actions:", serialized)
+        self.assertIn("Use `pdf_read_pages` on `/tmp/IEC-60335-1.pdf` pages 5-6", serialized)
+        self.assertIn("Top candidate standards:", serialized)
+        self.assertIn("Next: `pdf_read_pages` because Read the Scope pages first to confirm applicability.", serialized)
 
     async def test_agent_hides_skill_catalog_when_skill_loader_is_filtered_out(self) -> None:
         skill_root = Path(self.temp_dir.name) / "skills"

@@ -49,3 +49,6 @@ export const backendHealthUrl = `${configuredHttpBase}/health`;
 export const backendToolsUrl = `${configuredHttpBase}/tools`;
 export const backendProviderModelsUrl = `${configuredHttpBase}/provider-models`;
 export const backendTestConfigUrl = `${configuredHttpBase}/test-config`;
+export const backendReferenceIndexStatusUrl = `${configuredHttpBase}/reference-index/status`;
+export const backendReferenceIndexBuildUrl = `${configuredHttpBase}/reference-index/build`;
+export const backendReferenceIndexBuildProgressUrl = `${configuredHttpBase}/reference-index/build-progress`;

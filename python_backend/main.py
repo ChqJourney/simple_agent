@@ -5,6 +5,7 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Set, cast
 
@@ -23,18 +24,21 @@ from llms.kimi import KimiLLM
 from llms.minimax import MiniMaxLLM
 from llms.openai import OpenAILLM
 from llms.qwen import QwenLLM
-from ocr.manager import OcrSidecarManager
 from runtime.config import (
     DEFAULT_BASE_URLS,
     DEFAULT_RUNTIME_POLICY,
     get_disabled_tool_names,
     get_enabled_reference_library_roots,
     get_primary_profile_config,
-    is_ocr_enabled,
     normalize_runtime_config,
 )
 from runtime.delegation import DelegatedTaskRunner
 from runtime.provider_registry import ContextProviderBundle, ContextProviderRegistry
+from runtime.reference_index import (
+    build_reference_index,
+    compute_reference_index_status,
+    reference_root_catalog_path,
+)
 from runtime.router import (
     build_execution_spec,
     lock_ref_from_profile,
@@ -52,7 +56,6 @@ from tools.file_write import FileWriteTool
 from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
 from tools.node_execute import NodeExecuteTool
-from tools.ocr_extract import OcrExtractTool
 from tools.pdf_tools import (
     PdfGetInfoTool,
     PdfGetOutlineTool,
@@ -63,6 +66,7 @@ from tools.pdf_tools import (
 from tools.python_execute import PythonExecuteTool
 from tools.read_document_segment import ReadDocumentSegmentTool
 from tools.search_documents import SearchDocumentsTool
+from tools.search_standard_catalog import SearchStandardCatalogTool
 from tools.skill_loader import SkillLoaderTool
 from tools.shell_execute import ShellExecuteTool
 from tools.todo_task import TodoTaskTool
@@ -85,9 +89,6 @@ ALLOWED_BROWSER_ORIGINS = {
 }
 AUTH_TOKEN_ENV_VAR = "TAURI_AGENT_AUTH_TOKEN"
 HTTP_AUTH_HEADER = "x-tauri-agent-auth"
-ocr_manager = OcrSidecarManager()
-
-
 def _load_auth_token() -> tuple[str, bool]:
     configured_token = str(os.environ.get(AUTH_TOKEN_ENV_VAR) or "").strip()
     if configured_token:
@@ -107,9 +108,6 @@ async def lifespan(app: FastAPI):
             pass
     await cleanup_all_tasks()
     await _close_runtime_llms()
-    await ocr_manager.stop()
-
-
 app = FastAPI(title="AI Agent Backend", lifespan=lifespan)
 
 app.add_middleware(
@@ -122,6 +120,7 @@ app.add_middleware(
 
 tool_registry = ToolRegistry()
 tool_registry.register(ListDirectoryTreeTool())
+tool_registry.register(SearchStandardCatalogTool())
 tool_registry.register(SearchDocumentsTool())
 tool_registry.register(ReadDocumentSegmentTool())
 tool_registry.register(
@@ -138,7 +137,6 @@ tool_registry.register(FileWriteTool())
 tool_registry.register(ShellExecuteTool())
 tool_registry.register(PythonExecuteTool())
 tool_registry.register(NodeExecuteTool())
-tool_registry.register(OcrExtractTool(manager=ocr_manager))
 tool_registry.register(TodoTaskTool())
 tool_registry.register(AskQuestionTool())
 tool_registry.register(WebFetchTool())
@@ -185,6 +183,7 @@ class BackendRuntimeState:
     )
     task_connections: Dict[asyncio.Task, str] = field(default_factory=dict)
     task_sessions: Dict[asyncio.Task, str] = field(default_factory=dict)
+    reference_index_builds: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     auth_token: str = ""
     auth_token_host_managed: bool = False
     authenticated_connections: Set[str] = field(default_factory=set)
@@ -203,25 +202,201 @@ SCENARIO_IDS: Set[str] = {"default", "standard_qa", "checklist_evaluation"}
 SUPPORTED_PROVIDERS: Set[str] = {"openai", "deepseek", "kimi", "glm", "minimax", "qwen"}
 
 
-def _build_ocr_status_payload(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    enabled = is_ocr_enabled(config)
-    installation = ocr_manager.inspect_installation()
-    installed = bool(installation.get("installed"))
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+
+def _empty_reference_index_counts() -> Dict[str, int]:
+    return {"created": 0, "updated": 0, "removed": 0, "unchanged": 0}
+
+
+def _serialize_reference_index_build(build_state: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "enabled": enabled,
-        "installed": installed,
-        "status": "available" if enabled and installed else "unavailable",
-        "version": installation.get("version"),
-        "engine": installation.get("engine"),
-        "api_version": installation.get("api_version"),
-        "root_dir": installation.get("root_dir"),
+        "build_id": str(build_state.get("build_id") or ""),
+        "root_id": str(build_state.get("root_id") or ""),
+        "root_path": str(build_state.get("root_path") or ""),
+        "mode": str(build_state.get("mode") or "incremental"),
+        "status": str(build_state.get("status") or "queued"),
+        "phase": str(build_state.get("phase") or "queued"),
+        "progress_percent": int(build_state.get("progress_percent") or 0),
+        "detail": str(build_state.get("detail") or ""),
+        "total_documents": int(build_state.get("total_documents") or 0),
+        "processed_documents": int(build_state.get("processed_documents") or 0),
+        "counts": {
+            "created": int((build_state.get("counts") or {}).get("created") or 0),
+            "updated": int((build_state.get("counts") or {}).get("updated") or 0),
+            "removed": int((build_state.get("counts") or {}).get("removed") or 0),
+            "unchanged": int((build_state.get("counts") or {}).get("unchanged") or 0),
+        },
+        "current_document": (
+            build_state.get("current_document")
+            if isinstance(build_state.get("current_document"), dict)
+            else None
+        ),
+        "started_at": str(build_state.get("started_at") or ""),
+        "updated_at": str(build_state.get("updated_at") or ""),
+        "completed_at": (
+            str(build_state.get("completed_at"))
+            if build_state.get("completed_at") is not None
+            else None
+        ),
+        "result": build_state.get("result") if isinstance(build_state.get("result"), dict) else None,
+        "index_status": (
+            build_state.get("index_status")
+            if isinstance(build_state.get("index_status"), dict)
+            else None
+        ),
+        "error": str(build_state.get("error")) if build_state.get("error") is not None else None,
     }
 
 
-def _is_ocr_tool_installed() -> bool:
-    installation = ocr_manager.inspect_installation()
-    return bool(installation.get("installed"))
+async def _update_reference_index_build(
+    build_id: str,
+    updates: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    async with state_lock:
+        build_state = runtime_state.reference_index_builds.get(build_id)
+        if build_state is None:
+            return None
+        build_state.update(updates)
+        build_state["updated_at"] = _utc_now_iso()
+        return _serialize_reference_index_build(build_state)
+
+
+async def _run_reference_index_build_task(
+    build_id: str,
+    root_id: str,
+    root_path: str,
+    mode: str,
+) -> None:
+    llm: Optional[BaseLLM] = None
+
+    async def progress_callback(progress: Dict[str, Any]) -> None:
+        payload: Dict[str, Any] = {
+            "status": "running",
+            "phase": str(progress.get("phase") or "running"),
+            "progress_percent": int(progress.get("progress_percent") or 0),
+            "detail": str(progress.get("detail") or ""),
+            "total_documents": int(progress.get("total_documents") or 0),
+            "processed_documents": int(progress.get("processed_documents") or 0),
+            "counts": (
+                progress.get("counts")
+                if isinstance(progress.get("counts"), dict)
+                else _empty_reference_index_counts()
+            ),
+        }
+        if isinstance(progress.get("current_document"), dict):
+            payload["current_document"] = progress.get("current_document")
+        if progress.get("phase") == "completed":
+            payload["completed_at"] = _utc_now_iso()
+        await _update_reference_index_build(build_id, payload)
+
+    try:
+        await _update_reference_index_build(
+            build_id,
+            {
+                "status": "running",
+                "phase": "preparing",
+                "detail": "Preparing standard catalog build...",
+            },
+        )
+
+        async with state_lock:
+            current_config = runtime_state.current_config
+
+        if isinstance(current_config, dict):
+            execution_spec = build_execution_spec(current_config, "background")
+            profile = execution_spec.get("profile")
+            if isinstance(profile, dict) and str(profile.get("api_key") or "").strip():
+                llm = create_llm_for_execution_spec(execution_spec)
+
+        result = await build_reference_index(
+            root_id,
+            root_path,
+            llm=llm,
+            mode=mode,
+            progress_callback=progress_callback,
+        )
+        status_payload = await asyncio.to_thread(
+            compute_reference_index_status,
+            root_id,
+            root_path,
+        )
+        await _update_reference_index_build(
+            build_id,
+            {
+                "status": "completed",
+                "phase": "completed",
+                "progress_percent": 100,
+                "detail": "Standard catalog build completed.",
+                "completed_at": _utc_now_iso(),
+                "result": result,
+                "index_status": status_payload,
+                "counts": result.get("counts") if isinstance(result.get("counts"), dict) else _empty_reference_index_counts(),
+            },
+        )
+    except Exception as exc:
+        logger.exception("Failed to build reference index for %s: %s", root_path, exc)
+        await _update_reference_index_build(
+            build_id,
+            {
+                "status": "failed",
+                "phase": "failed",
+                "detail": "Standard catalog build failed.",
+                "completed_at": _utc_now_iso(),
+                "error": "Failed to build reference index.",
+            },
+        )
+    finally:
+        await _close_llm_instance(llm)
+
+
+async def _start_reference_index_build(
+    root_id: str,
+    root_path: str,
+    mode: str,
+) -> Dict[str, Any]:
+    resolved_root_path = str(Path(root_path).resolve())
+
+    async with state_lock:
+        for existing in runtime_state.reference_index_builds.values():
+            if (
+                str(existing.get("status") or "") in {"queued", "running"}
+                and str(existing.get("root_id") or "") == root_id
+                and _workspace_paths_match(str(existing.get("root_path") or ""), resolved_root_path)
+            ):
+                return _serialize_reference_index_build(existing)
+
+        started_at = _utc_now_iso()
+        build_id = uuid.uuid4().hex
+        build_state: Dict[str, Any] = {
+            "build_id": build_id,
+            "root_id": root_id,
+            "root_path": resolved_root_path,
+            "mode": mode,
+            "status": "queued",
+            "phase": "queued",
+            "progress_percent": 0,
+            "detail": "Queued standard catalog build...",
+            "total_documents": 0,
+            "processed_documents": 0,
+            "counts": _empty_reference_index_counts(),
+            "current_document": None,
+            "started_at": started_at,
+            "updated_at": started_at,
+            "completed_at": None,
+            "result": None,
+            "index_status": None,
+            "error": None,
+        }
+        runtime_state.reference_index_builds[build_id] = build_state
+
+    task = asyncio.create_task(
+        _run_reference_index_build_task(build_id, root_id, resolved_root_path, mode)
+    )
+    runtime_state.pending_tasks.add(task)
+    task.add_done_callback(_forget_task)
+    return _serialize_reference_index_build(build_state)
 
 
 def _is_tool_enabled_for_config(
@@ -231,8 +406,6 @@ def _is_tool_enabled_for_config(
     if normalized_tool_name in get_disabled_tool_names(config):
         return False
 
-    if tool_name == "ocr_extract":
-        return _is_ocr_tool_installed() and is_ocr_enabled(config)
     return True
 
 
@@ -244,7 +417,6 @@ def _build_tool_catalog_payload() -> List[Dict[str, str]]:
             "description": descriptor.description,
         }
         for descriptor in sorted(descriptors, key=lambda descriptor: descriptor.name)
-        if descriptor.name != "ocr_extract" or _is_ocr_tool_installed()
     ]
 
 
@@ -271,6 +443,16 @@ def _normalize_non_empty_string(value: Any) -> Optional[str]:
 
 def _normalize_optional_bool(value: Any) -> Optional[bool]:
     return value if isinstance(value, bool) else None
+
+
+def _normalize_reference_root_payload(data: Dict[str, Any]) -> tuple[str, str]:
+    root_id = _normalize_non_empty_string(data.get("root_id"))
+    root_path = _normalize_non_empty_string(data.get("root_path"))
+    if not root_id:
+        raise ValueError("Missing root_id")
+    if not root_path:
+        raise ValueError("Missing root_path")
+    return root_id, root_path
 
 
 def _normalize_tool_decision(
@@ -355,10 +537,13 @@ def _build_reference_library_context(
             for item in (root.get("kinds") or [])
             if str(item or "").strip()
         )
+        catalog_path = reference_root_catalog_path(path)
         if kinds:
-            root_lines.append(f"- {label} ({', '.join(kinds)}): {path}")
+            root_lines.append(
+                f"- {label} ({', '.join(kinds)}): {path} | catalog: {catalog_path}"
+            )
         else:
-            root_lines.append(f"- {label}: {path}")
+            root_lines.append(f"- {label}: {path} | catalog: {catalog_path}")
         root_paths.append(path)
         signature_items.append((label, path, kinds))
 
@@ -368,8 +553,9 @@ def _build_reference_library_context(
     prompt_suffix = (
         "\n\nConfigured reference library roots:\n"
         + "\n".join(root_lines)
-        + "\nUse these roots with generic read/search tools. Prefer search_documents first, "
-        + "then use the returned absolute_path for follow-up reads."
+        + "\nIf a root catalog file exists at the listed catalog path, read it first to narrow down "
+        + "which standards are relevant before opening large PDFs. Use these roots with generic read/search tools. "
+        + "Prefer search_documents first when no catalog is available, then use the returned absolute_path for follow-up reads."
     )
     return prompt_suffix, root_paths, tuple(signature_items)
 
@@ -1046,7 +1232,6 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
                 "model": get_primary_profile_config(runtime_state.current_config)[
                     "model"
                 ],
-                "ocr": _build_ocr_status_payload(runtime_state.current_config),
             }
         )
 
@@ -1642,6 +1827,91 @@ async def list_tools(request: Request):
         return auth_error
 
     return {"tools": _build_tool_catalog_payload()}
+
+
+@app.post("/reference-index/status")
+async def reference_index_status(request: Request, data: Dict[str, Any]):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
+    try:
+        root_id, root_path = _normalize_reference_root_payload(data)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+
+    try:
+        status_payload = await asyncio.to_thread(
+            compute_reference_index_status,
+            root_id,
+            root_path,
+        )
+        return {"ok": True, "status": status_payload}
+    except Exception as exc:
+        logger.exception("Failed to inspect reference index status: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "Failed to inspect reference index status."},
+        )
+
+
+@app.post("/reference-index/build")
+async def reference_index_build(request: Request, data: Dict[str, Any]):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
+    try:
+        root_id, root_path = _normalize_reference_root_payload(data)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+
+    mode = str(data.get("mode") or "incremental").strip().lower()
+    normalized_mode = mode if mode in {"incremental", "rebuild"} else "incremental"
+
+    try:
+        progress_payload = await _start_reference_index_build(
+            root_id,
+            root_path,
+            normalized_mode,
+        )
+        return {"ok": True, "progress": progress_payload}
+    except Exception as exc:
+        logger.exception("Failed to build reference index for %s: %s", root_path, exc)
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "Failed to build reference index."},
+        )
+
+
+@app.post("/reference-index/build-progress")
+async def reference_index_build_progress(request: Request, data: Dict[str, Any]):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
+    build_id = str(data.get("build_id") or "").strip()
+    if not build_id:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Missing build_id."},
+        )
+
+    async with state_lock:
+        build_state = runtime_state.reference_index_builds.get(build_id)
+        progress_payload = (
+            _serialize_reference_index_build(build_state)
+            if isinstance(build_state, dict)
+            else None
+        )
+
+    if progress_payload is None:
+        return JSONResponse(
+            status_code=404,
+            content={"ok": False, "error": "Reference index build was not found."},
+        )
+
+    return {"ok": True, "progress": progress_payload}
 
 
 @app.post("/provider-models")

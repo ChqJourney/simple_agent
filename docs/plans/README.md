@@ -12,7 +12,6 @@
 - [checklist-result-view-design.md](/Users/patrickc/Documents/dev/projects/simple_agent/docs/plans/checklist-result-view-design.md)
 - [checklist-result-view-pr-breakdown.md](/Users/patrickc/Documents/dev/projects/simple_agent/docs/plans/checklist-result-view-pr-breakdown.md)
 - [scenario-sessions-next-phase-roadmap.md](/Users/patrickc/Documents/dev/projects/simple_agent/docs/plans/scenario-sessions-next-phase-roadmap.md)
-- [ocr-sidecar-design.md](/Users/patrickc/Documents/dev/projects/simple_agent/docs/plans/ocr-sidecar-design.md)
 - [runtime-role-routing-design.md](/Users/patrickc/Documents/dev/projects/simple_agent/docs/plans/runtime-role-routing-design.md)
 - [session-compaction-design.md](/Users/patrickc/Documents/dev/projects/simple_agent/docs/plans/session-compaction-design.md)
 - [windows-release-network-update-plan.md](/Users/patrickc/Documents/dev/projects/simple_agent/docs/plans/windows-release-network-update-plan.md)

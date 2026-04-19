@@ -430,6 +430,5 @@ Get-AuthenticodeSignature .\path\to\installer.exe | Format-List
 截至当前仓库状态，这条发布链路还有这些限制：
 
 - workflow 目前只会自动同步到 GitHub Pages，不会自动同步到你自己的 CDN / 静态站
-- OCR sidecar 还没有并入当前 Windows 发布签名链路
 - 防火墙规则还没有在安装器中自动写入
 - 当前 updater 仍是“静态 JSON + 全量安装包 URL”的模式，不是组件级更新

@@ -60,24 +60,7 @@ class RuntimeContractTests(unittest.TestCase):
             },
             normalized["context_providers"],
         )
-        self.assertEqual({"enabled": False}, normalized["ocr"])
         self.assertEqual("", normalized["system_prompt"])
-
-    def test_normalize_runtime_config_preserves_explicit_ocr_enablement(self) -> None:
-        normalized = normalize_runtime_config(
-            {
-                "provider": "openai",
-                "model": "gpt-4o-mini",
-                "api_key": "test-key",
-                "base_url": "https://api.openai.com/v1",
-                "enable_reasoning": False,
-                "ocr": {
-                    "enabled": True,
-                },
-            }
-        )
-
-        self.assertEqual({"enabled": True}, normalized["ocr"])
 
     def test_normalize_runtime_config_supports_hosted_provider_defaults(self) -> None:
         cases = [

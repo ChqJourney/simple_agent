@@ -9,6 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from runtime.reference_index import reference_root_catalog_path
 from tools.search_documents import SearchDocumentsTool
 
 
@@ -369,6 +370,59 @@ class SearchDocumentsToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(str(target.resolve()), result.output["results"][0]["absolute_path"])
             self.assertEqual(str(reference_root.resolve()), result.output["results"][0]["resolved_root_path"])
             self.assertEqual("iec-62368.md", result.output["results"][0]["path"])
+
+    async def test_reference_library_directory_search_requires_catalog_routing_first(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir, tempfile.TemporaryDirectory() as ref_dir:
+            reference_root = Path(ref_dir)
+            pdf_path = reference_root / "IEC-60335-1.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7")
+
+            catalog_path = reference_root_catalog_path(reference_root)
+            catalog_path.parent.mkdir(parents=True, exist_ok=True)
+            catalog_path.write_text(
+                '{"root_path": "%s", "documents": [{"path": "%s", "title": "Appliance safety"}]}'
+                % (str(reference_root.resolve()), str(pdf_path.resolve())),
+                encoding="utf-8",
+            )
+
+            result = await SearchDocumentsTool().execute(
+                tool_call_id="search-12",
+                workspace_path=workspace_dir,
+                reference_library_roots=[ref_dir],
+                query="appliance safety",
+                path=ref_dir,
+            )
+
+            self.assertFalse(result.success)
+            self.assertIn("search_standard_catalog first", result.error or "")
+            self.assertIn(str(catalog_path), result.error or "")
+
+    async def test_reference_library_file_search_still_allows_direct_follow_up_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir, tempfile.TemporaryDirectory() as ref_dir:
+            reference_root = Path(ref_dir)
+            target = reference_root / "iec-62368.md"
+            target.write_text("Clause 4.1\nThe enclosure shall resist impact.\n", encoding="utf-8")
+
+            catalog_path = reference_root_catalog_path(reference_root)
+            catalog_path.parent.mkdir(parents=True, exist_ok=True)
+            catalog_path.write_text(
+                '{"root_path": "%s", "documents": [{"path": "%s", "title": "Audio/video equipment safety"}]}'
+                % (str(reference_root.resolve()), str(target.resolve())),
+                encoding="utf-8",
+            )
+
+            result = await SearchDocumentsTool().execute(
+                tool_call_id="search-13",
+                workspace_path=workspace_dir,
+                reference_library_roots=[ref_dir],
+                query="impact",
+                path=str(target),
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual("document_search_results", result.output["event"])
+            self.assertEqual(1, result.output["summary"]["hit_count"])
+            self.assertEqual(str(target.resolve()), result.output["results"][0]["absolute_path"])
 
 
 if __name__ == "__main__":

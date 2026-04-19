@@ -11,10 +11,10 @@ from tools.delegate_task import DelegateTaskTool
 from tools.extract_checklist_rows import ExtractChecklistRowsTool
 from tools.get_document_structure import GetDocumentStructureTool
 from tools.list_directory_tree import ListDirectoryTreeTool
-from tools.ocr_extract import OcrExtractTool
 from tools.pdf_tools import PdfGetInfoTool, PdfReadPagesTool, PdfSearchTool
 from tools.read_document_segment import ReadDocumentSegmentTool
 from tools.search_documents import SearchDocumentsTool
+from tools.search_standard_catalog import SearchStandardCatalogTool
 from tools.skill_loader import SkillLoaderTool
 from tools.registry import ToolRegistry
 from tools.todo_task import TodoTaskTool
@@ -44,6 +44,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_registry_exposes_descriptors_and_category_lookup(self) -> None:
         registry = ToolRegistry()
         registry.register(ListDirectoryTreeTool())
+        registry.register(SearchStandardCatalogTool())
         registry.register(SearchDocumentsTool())
         registry.register(ReadDocumentSegmentTool())
         registry.register(ExtractChecklistRowsTool(empty_config))
@@ -51,7 +52,6 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         registry.register(PdfGetInfoTool())
         registry.register(PdfReadPagesTool())
         registry.register(PdfSearchTool())
-        registry.register(OcrExtractTool())
         registry.register(TodoTaskTool())
         registry.register(AskQuestionTool())
         registry.register(DelegateTaskTool(FakeDelegatedTaskExecutor()))
@@ -66,12 +66,12 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
                 "extract_checklist_rows",
                 "get_document_structure",
                 "list_directory_tree",
-                "ocr_extract",
                 "pdf_get_info",
                 "pdf_read_pages",
                 "pdf_search",
                 "read_document_segment",
                 "search_documents",
+                "search_standard_catalog",
                 "skill_loader",
                 "todo_task",
             ],
@@ -88,6 +88,10 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("search", search_descriptor.tags)
         self.assertIn("mode='plain'", search_descriptor.description)
 
+        catalog_descriptor = next(d for d in descriptors if d.name == "search_standard_catalog")
+        self.assertTrue(catalog_descriptor.read_only)
+        self.assertIn("standard catalog", catalog_descriptor.description.lower())
+
         read_descriptor = next(d for d in descriptors if d.name == "read_document_segment")
         locator_schema = read_descriptor.parameters["properties"]["locator"]
         self.assertIn("pdf_line_range", locator_schema["description"])
@@ -102,10 +106,6 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         pdf_pages_descriptor = next(d for d in descriptors if d.name == "pdf_read_pages")
         self.assertIn("Prefer mode='markdown'", pdf_pages_descriptor.description)
         self.assertEqual("markdown", pdf_pages_descriptor.parameters["properties"]["mode"]["default"])
-
-        ocr_descriptor = next(d for d in descriptors if d.name == "ocr_extract")
-        self.assertTrue(ocr_descriptor.read_only)
-        self.assertIn("ocr", ocr_descriptor.tags)
 
     async def test_todo_and_question_tools_return_frontend_friendly_event_shapes(self) -> None:
         todo_result = await TodoTaskTool().execute(

@@ -17,6 +17,7 @@ from .pdf_tools import (
 from .python_execute import PythonExecuteTool
 from .read_document_segment import ReadDocumentSegmentTool
 from .search_documents import SearchDocumentsTool
+from .search_standard_catalog import SearchStandardCatalogTool
 from .skill_loader import SkillLoaderTool
 from .shell_execute import ShellExecuteTool
 from .todo_task import TodoTaskTool
@@ -40,6 +41,7 @@ __all__ = [
     "PythonExecuteTool",
     "ReadDocumentSegmentTool",
     "SearchDocumentsTool",
+    "SearchStandardCatalogTool",
     "SkillLoaderTool",
     "ShellExecuteTool",
     "TodoTaskTool",

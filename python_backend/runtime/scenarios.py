@@ -35,6 +35,8 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
             "You are in Standard QA mode. Prioritize evidence from workspace documents "
             "and approved reference materials. Prefer retrieving evidence before answering. "
             "Avoid hidden workspace metadata such as .agent unless the user explicitly asks for it. "
+            "When a generated standard catalog exists, use search_standard_catalog first to shortlist "
+            "candidate standards before opening large PDFs. "
             "When search_documents returns matches, prefer using the returned absolute_path "
             "for follow-up reads so you keep the file target unambiguous. "
             "For large PDFs, start with pdf_get_info, pdf_get_outline, or get_document_structure "
@@ -58,6 +60,7 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
             "pdf_search",
             "read_document_segment",
             "search_documents",
+            "search_standard_catalog",
         ],
         "tool_denylist": None,
         "runtime_overrides": {},

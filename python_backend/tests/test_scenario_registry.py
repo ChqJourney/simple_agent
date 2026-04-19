@@ -19,9 +19,11 @@ class ScenarioRegistryTests(unittest.TestCase):
         self.assertEqual("standard_qa", spec["scenario_id"])
         self.assertIn("Standard QA", spec["label"])
         self.assertIn("search_documents", spec["tool_allowlist"])
+        self.assertIn("search_standard_catalog", spec["tool_allowlist"])
         self.assertIn("Conclusion, Evidence, Uncertainties, and Needed Information", spec["system_prompt_addendum"])
         self.assertIn("absolute_path", spec["system_prompt_addendum"])
         self.assertIn("Avoid hidden workspace metadata such as .agent", spec["system_prompt_addendum"])
+        self.assertIn("use search_standard_catalog first", spec["system_prompt_addendum"])
         self.assertIn("Do not launch multiple expensive PDF searches or page reads in parallel", spec["system_prompt_addendum"])
         self.assertIn("pdf_get_info, pdf_get_outline, or get_document_structure", spec["system_prompt_addendum"])
 

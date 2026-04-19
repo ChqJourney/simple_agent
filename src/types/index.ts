@@ -177,22 +177,6 @@ export interface ContextProviderConfig {
   tools?: ToolAvailabilityContextProviderConfig;
 }
 
-export interface OcrConfig {
-  enabled: boolean;
-}
-
-export type OcrRuntimeStatus = 'available' | 'unavailable' | 'starting';
-
-export interface OcrStatusPayload {
-  enabled: boolean;
-  installed: boolean;
-  status: OcrRuntimeStatus;
-  version?: string | null;
-  engine?: string | null;
-  api_version?: number | null;
-  root_dir?: string | null;
-}
-
 export interface ProviderConfig extends ModelProfile {
   profiles?: {
     primary: ModelProfile;
@@ -204,7 +188,6 @@ export interface ProviderConfig extends ModelProfile {
   runtime?: RuntimeConfig;
   appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
-  ocr?: OcrConfig;
   reference_library?: ReferenceLibraryConfig;
 }
 
@@ -259,7 +242,6 @@ export interface ClientConfig {
   runtime?: RuntimeConfig;
   appearance?: AppearanceConfig;
   context_providers?: ContextProviderConfig;
-  ocr?: OcrConfig;
 }
 
 export interface ClientToolConfirm {
@@ -437,7 +419,6 @@ export interface ServerConfigUpdated {
   type: 'config_updated';
   provider: string;
   model: string;
-  ocr?: OcrStatusPayload;
 }
 
 export interface ServerWorkspaceUpdated {

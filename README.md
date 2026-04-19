@@ -15,7 +15,6 @@
 - 支持本地 skills catalog 与按需 `skill_loader`
 - 支持图片附件、文件树拖拽路径引用、任务面板
 - 支持 workspace 场景标签：`常规 / 标准问答 / Checklist Evaluation`
-- 支持可选安装的 OCR sidecar，用于图片和扫描版 PDF OCR
 - 支持全局 `Reference Library`，用于标准、checklist、guidance 资料检索
 - 支持中英文界面、主题切换和基础字号调整
 
@@ -36,18 +35,17 @@
 - `Checklist Evaluation` 场景下的右侧 checklist 结果面板
 - 顶栏状态：
   - token usage
-  - OCR 状态
   - WebSocket 状态
   - 当前模型
   - 会话 compaction 状态
   - run timeline 入口
 - 设置页七个标签：
+- 设置页六个标签：
   - `Model`
   - `Runtime`
   - `Tools`
   - `Skills`
   - `Reference Library`
-  - `OCR`
   - `UI`
 - About 页版本信息与更新检查界面
 
@@ -138,7 +136,6 @@ workspace 聊天输入区上方现在有三个场景标签：
 - `shell_execute`
 - `python_execute`
 - `node_execute`
-- `ocr_extract`
 - `todo_task`
 - `ask_question`
 - `web_fetch`
@@ -148,7 +145,6 @@ workspace 聊天输入区上方现在有三个场景标签：
 其中：
 
 - `file_write`、`shell_execute`、`python_execute`、`node_execute` 需要审批
-- `ocr_extract` 只有在 OCR sidecar 已安装且设置中启用 OCR 时才会出现
 - `skill_loader` 只有本地 skill provider 启用时才真正有意义
 
 ### 文档能力
@@ -205,19 +201,6 @@ workspace 聊天输入区上方现在有三个场景标签：
 - 你可以在多个 workspace 中复用同一套标准资料
 - workspace 本地文件和全局标准库资料会在不同场景中以不同策略参与运行时
 
-### OCR
-
-OCR 是可选能力，不是默认内置可用功能。
-
-当前实现：
-
-- Settings `OCR` 标签中可启用/停用 OCR 功能
-- 通过选择本地 OCR sidecar 目录进行安装
-- 顶栏会显示 `available / unavailable / starting`
-- 支持图片 OCR
-- 支持扫描版 PDF 按页 OCR
-- OCR 结果会缓存到 `<workspace>/.agent/cache/ocr/`
-
 ## 执行模式与审批
 
 每个会话都有两种执行模式：
@@ -248,7 +231,6 @@ OCR 是可选能力，不是默认内置可用功能。
   logs/
     <session-id>.jsonl
   cache/
-    ocr/
   skills/
 ```
 
@@ -282,19 +264,12 @@ OCR 是可选能力，不是默认内置可用功能。
 Python 依赖：
 
 - `python_backend/requirements.txt`
-- 可选 OCR 依赖：`ocr_sidecar/requirements.txt`
 
 ### 安装
 
 ```bash
 npm install
 pip install -r python_backend/requirements.txt
-```
-
-如需开发 OCR sidecar，再安装：
-
-```bash
-pip install -r ocr_sidecar/requirements.txt
 ```
 
 ### 启动开发环境
@@ -330,7 +305,6 @@ npm run tauri dev
 npm run build
 npm test
 pytest python_backend/tests
-pytest ocr_sidecar/tests
 ```
 
 ## 仓库结构
@@ -339,7 +313,6 @@ pytest ocr_sidecar/tests
 src/                React 前端
 src-tauri/          Tauri / Rust 宿主层
 python_backend/     FastAPI/WebSocket Agent 后端
-ocr_sidecar/        可选 OCR sidecar
 docs/               设计文档与计划
 scripts/            打包与发布脚本
 ```
@@ -373,13 +346,12 @@ scripts/            打包与发布脚本
 - httpx
 - pydantic v2
 
-### 文档 / OCR
+### 文档
 
 - PyMuPDF
 - python-docx
 - openpyxl
 - python-pptx
-- PaddleOCR sidecar
 
 ## 额外说明
 

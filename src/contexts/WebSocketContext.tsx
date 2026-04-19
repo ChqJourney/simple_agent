@@ -16,8 +16,6 @@ import {
   ToolDecisionScope,
   ProviderConfig,
   ExecutionMode,
-  OcrRuntimeStatus,
-  OcrStatusPayload,
   ScenarioId,
 } from '../types';
 import { normalizeProviderConfig } from '../utils/config';
@@ -28,7 +26,6 @@ type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 interface WebSocketContextValue {
   connectionStatus: ConnectionStatus;
   isConnected: boolean;
-  ocrStatus: OcrStatusPayload & { status: OcrRuntimeStatus };
   sendMessage: (sessionId: string, content: string, attachments?: Attachment[], workspacePath?: string) => void;
   answerQuestion: (sessionId: string, toolCallId: string, answer?: string, action?: 'submit' | 'dismiss') => boolean;
   sendConfig: (configOverride?: ProviderConfig) => void;
@@ -53,15 +50,6 @@ interface WebSocketContextValue {
 }
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
-const DEFAULT_OCR_STATUS: OcrStatusPayload & { status: OcrRuntimeStatus } = {
-  enabled: false,
-  installed: false,
-  status: 'unavailable',
-  version: null,
-  engine: null,
-  api_version: null,
-  root_dir: null,
-};
 const TASK_STATUS_VALUES: Task['status'][] = ['pending', 'in_progress', 'completed', 'failed'];
 const UNSUPPORTED_EXECUTION_MODE_ERROR = 'Unknown message type: set_execution_mode';
 const AUTH_REQUIRED_ERROR = 'Connection not authenticated. Send config with auth_token first.';
@@ -207,7 +195,6 @@ function applyCompactionContextEstimate(sessionId: string, event: { payload: Rec
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
-  const [ocrStatus, setOcrStatus] = useState<OcrStatusPayload & { status: OcrRuntimeStatus }>(DEFAULT_OCR_STATUS);
   const lastSentConfigKeyRef = useRef<string | null>(null);
   const lastConfigErrorRef = useRef<string | null>(null);
   const authTokenRef = useRef<string | null>(null);
@@ -281,14 +268,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           );
           break;
         case 'tool_call': {
-          if (data.name === 'ocr_extract') {
-            setOcrStatus((current) => current.enabled
-              ? {
-                  ...current,
-                  status: 'starting',
-                }
-              : current);
-          }
           if (data.name === 'todo_task') {
             useTaskStore.getState().markTaskTabVisible(data.session_id);
           }
@@ -334,13 +313,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           break;
         }
         case 'tool_result':
-          if (data.tool_name === 'ocr_extract') {
-            setOcrStatus((current) => ({
-              ...current,
-              status: data.success ? 'available' : 'unavailable',
-              installed: data.success ? true : current.installed,
-            }));
-          }
           if (data.success && data.tool_name === 'file_write') {
             applyFileWriteToolResult(data.output);
           }
@@ -402,10 +374,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           backendAuthenticatedRef.current = true;
           workspaceBoundRef.current = false;
           lastConfigErrorRef.current = null;
-          setOcrStatus({
-            ...DEFAULT_OCR_STATUS,
-            ...(data.ocr || {}),
-          });
           if (queuedAuthenticatedMessagesRef.current.length > 0) {
             const remainingMessages: QueuedAuthenticatedMessage[] = [];
 
@@ -515,10 +483,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         backendAuthenticatedRef.current = false;
         workspaceBoundRef.current = false;
         finalizeInterruptedChatSessions();
-        setOcrStatus((current) => ({
-          ...current,
-          status: current.enabled ? 'unavailable' : current.status,
-        }));
         setConnectionStatus('disconnected');
       }
     );
@@ -740,7 +704,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, [sendAuthenticatedMessage]);
 
   return (
-    <WebSocketContext.Provider value={{ connectionStatus, isConnected, ocrStatus, sendMessage, answerQuestion, sendConfig, confirmTool, interrupt, sendWorkspace, setExecutionMode, createSession, updateSessionScenario }}>
+    <WebSocketContext.Provider value={{ connectionStatus, isConnected, sendMessage, answerQuestion, sendConfig, confirmTool, interrupt, sendWorkspace, setExecutionMode, createSession, updateSessionScenario }}>
       {children}
     </WebSocketContext.Provider>
   );

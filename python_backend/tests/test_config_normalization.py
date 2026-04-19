@@ -2,7 +2,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -16,17 +15,11 @@ from llms.minimax import MiniMaxLLM
 
 
 class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
-    def test_ocr_tool_visibility_follows_runtime_config(self) -> None:
-        self.assertFalse(
-            backend_main._is_tool_enabled_for_config(
-                "ocr_extract",
-                {"ocr": {"enabled": False}},
-            )
-        )
+    def test_tool_visibility_follows_disabled_tool_config(self) -> None:
         self.assertTrue(
             backend_main._is_tool_enabled_for_config(
                 "file_read",
-                {"ocr": {"enabled": False}},
+                None,
             )
         )
         self.assertFalse(
@@ -35,28 +28,6 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 {"context_providers": {"tools": {"disabled": ["file_read"]}}},
             )
         )
-        with patch.object(backend_main.ocr_manager, "inspect_installation", return_value={"installed": True}):
-            self.assertTrue(
-                backend_main._is_tool_enabled_for_config(
-                    "ocr_extract",
-                    {"ocr": {"enabled": True}},
-                )
-            )
-            self.assertFalse(
-                backend_main._is_tool_enabled_for_config(
-                    "ocr_extract",
-                    {
-                        "ocr": {"enabled": True},
-                        "context_providers": {"tools": {"disabled": ["ocr_extract"]}},
-                    },
-                )
-            )
-
-    def test_tool_catalog_hides_ocr_extract_when_sidecar_is_not_installed(self) -> None:
-        with patch.object(backend_main.ocr_manager, "inspect_installation", return_value={"installed": False}):
-            tool_names = [tool["name"] for tool in backend_main._build_tool_catalog_payload()]
-
-        self.assertNotIn("ocr_extract", tool_names)
 
     async def test_handle_config_falls_back_to_provider_default_base_url_when_blank(self) -> None:
         captured_configs = []
@@ -101,18 +72,7 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
             config_updated = next(message for message in messages if message.get('type') == 'config_updated')
             self.assertEqual('openai', config_updated['provider'])
             self.assertEqual('gpt-4o-mini', config_updated['model'])
-            self.assertEqual(
-                {
-                    'enabled': False,
-                    'installed': False,
-                    'status': 'unavailable',
-                    'version': None,
-                    'engine': None,
-                    'api_version': None,
-                    'root_dir': None,
-                },
-                config_updated['ocr'],
-            )
+            self.assertNotIn('ocr', config_updated)
         finally:
             if delegate_tool is not None and original_delegate_timeout is not None:
                 delegate_tool.policy.timeout_seconds = original_delegate_timeout

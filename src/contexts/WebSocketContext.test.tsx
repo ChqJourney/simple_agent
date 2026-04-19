@@ -65,7 +65,6 @@ function emitStatus(nextStatus: ConnectionStatus) {
 function Probe() {
   const context = useWebSocket() as ReturnType<typeof useWebSocket> & {
     connectionStatus?: ConnectionStatus;
-    ocrStatus?: { status?: string };
     setExecutionMode?: (sessionId: string, mode: "regular" | "free") => void;
     sendMessage?: (sessionId: string, content: string, attachments?: unknown[], workspacePath?: string) => void;
     sendWorkspace?: (workspacePath: string) => void;
@@ -119,7 +118,6 @@ function Probe() {
         bind-b
       </button>
       <div data-testid="status">{context.connectionStatus ?? ""}</div>
-      <div data-testid="ocr-status">{context.ocrStatus?.status ?? ""}</div>
     </>
   );
 }
@@ -195,54 +193,6 @@ describe("WebSocketProvider", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("status").textContent).toBe("disconnected");
-    });
-  });
-
-  it("tracks OCR availability from config updates and OCR tool lifecycle", async () => {
-    render(
-      <WebSocketProvider>
-        <Probe />
-      </WebSocketProvider>
-    );
-
-    websocketMockState.messageHandler?.({
-      type: "config_updated",
-      provider: "openai",
-      model: "gpt-4o",
-      ocr: {
-        enabled: true,
-        installed: false,
-        status: "unavailable",
-        version: null,
-        engine: null,
-        api_version: null,
-        root_dir: null,
-      },
-    });
-
-    expect(screen.getByTestId("ocr-status").textContent).toBe("unavailable");
-
-    websocketMockState.messageHandler?.({
-      type: "tool_call",
-      session_id: "session-a",
-      tool_call_id: "ocr-1",
-      name: "ocr_extract",
-      arguments: { path: "scan.pdf", input_type: "pdf" },
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId("ocr-status").textContent).toBe("starting");
-    });
-
-    websocketMockState.messageHandler?.({
-      type: "tool_result",
-      session_id: "session-a",
-      tool_call_id: "ocr-1",
-      tool_name: "ocr_extract",
-      success: true,
-      output: { event: "ocr_extract", content: "done" },
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId("ocr-status").textContent).toBe("available");
     });
   });
 

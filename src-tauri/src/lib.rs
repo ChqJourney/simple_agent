@@ -25,7 +25,6 @@ const APP_DATA_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DATA_DIR";
 #[cfg_attr(debug_assertions, allow(dead_code))]
 const APP_DIR_ENV_VAR: &str = "TAURI_AGENT_APP_DIR";
 const AUTH_TOKEN_ENV_VAR: &str = "TAURI_AGENT_AUTH_TOKEN";
-const OCR_SIDECAR_RELATIVE_DIR: &str = "ocr-sidecar/current";
 const UPDATER_LOG_FILE_NAME: &str = "updater.log";
 const UPDATER_CHECK_TIMEOUT: Duration = Duration::from_secs(20);
 const UPDATER_CHECK_ATTEMPTS: usize = 3;
@@ -286,15 +285,6 @@ pub struct UpdaterDiagnostics(Mutex<Option<String>>);
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
-struct OcrSidecarInstallPayload {
-    app_dir: String,
-    install_dir: String,
-    installed: bool,
-    version: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
 struct AppUpdateConfigPayload {
     configured: bool,
     reason: Option<String>,
@@ -321,104 +311,6 @@ struct AppUpdateInstallPayload {
     version: Option<String>,
 }
 
-fn ocr_install_root(app_dir: &Path) -> PathBuf {
-    app_dir.join(OCR_SIDECAR_RELATIVE_DIR)
-}
-
-fn read_ocr_manifest_version(root: &Path) -> Option<String> {
-    let manifest_path = root.join("manifest.json");
-    let contents = fs::read_to_string(manifest_path).ok()?;
-    let value = serde_json::from_str::<serde_json::Value>(&contents).ok()?;
-    value
-        .get("version")
-        .and_then(|candidate| candidate.as_str())
-        .map(str::to_string)
-}
-
-fn resolve_ocr_source_root(selected_path: &Path) -> Result<PathBuf, String> {
-    let direct_manifest = selected_path.join("manifest.json");
-    let nested_manifest = selected_path.join("current").join("manifest.json");
-
-    let root = if direct_manifest.is_file() {
-        selected_path.to_path_buf()
-    } else if nested_manifest.is_file() {
-        selected_path.join("current")
-    } else {
-        return Err(format!(
-            "Selected folder does not look like an OCR sidecar package: {}",
-            selected_path.display()
-        ));
-    };
-
-    let manifest_contents = fs::read_to_string(root.join("manifest.json"))
-        .map_err(|error| format!("Failed to read OCR manifest: {error}"))?;
-    let manifest_value = serde_json::from_str::<serde_json::Value>(&manifest_contents)
-        .map_err(|error| format!("Failed to parse OCR manifest: {error}"))?;
-    let entry = manifest_value
-        .get("entry")
-        .and_then(|candidate| candidate.as_str())
-        .unwrap_or("ocr-server.exe");
-    let entry_path = root.join(entry);
-    if !entry_path.is_file() {
-        return Err(format!(
-            "OCR sidecar executable not found in selected folder: {}",
-            entry_path.display()
-        ));
-    }
-
-    Ok(root)
-}
-
-fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<(), String> {
-    fs::create_dir_all(destination)
-        .map_err(|error| format!("Failed to create directory {}: {error}", destination.display()))?;
-
-    for entry in fs::read_dir(source)
-        .map_err(|error| format!("Failed to read directory {}: {error}", source.display()))?
-    {
-        let entry = entry.map_err(|error| format!("Failed to read directory entry: {error}"))?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        let file_type = entry
-            .file_type()
-            .map_err(|error| format!("Failed to inspect {}: {error}", source_path.display()))?;
-
-        if file_type.is_dir() {
-            copy_dir_recursive(&source_path, &destination_path)?;
-        } else if file_type.is_file() {
-            fs::copy(&source_path, &destination_path).map_err(|error| {
-                format!(
-                    "Failed to copy {} to {}: {error}",
-                    source_path.display(),
-                    destination_path.display()
-                )
-            })?;
-        }
-    }
-
-    Ok(())
-}
-
-fn inspect_ocr_sidecar_impl() -> Result<OcrSidecarInstallPayload, String> {
-    let app_dir = executable_dir().ok_or_else(|| {
-        "Failed to resolve the application executable directory for OCR installation lookup"
-            .to_string()
-    })?;
-    let install_dir = ocr_install_root(app_dir.as_path());
-    let installed = install_dir.is_dir() && install_dir.join("manifest.json").is_file();
-
-    Ok(OcrSidecarInstallPayload {
-        app_dir: app_dir.display().to_string(),
-        install_dir: install_dir.display().to_string(),
-        installed,
-        version: if installed {
-            read_ocr_manifest_version(&install_dir)
-        } else {
-            None
-        },
-    })
-}
-
 #[tauri::command]
 fn get_backend_auth_token(
     auth_token: tauri::State<'_, BackendAuthToken>,
@@ -430,11 +322,6 @@ fn get_backend_auth_token(
     guard
         .clone()
         .ok_or_else(|| "Backend auth token unavailable from host".to_string())
-}
-
-#[tauri::command]
-fn inspect_ocr_sidecar_installation() -> Result<OcrSidecarInstallPayload, String> {
-    inspect_ocr_sidecar_impl()
 }
 
 #[tauri::command]
@@ -533,47 +420,6 @@ async fn install_app_update(app: tauri::AppHandle) -> Result<AppUpdateInstallPay
         installed: true,
         version: Some(version),
     })
-}
-
-#[tauri::command]
-fn install_ocr_sidecar(source_dir: String) -> Result<OcrSidecarInstallPayload, String> {
-    let app_dir = executable_dir().ok_or_else(|| {
-        "Failed to resolve the application executable directory for OCR installation".to_string()
-    })?;
-    let resolved_source = resolve_ocr_source_root(Path::new(&source_dir))?;
-    let ocr_root = app_dir.join("ocr-sidecar");
-    let install_dir = ocr_install_root(app_dir.as_path());
-    let staging_dir = ocr_root.join(format!(".staging-{}", uuid::Uuid::new_v4().as_simple()));
-
-    fs::create_dir_all(&ocr_root)
-        .map_err(|error| format!("Failed to prepare OCR install root {}: {error}", ocr_root.display()))?;
-
-    if staging_dir.exists() {
-        fs::remove_dir_all(&staging_dir).map_err(|error| {
-            format!("Failed to clean OCR staging directory {}: {error}", staging_dir.display())
-        })?;
-    }
-
-    copy_dir_recursive(&resolved_source, &staging_dir)?;
-
-    if install_dir.exists() {
-        fs::remove_dir_all(&install_dir).map_err(|error| {
-            format!(
-                "Failed to replace existing OCR installation {}: {error}",
-                install_dir.display()
-            )
-        })?;
-    }
-
-    fs::rename(&staging_dir, &install_dir).map_err(|error| {
-        format!(
-            "Failed to activate OCR installation from {} to {}: {error}",
-            staging_dir.display(),
-            install_dir.display()
-        )
-    })?;
-
-    inspect_ocr_sidecar_impl()
 }
 
 #[cfg_attr(debug_assertions, allow(dead_code))]
@@ -869,9 +715,7 @@ pub fn run() {
             get_backend_auth_token,
             get_app_update_config_state,
             check_for_app_update,
-            install_app_update,
-            inspect_ocr_sidecar_installation,
-            install_ocr_sidecar
+            install_app_update
         ])
         .setup(|_app| {
             #[cfg(debug_assertions)]

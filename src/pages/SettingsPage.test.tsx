@@ -8,9 +8,6 @@ const sendConfigMock = vi.hoisted(() => vi.fn());
 const setConfigMock = vi.hoisted(() => vi.fn());
 const listSystemSkillsMock = vi.hoisted(() => vi.fn());
 const listToolsMock = vi.hoisted(() => vi.fn());
-const inspectOcrSidecarInstallationMock = vi.hoisted(() => vi.fn());
-const installOcrSidecarMock = vi.hoisted(() => vi.fn());
-const openDialogMock = vi.hoisted(() => vi.fn());
 const listProviderModelsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../contexts/WebSocketContext", () => ({
@@ -39,16 +36,7 @@ vi.mock("../utils/providerModels", () => ({
   listProviderModels: listProviderModelsMock,
 }));
 
-vi.mock("../utils/ocr", () => ({
-  inspectOcrSidecarInstallation: inspectOcrSidecarInstallationMock,
-  installOcrSidecar: installOcrSidecarMock,
-}));
-
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: openDialogMock,
-}));
-
-function openTab(name: "Runtime" | "Tools" | "Skill" | "OCR" | "UI") {
+function openTab(name: "Runtime" | "Tools" | "Skill" | "Reference" | "UI") {
   fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}`) }));
 }
 
@@ -69,6 +57,7 @@ function selectOption(label: string, optionText: string) {
 
 describe("SettingsPage", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     localStorage.clear();
     navigateMock.mockReset();
     sendConfigMock.mockReset();
@@ -76,9 +65,6 @@ describe("SettingsPage", () => {
     listSystemSkillsMock.mockReset();
     listToolsMock.mockReset();
     listProviderModelsMock.mockReset();
-    inspectOcrSidecarInstallationMock.mockReset();
-    installOcrSidecarMock.mockReset();
-    openDialogMock.mockReset();
     globalThis.fetch = vi.fn();
     listProviderModelsMock.mockResolvedValue([]);
     listSystemSkillsMock.mockResolvedValue({
@@ -102,13 +88,6 @@ describe("SettingsPage", () => {
         description: "Load local skill instructions.",
       },
     ]);
-    inspectOcrSidecarInstallationMock.mockResolvedValue({
-      appDir: "C:/work-agent",
-      installDir: "C:/work-agent/ocr-sidecar/current",
-      installed: false,
-      version: null,
-    });
-    openDialogMock.mockResolvedValue(null);
     useConfigStore.setState({
       config: {
         provider: "openai",
@@ -150,9 +129,6 @@ describe("SettingsPage", () => {
             },
           },
         },
-        ocr: {
-          enabled: false,
-        },
       },
       setConfig: setConfigMock,
     });
@@ -187,10 +163,6 @@ describe("SettingsPage", () => {
     openTab("Skill");
     expect(screen.getByLabelText("Enable Local Skills")).toBeTruthy();
 
-    openTab("OCR");
-    expect(screen.getByLabelText("Enable OCR Tooling")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /install ocr/i })).toBeTruthy();
-
     openTab("UI");
     expect(screen.getByLabelText("Base Font Size")).toBeTruthy();
   }, 10000);
@@ -211,6 +183,233 @@ describe("SettingsPage", () => {
       expect(screen.getByText("/portable/skills")).toBeTruthy();
       expect(screen.getByText("/system-skills")).toBeTruthy();
     });
+  });
+
+  it("loads reference index status once per standard root instead of refetching on every render", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        ok: true,
+        status: {
+          root_id: "ref-root-1",
+          root_path: "/reference/standards",
+          catalog_path: "/reference/standards/.agent/reference_index/standard_catalog.json",
+          exists: true,
+          status: "ready",
+          document_count: 12,
+          indexed_document_count: 12,
+          pending: {
+            new: 0,
+            updated: 0,
+            removed: 0,
+            unchanged: 12,
+          },
+          last_built_at: "2026-04-19T00:00:00Z",
+        },
+      }),
+    } as unknown as Response);
+
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o",
+            api_key: "test-key",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+        },
+        reference_library: {
+          roots: [
+            {
+              id: "ref-root-1",
+              label: "Standards",
+              path: "/reference/standards",
+              enabled: true,
+              kinds: ["standard"],
+            },
+          ],
+        },
+      },
+      setConfig: setConfigMock,
+    });
+
+    render(<SettingsPage />);
+    openTab("Reference");
+
+    await waitFor(() => {
+      expect(screen.getByText("Catalog is up to date.")).toBeTruthy();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows reference index build progress details while a catalog build is running", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          ok: true,
+          status: {
+            root_id: "ref-root-1",
+            root_path: "/reference/standards",
+            catalog_path: "/reference/standards/.agent/reference_index/standard_catalog.json",
+            exists: false,
+            status: "stale",
+            document_count: 12,
+            indexed_document_count: 0,
+            pending: {
+              new: 12,
+              updated: 0,
+              removed: 0,
+              unchanged: 0,
+            },
+            last_built_at: null,
+          },
+        }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          ok: true,
+          progress: {
+            build_id: "build-1",
+            root_id: "ref-root-1",
+            root_path: "/reference/standards",
+            mode: "incremental",
+            status: "running",
+            phase: "extracting",
+            progress_percent: 25,
+            detail: "Reading PDF metadata and scope: IEC-60335-1.pdf",
+            total_documents: 12,
+            processed_documents: 3,
+            counts: { created: 1, updated: 0, removed: 0, unchanged: 2 },
+            current_document: {
+              relative_path: "IEC-60335-1.pdf",
+              file_name: "IEC-60335-1.pdf",
+            },
+            started_at: "2026-04-19T00:00:00Z",
+            updated_at: "2026-04-19T00:00:01Z",
+            completed_at: null,
+            error: null,
+          },
+        }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          ok: true,
+          progress: {
+            build_id: "build-1",
+            root_id: "ref-root-1",
+            root_path: "/reference/standards",
+            mode: "incremental",
+            status: "completed",
+            phase: "completed",
+            progress_percent: 100,
+            detail: "Standard catalog build completed.",
+            total_documents: 12,
+            processed_documents: 12,
+            counts: { created: 4, updated: 1, removed: 0, unchanged: 7 },
+            current_document: {
+              relative_path: "IEC-60335-1.pdf",
+              file_name: "IEC-60335-1.pdf",
+            },
+            started_at: "2026-04-19T00:00:00Z",
+            updated_at: "2026-04-19T00:00:10Z",
+            completed_at: "2026-04-19T00:00:10Z",
+            error: null,
+            result: {
+              root_id: "ref-root-1",
+              root_path: "/reference/standards",
+              catalog_path: "/reference/standards/.agent/reference_index/standard_catalog.json",
+              generated_at: "2026-04-19T00:00:10Z",
+              document_count: 12,
+              indexed_document_count: 12,
+              counts: { created: 4, updated: 1, removed: 0, unchanged: 7 },
+              status: "ready",
+            },
+            index_status: {
+              root_id: "ref-root-1",
+              root_path: "/reference/standards",
+              catalog_path: "/reference/standards/.agent/reference_index/standard_catalog.json",
+              exists: true,
+              status: "ready",
+              document_count: 12,
+              indexed_document_count: 12,
+              pending: { new: 0, updated: 0, removed: 0, unchanged: 12 },
+              last_built_at: "2026-04-19T00:00:10Z",
+            },
+          },
+        }),
+      } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    useConfigStore.setState({
+      config: {
+        provider: "openai",
+        model: "gpt-4o",
+        api_key: "test-key",
+        base_url: "https://api.openai.com/v1",
+        enable_reasoning: false,
+        profiles: {
+          primary: {
+            provider: "openai",
+            model: "gpt-4o",
+            api_key: "test-key",
+            base_url: "https://api.openai.com/v1",
+            enable_reasoning: false,
+            profile_name: "primary",
+          },
+        },
+        reference_library: {
+          roots: [
+            {
+              id: "ref-root-1",
+              label: "Standards",
+              path: "/reference/standards",
+              enabled: true,
+              kinds: ["standard"],
+            },
+          ],
+        },
+      },
+      setConfig: setConfigMock,
+    });
+
+    render(<SettingsPage />);
+    openTab("Reference");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create Index" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Index" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Reading PDF metadata and scope: IEC-60335-1.pdf")).toBeTruthy();
+      expect(screen.getByText("3/12 PDF files processed")).toBeTruthy();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Index updated: 4 created, 1 updated, 0 removed.")).toBeTruthy();
+    }, { timeout: 4000 });
   });
 
   it("shows default runtime values when runtime config is missing", () => {
@@ -484,50 +683,6 @@ describe("SettingsPage", () => {
         }),
       })
     );
-  });
-
-  it("saves OCR enablement through normalized config", () => {
-    render(<SettingsPage />);
-
-    openTab("OCR");
-    fireEvent.click(screen.getByLabelText("Enable OCR Tooling"));
-    fireEvent.click(screen.getByText("Save"));
-
-    expect(setConfigMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ocr: {
-          enabled: true,
-        },
-      })
-    );
-    expect(sendConfigMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ocr: {
-          enabled: true,
-        },
-      })
-    );
-  });
-
-  it("installs the OCR sidecar from a selected folder", async () => {
-    openDialogMock.mockResolvedValue("C:/Downloads/ocr-sidecar");
-    installOcrSidecarMock.mockResolvedValue({
-      appDir: "C:/work-agent",
-      installDir: "C:/work-agent/ocr-sidecar/current",
-      installed: true,
-      version: "0.1.0",
-    });
-
-    render(<SettingsPage />);
-
-    openTab("OCR");
-    fireEvent.click(screen.getByText("Install OCR Plugin"));
-
-    await waitFor(() => {
-      expect(installOcrSidecarMock).toHaveBeenCalledWith("C:/Downloads/ocr-sidecar");
-    });
-    expect(screen.getByText(/installed/i)).toBeTruthy();
-    expect(screen.getByText(/v0\.1\.0/i)).toBeTruthy();
   });
 
   it("saves role-specific runtime overrides alongside shared runtime defaults", () => {

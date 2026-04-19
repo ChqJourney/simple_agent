@@ -9,19 +9,15 @@
 
 `work agent` 是一款基于 **Tauri v2 + React 19 + TypeScript + Python (FastAPI/WebSocket)** 的桌面端 Agent 应用。
 
-核心定位是"围绕本地工作区协作的桌面 Agent"，而非单纯的聊天客户端。它以**工作区目录**为边界进行文件读取、写入、搜索和命令执行，支持流式回复、工具审批、会话压缩、可选 OCR 以及本地 Skills 目录。
+核心定位是"围绕本地工作区协作的桌面 Agent"，而非单纯的聊天客户端。它以**工作区目录**为边界进行文件读取、写入、搜索和命令执行，支持流式回复、工具审批、会话压缩以及本地 Skills 目录。
 
 ### 1.1 三层架构
 
 | 层级 | 技术栈 | 职责 |
 |------|--------|------|
 | 前端 (Frontend) | React 19 + Vite + TypeScript + Tailwind CSS v4 + Zustand | UI、状态管理、WebSocket 通信 |
-| 桌面宿主 (Host) | Tauri v2 + Rust | 窗口管理、工作区授权、Python sidecar 启停、OCR 安装桥接、自动更新 |
+| 桌面宿主 (Host) | Tauri v2 + Rust | 窗口管理、工作区授权、Python sidecar 启停、自动更新 |
 | 后端 (Backend) | Python 3.13 + FastAPI + WebSocket | Agent runtime、模型路由、工具执行、会话持久化 |
-
-### 1.2 可选组件
-
-- **OCR Sidecar** (`ocr_sidecar/`)：基于 PaddleOCR / PaddleX 的独立可安装组件，用于图片和扫描版 PDF 的 OCR。不随主应用默认打包。
 
 ---
 
@@ -31,7 +27,6 @@
 src/                    React 前端源码
 src-tauri/              Tauri / Rust 宿主层
 python_backend/         FastAPI + WebSocket Agent 后端
-ocr_sidecar/            可选 OCR 服务端
 scripts/                PowerShell 打包与发布脚本（Windows 为主）
 docs/                   设计文档、计划与发布指南
 ```
@@ -81,7 +76,6 @@ python_backend/
   tools/                  工具实现（约 20+ 个工具）
   skills/                 Skills 加载器
   document_readers/       文档读取器（PDF、Word、Excel、PPT 等）
-  ocr/                    OCR Manager（探测、启动、调用 sidecar）
   tests/                  单元测试（基于 unittest / asyncio）
 ```
 
@@ -103,10 +97,6 @@ npm install
 
 # 后端依赖
 pip install -r python_backend/requirements.txt
-
-# 如需开发 OCR sidecar
-pip install -r ocr_sidecar/requirements.txt
-```
 
 ### 3.3 启动开发环境
 
@@ -173,24 +163,14 @@ python -m unittest discover -s python_backend/tests -v
 pytest python_backend/tests
 ```
 
-### 4.3 OCR Sidecar
-
-```bash
-# 启动服务
-cd ocr_sidecar && python server.py
-
-# 运行测试
-pytest ocr_sidecar/tests
-```
-
-### 4.4 Rust
+### 4.3 Rust
 
 ```bash
 # 运行测试
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-### 4.5 发布脚本测试
+### 4.4 发布脚本测试
 
 ```bash
 # PowerShell 发布脚本自带 Pester 测试
@@ -248,7 +228,6 @@ cargo test --manifest-path src-tauri/Cargo.toml
 |------|----------|------|
 | 前端组件/Store/Utils | `src/**/*.test.ts{,x}` | Vitest + jsdom + @testing-library/react |
 | Python 后端 | `python_backend/tests/test_*.py` | unittest + asyncio |
-| OCR Sidecar | `ocr_sidecar/tests/` | pytest |
 | Rust Tauri | `src-tauri/src/` 内嵌 `#[cfg(test)]` | cargo test |
 | 发布脚本 | `scripts/tests/*.tests.ps1` | Pester |
 
@@ -310,7 +289,6 @@ cargo test --manifest-path src-tauri/Cargo.toml
 scripts/
   prepare-runtimes.ps1      准备嵌入的 Python / Node 运行时
   build-backend.ps1         用 PyInstaller 构建后端 sidecar (core.exe)
-  build-ocr-sidecar.ps1     构建 OCR sidecar
   package-app.ps1           构建 Tauri 应用
   package-portable.ps1      制作便携版 ZIP
   release.ps1               完整发布流程（调用上述脚本 + 签名 + manifest）
@@ -325,9 +303,8 @@ scripts/
 
 `.github/workflows/` 下有三个工作流：
 
-1. **`build-ocr-sidecar-windows`**： OCR sidecar 构建与产物上传。
-2. **`build-windows-exe-quick`**： 快速构建 Tauri EXE（不执行完整测试，不上传 release）。
-3. **`release-windows-portable`**： **完整发布流程**，触发条件为 `v*` 标签或手动触发。
+1. **`build-windows-exe-quick`**： 快速构建 Tauri EXE（不执行完整测试，不上传 release）。
+2. **`release-windows-portable`**： **完整发布流程**，触发条件为 `v*` 标签或手动触发。
    - 执行前端/后端/Rust/脚本全部测试
    - 下载并准备嵌入运行时
    - 构建后端 sidecar
@@ -360,8 +337,6 @@ scripts/
     <session-id>.compactions.jsonl  压缩审计记录
   logs/
     <session-id>.jsonl          运行事件时间线
-  cache/
-    ocr/                        OCR 结果缓存
   skills/                       工作区级别 skills
 ```
 
@@ -371,16 +346,12 @@ scripts/
 
 - 工作区列表
 - 当前工作区
-- 设置配置（模型、runtime、tools、skills、OCR、Reference Library、UI）
+- 设置配置（模型、runtime、tools、skills、Reference Library、UI）
 - 会话元数据缓存
 
 ### 9.3 Rust 本地数据
 
 - Tauri 的 `app_data_dir` 和 `app_log_dir` 用于存放 updater 日志、本地策略文件等。
-- OCR sidecar 安装目录：`<app_dir>/ocr-sidecar/current`
-
----
-
 ## 10. 关键外部依赖
 
 ### 10.1 前端
@@ -400,24 +371,14 @@ scripts/
 - `pymupdf==1.27.2.2`, `pymupdf4llm==1.27.2.2`
 - `python-docx>=1.1.0`, `openpyxl>=3.1.0`, `python-pptx>=0.6.23`
 
-### 10.3 OCR Sidecar
-
-- `paddleocr>=3.2.0,<4`
-- `paddlepaddle>=3.2.0,<4`
-- `paddlex[ocr-core]>=3.2.0,<4`
-- `Pillow>=10.0.0`, `numpy>=1.26.0,<3`
-
----
-
 ## 11. 给 Agent 的特别提醒
 
 1. **不要假设 updater 可用**：默认配置下 endpoints 为空，修改 updater 相关逻辑时要考虑此默认状态。
-2. **不要假设 OCR 已安装**：OCR 是可选组件，`ocr_extract` 工具仅在 sidecar 存在且设置中启用时才注册/展示。
-3. **场景切换限制**：session 一旦开始对话（有了 user/assistant 消息），场景不可再切换。后端会拒绝非空 session 的场景变更。
-4. **锁模机制**：session 在第一条消息发送后会锁定到当前对话模型（provider + model），后续该 session 不能换模型。
-5. **开发优先用 `./dev.sh`**：避免手动遗漏后端启动步骤。
-6. **修改 PowerShell 脚本后请同步运行脚本测试**：发布脚本有专门的 Pester 测试，在 CI 中会被执行。
-7. **不要修改 `.gitignore` 中已忽略的构建产物目录**：如 `dist/`、`src-tauri/resources/runtimes/`、`artifacts/`、`.venv` 等。
+2. **场景切换限制**：session 一旦开始对话（有了 user/assistant 消息），场景不可再切换。后端会拒绝非空 session 的场景变更。
+3. **锁模机制**：session 在第一条消息发送后会锁定到当前对话模型（provider + model），后续该 session 不能换模型。
+4. **开发优先用 `./dev.sh`**：避免手动遗漏后端启动步骤。
+5. **修改 PowerShell 脚本后请同步运行脚本测试**：发布脚本有专门的 Pester 测试，在 CI 中会被执行。
+6. **不要修改 `.gitignore` 中已忽略的构建产物目录**：如 `dist/`、`src-tauri/resources/runtimes/`、`artifacts/`、`.venv` 等。
 
 ---
 

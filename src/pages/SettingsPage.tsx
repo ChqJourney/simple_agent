@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { ProviderConfigForm } from '../components/Settings/ProviderConfig';
@@ -20,7 +20,6 @@ import {
   normalizeBaseFontSize,
   normalizeBaseUrl,
   normalizeContextProviders,
-  normalizeOcrConfig,
   normalizeProviderCatalog,
   normalizeProviderMemory,
   normalizeProviderConfig,
@@ -32,14 +31,21 @@ import {
 import { buildBackendAuthHeaders, getBackendAuthToken } from '../utils/backendAuth';
 import { backendTestConfigUrl } from '../utils/backendEndpoint';
 import { getDefaultContextLength } from '../utils/modelCapabilities';
-import { inspectOcrSidecarInstallation, installOcrSidecar, OcrSidecarInstallInfo } from '../utils/ocr';
+import {
+  fetchReferenceIndexBuildProgress,
+  fetchReferenceIndexStatus,
+  ReferenceIndexBuildProgress,
+  ReferenceIndexBuildMode,
+  ReferenceIndexStatus,
+  startReferenceIndexBuild,
+} from '../utils/referenceIndex';
 import { listSystemSkills, SkillEntry } from '../utils/systemSkills';
 import { listTools, ToolCatalogEntry } from '../utils/toolCatalog';
-import { AppLocale, useI18n } from '../i18n';
+import { AppLocale, translate, useI18n } from '../i18n';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 type ProfileName = 'primary' | 'background';
-type SettingsTab = 'model' | 'runtime' | 'tools' | 'skills' | 'reference' | 'ocr' | 'ui';
+type SettingsTab = 'model' | 'runtime' | 'tools' | 'skills' | 'reference' | 'ui';
 type RuntimeSectionKey = 'shared' | 'conversation' | 'background' | 'compaction' | 'delegated_task';
 
 interface ConnectionTestState {
@@ -47,15 +53,17 @@ interface ConnectionTestState {
   error: string | null;
 }
 
-interface OcrInstallState {
-  loading: boolean;
-  installing: boolean;
-  error: string | null;
-  info: OcrSidecarInstallInfo | null;
-}
-
 interface AuthorizedReferenceLibraryPath {
   canonical_path: string;
+}
+
+interface ReferenceIndexUiState {
+  loading: boolean;
+  building: boolean;
+  status: ReferenceIndexStatus | null;
+  buildProgress: ReferenceIndexBuildProgress | null;
+  error: string | null;
+  notice: string | null;
 }
 
 const APP_FONT_LABEL = 'Inter';
@@ -69,6 +77,10 @@ const SETTINGS_PANEL_CLASS =
   'rounded-2xl border border-slate-200/70 bg-slate-50/85 p-4 dark:border-slate-700/70 dark:bg-slate-900/35';
 const SETTINGS_ROW_CLASS =
   'rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-700/80 dark:bg-gray-950/18';
+
+const rootSupportsStandardIndex = (root: ReferenceLibraryRoot): boolean => (
+  !root.kinds || root.kinds.includes('standard')
+);
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -92,13 +104,9 @@ export const SettingsPage: React.FC = () => {
   const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
   const [toolsLoading, setToolsLoading] = useState(true);
   const [toolsError, setToolsError] = useState<string | null>(null);
-  const [ocrInstallState, setOcrInstallState] = useState<OcrInstallState>({
-    loading: true,
-    installing: false,
-    error: null,
-    info: null,
-  });
   const [referenceLibraryError, setReferenceLibraryError] = useState<string | null>(null);
+  const [referenceIndexStates, setReferenceIndexStates] = useState<Record<string, ReferenceIndexUiState>>({});
+  const isMountedRef = useRef(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const settingsTabs: Array<{ value: SettingsTab; label: string; description: string }> = [
     { value: 'model', label: t('settings.tab.model'), description: t('settings.tab.modelDescription') },
@@ -106,7 +114,6 @@ export const SettingsPage: React.FC = () => {
     { value: 'tools', label: t('settings.tab.tools'), description: t('settings.tab.toolsDescription') },
     { value: 'skills', label: t('settings.tab.skills'), description: t('settings.tab.skillsDescription') },
     { value: 'reference', label: t('settings.tab.reference'), description: t('settings.tab.referenceDescription') },
-    { value: 'ocr', label: t('settings.tab.ocr'), description: t('settings.tab.ocrDescription') },
     { value: 'ui', label: t('settings.tab.ui'), description: t('settings.tab.uiDescription') },
   ];
   const themeOptions = [
@@ -160,6 +167,13 @@ export const SettingsPage: React.FC = () => {
       fields: delegatedTaskRuntimeFieldConfig,
     },
   ];
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setDraftConfig(config || {});
@@ -226,52 +240,16 @@ export const SettingsPage: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadOcrInstallInfo = async () => {
-      setOcrInstallState((current) => ({
-        ...current,
-        loading: true,
-        error: null,
-      }));
-
-      try {
-        const info = await inspectOcrSidecarInstallation();
-        if (!cancelled) {
-          setOcrInstallState({
-            loading: false,
-            installing: false,
-            error: null,
-            info,
-          });
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setOcrInstallState({
-            loading: false,
-            installing: false,
-            error: error instanceof Error ? error.message : t('settings.error.inspectOcr'),
-            info: null,
-          });
-        }
-      }
-    };
-
-    void loadOcrInstallInfo();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const primaryProfile: Partial<ModelProfile> = draftConfig.profiles?.primary || draftConfig;
   const backgroundProfile: Partial<ModelProfile> = draftConfig.profiles?.background || {};
   const providerMemory = normalizeProviderMemory(draftConfig.provider_memory);
   const providerCatalog = normalizeProviderCatalog(draftConfig.provider_catalog);
   const contextProviders = normalizeContextProviders(draftConfig.context_providers);
-  const ocrConfig = normalizeOcrConfig(draftConfig.ocr);
   const referenceLibrary = normalizeReferenceLibraryConfig(draftConfig.reference_library);
   const referenceLibraryRoots = referenceLibrary.roots;
+  const referenceLibraryRootsSignature = referenceLibraryRoots
+    .map((root) => `${root.id}:${root.path}:${root.enabled}:${(root.kinds || []).join(',')}`)
+    .join('|');
   const disabledToolNames = new Set(contextProviders.tools?.disabled ?? []);
   const disabledSystemSkillNames = new Set(contextProviders.skills?.system?.disabled ?? []);
   const referenceLibraryKindOptions: Array<{ value: ReferenceLibraryKind; label: string }> = [
@@ -279,6 +257,133 @@ export const SettingsPage: React.FC = () => {
     { value: 'checklist', label: t('settings.reference.kind.checklist') },
     { value: 'guidance', label: t('settings.reference.kind.guidance') },
   ];
+  const setReferenceIndexState = useCallback((rootId: string, updates: Partial<ReferenceIndexUiState>) => {
+    setReferenceIndexStates((current) => ({
+      ...current,
+      [rootId]: {
+        ...(current[rootId] ?? {
+          loading: false,
+          building: false,
+          status: null,
+          buildProgress: null,
+          error: null,
+          notice: null,
+        }),
+        ...updates,
+      },
+    }));
+  }, []);
+
+  const referenceIndexLoadErrorMessage = translate(currentLocale, 'settings.reference.index.loadError');
+  const referenceIndexBuildErrorMessage = translate(currentLocale, 'settings.reference.index.buildError');
+  const referenceIndexProgressErrorMessage = translate(currentLocale, 'settings.reference.index.progressError');
+
+  const refreshReferenceIndexStatus = useCallback(async (root: ReferenceLibraryRoot) => {
+    if (!rootSupportsStandardIndex(root)) {
+      return;
+    }
+
+    setReferenceIndexState(root.id, { loading: true, error: null });
+    try {
+      const status = await fetchReferenceIndexStatus(root);
+      setReferenceIndexState(root.id, { loading: false, status, error: null });
+    } catch (error) {
+      setReferenceIndexState(
+        root.id,
+        {
+          loading: false,
+          status: null,
+          error: error instanceof Error ? error.message : referenceIndexLoadErrorMessage,
+        }
+      );
+    }
+  }, [referenceIndexLoadErrorMessage, setReferenceIndexState]);
+
+  const handleBuildReferenceIndex = useCallback(async (root: ReferenceLibraryRoot, mode: ReferenceIndexBuildMode) => {
+    setReferenceIndexState(root.id, { building: true, buildProgress: null, error: null, notice: null });
+    try {
+      let progress = await startReferenceIndexBuild(root, mode);
+      if (!isMountedRef.current) {
+        return;
+      }
+      setReferenceIndexState(root.id, { buildProgress: progress, error: null, notice: null });
+
+      while (progress.status === 'queued' || progress.status === 'running') {
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
+        progress = await fetchReferenceIndexBuildProgress(progress.build_id);
+        if (!isMountedRef.current) {
+          return;
+        }
+        setReferenceIndexState(root.id, { buildProgress: progress, error: null });
+      }
+
+      if (progress.status === 'completed' && progress.result && progress.index_status) {
+        setReferenceIndexState(
+          root.id,
+          {
+            building: false,
+            buildProgress: progress,
+            status: progress.index_status,
+            error: null,
+            notice: t('settings.reference.index.buildSuccess', {
+              created: progress.result.counts.created,
+              updated: progress.result.counts.updated,
+              removed: progress.result.counts.removed,
+            }),
+          }
+        );
+        return;
+      }
+
+      setReferenceIndexState(
+        root.id,
+        {
+          building: false,
+          buildProgress: progress,
+          error: progress.error || referenceIndexBuildErrorMessage,
+        }
+      );
+    } catch (error) {
+      if (!isMountedRef.current) {
+        return;
+      }
+      setReferenceIndexState(
+        root.id,
+        {
+          building: false,
+          error: error instanceof Error ? error.message : referenceIndexProgressErrorMessage,
+        }
+      );
+    }
+  }, [referenceIndexBuildErrorMessage, referenceIndexProgressErrorMessage, setReferenceIndexState, t]);
+
+  useEffect(() => {
+    const standardRoots = referenceLibraryRoots.filter((root) => rootSupportsStandardIndex(root));
+    if (standardRoots.length === 0) {
+      setReferenceIndexStates({});
+      return;
+    }
+
+    let cancelled = false;
+    const activeRootIds = new Set(standardRoots.map((root) => root.id));
+    setReferenceIndexStates((current) => {
+      const nextEntries = Object.entries(current).filter(([rootId]) => activeRootIds.has(rootId));
+      return Object.fromEntries(nextEntries);
+    });
+
+    void Promise.all(
+      standardRoots.map(async (root) => {
+        if (cancelled) {
+          return;
+        }
+        await refreshReferenceIndexStatus(root);
+      })
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [referenceLibraryRootsSignature, refreshReferenceIndexStatus]);
   const handleProviderCatalogLoaded = useCallback((provider: ProviderType, models: ProviderCatalogModel[]) => {
     setDraftConfig((currentDraft) => ({
       ...currentDraft,
@@ -743,7 +848,6 @@ export const SettingsPage: React.FC = () => {
         base_font_size: normalizeBaseFontSize(draftBaseFontSize),
       },
       context_providers: contextProviders,
-      ocr: ocrConfig,
       reference_library: referenceLibrary,
     });
 
@@ -751,49 +855,6 @@ export const SettingsPage: React.FC = () => {
     setConfig(normalizedConfig);
     sendConfig(normalizedConfig);
     navigate(-1);
-  };
-
-  const handleInstallOcr = async () => {
-    setOcrInstallState((current) => ({
-      ...current,
-      installing: true,
-      error: null,
-    }));
-
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: t('settings.ocr.selectFolderTitle'),
-      });
-
-      if (!selected || Array.isArray(selected)) {
-        setOcrInstallState((current) => ({
-          ...current,
-          installing: false,
-        }));
-        return;
-      }
-
-      const info = await installOcrSidecar(selected);
-      setOcrInstallState({
-        loading: false,
-        installing: false,
-        error: null,
-        info,
-      });
-
-      if (config?.ocr?.enabled) {
-        sendConfig(config);
-      }
-    } catch (error) {
-      setOcrInstallState((current) => ({
-        ...current,
-        installing: false,
-        error: error instanceof Error ? error.message : t('settings.error.installOcr'),
-      }));
-    }
   };
 
   const renderTabContent = () => {
@@ -1195,7 +1256,42 @@ export const SettingsPage: React.FC = () => {
                 </div>
               )}
 
-              {referenceLibraryRoots.map((root) => (
+              {referenceLibraryRoots.map((root) => {
+                const supportsStandardIndex = rootSupportsStandardIndex(root);
+                const indexState = referenceIndexStates[root.id];
+                const indexStatus = indexState?.status;
+                const buildProgress = indexState?.buildProgress;
+                const isIndexBusy = Boolean(indexState?.loading || indexState?.building);
+                const pending = indexStatus?.pending;
+                const progressPercent = Math.max(0, Math.min(100, buildProgress?.progress_percent ?? 0));
+                const hasPendingChanges = Boolean(
+                  pending && (pending.new > 0 || pending.updated > 0 || pending.removed > 0)
+                );
+                const statusLabel = indexStatus?.status === 'ready'
+                  ? t('settings.reference.index.status.ready')
+                  : indexStatus?.status === 'stale'
+                    ? t('settings.reference.index.status.needsUpdate')
+                    : indexStatus?.status === 'missing_root'
+                      ? t('settings.reference.index.status.missingRoot')
+                      : t('settings.reference.index.status.unavailable');
+                const statusHint = indexStatus?.status === 'ready'
+                  ? t('settings.reference.index.hint.ready')
+                  : indexStatus?.status === 'stale'
+                    ? hasPendingChanges && pending
+                      ? t('settings.reference.index.hint.needsUpdateWithCounts', {
+                        newCount: pending.new,
+                        updated: pending.updated,
+                        removed: pending.removed,
+                      })
+                      : t('settings.reference.index.hint.needsUpdate')
+                    : indexStatus?.status === 'missing_root'
+                      ? t('settings.reference.index.hint.missingRoot')
+                      : t('settings.reference.index.hint.unavailable');
+                const primaryActionLabel = indexStatus?.exists
+                  ? t('settings.reference.index.update')
+                  : t('settings.reference.index.create');
+
+                return (
                 <div key={root.id} className={SETTINGS_ROW_CLASS}>
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0 flex-1 space-y-4">
@@ -1269,106 +1365,118 @@ export const SettingsPage: React.FC = () => {
                       })}
                     </div>
                   </div>
+
+                  {supportsStandardIndex && (
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/85 p-4 dark:border-slate-700/70 dark:bg-slate-900/35">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                            {t('settings.reference.index.title')}
+                          </div>
+                          <p className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {isIndexBusy ? t('settings.reference.index.building') : statusLabel}
+                          </p>
+                          {isIndexBusy && buildProgress && (
+                            <div className="mt-3 space-y-2">
+                              <div className="flex items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                                <span>{buildProgress.detail || t('settings.reference.index.progressPending')}</span>
+                                <span>{progressPercent}%</span>
+                              </div>
+                              <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                                <div
+                                  className="h-full rounded-full bg-blue-500 transition-[width] duration-300 ease-out"
+                                  style={{ width: `${progressPercent}%` }}
+                                  role="progressbar"
+                                  aria-valuemin={0}
+                                  aria-valuemax={100}
+                                  aria-valuenow={progressPercent}
+                                  aria-label={t('settings.reference.index.progressAriaLabel')}
+                                />
+                              </div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {t('settings.reference.index.progressCounts', {
+                                  processed: buildProgress.processed_documents,
+                                  total: buildProgress.total_documents,
+                                })}
+                              </p>
+                              {buildProgress.current_document?.relative_path && (
+                                <p className="break-all font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                                  {buildProgress.current_document.relative_path}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          {!isIndexBusy && (
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                              {statusHint}
+                            </p>
+                          )}
+                          {indexStatus && (
+                            <div className="mt-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                              <p>
+                                {t('settings.reference.index.counts', {
+                                  files: indexStatus.document_count,
+                                  indexed: indexStatus.indexed_document_count,
+                                })}
+                              </p>
+                              {indexStatus.last_built_at && (
+                                <p>
+                                  {t('settings.reference.index.lastBuilt', { timestamp: indexStatus.last_built_at })}
+                                </p>
+                              )}
+                              {hasPendingChanges && pending && (
+                                <p>
+                                  {t('settings.reference.index.pending', {
+                                    newCount: pending.new,
+                                    updated: pending.updated,
+                                    removed: pending.removed,
+                                  })}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={isIndexBusy}
+                            onClick={() => void handleBuildReferenceIndex(root, 'incremental')}
+                            className="rounded-xl border border-gray-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700/80 dark:text-gray-200 dark:hover:bg-gray-800/80"
+                          >
+                            {primaryActionLabel}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isIndexBusy}
+                            onClick={() => void handleBuildReferenceIndex(root, 'rebuild')}
+                            className="rounded-xl border border-gray-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700/80 dark:text-gray-200 dark:hover:bg-gray-800/80"
+                          >
+                            {t('settings.reference.index.rebuild')}
+                          </button>
+                        </div>
+                      </div>
+
+                      {indexState?.notice && (
+                        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
+                          {indexState.notice}
+                        </div>
+                      )}
+
+                      {indexState?.error && (
+                        <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+                          {indexState.error}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
+              );})}
             </div>
 
             {referenceLibraryError && (
               <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
                 {referenceLibraryError}
-              </div>
-            )}
-          </section>
-        </div>
-      );
-    }
-
-    if (activeTab === 'ocr') {
-      return (
-        <div className="space-y-6">
-          <section className={SETTINGS_CARD_CLASS}>
-            <div className="mb-4">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ocr.title')}</h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {t('settings.ocr.description')}
-              </p>
-            </div>
-
-            <div className={SETTINGS_PANEL_CLASS}>
-              <div>
-                <label htmlFor="enable-ocr" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('settings.ocr.enableTooling')}
-                </label>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {t('settings.ocr.enableToolingDescription')}
-                </p>
-              </div>
-              <input
-                id="enable-ocr"
-                type="checkbox"
-                checked={ocrConfig.enabled}
-                onChange={(e) =>
-                  setDraftConfig({
-                    ...draftConfig,
-                    ocr: {
-                      enabled: e.target.checked,
-                    },
-                  })
-                }
-                className="h-5 w-5 rounded border-gray-300 dark:border-gray-600"
-              />
-            </div>
-          </section>
-
-          <section className={SETTINGS_CARD_CLASS}>
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">{t('settings.ocr.installationTitle')}</h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {t('settings.ocr.installationDescription')}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleInstallOcr}
-                disabled={ocrInstallState.installing}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-slate-100"
-              >
-                {ocrInstallState.installing ? t('settings.ocr.installing') : t('settings.ocr.installButton')}
-              </button>
-            </div>
-
-            <div className={`${SETTINGS_PANEL_CLASS} space-y-3`}>
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  {t('settings.ocr.installStatus')}
-                </div>
-                <div className="mt-2 text-sm text-gray-900 dark:text-gray-100">
-                  {ocrInstallState.loading
-                    ? t('settings.ocr.checking')
-                    : ocrInstallState.info?.installed
-                      ? `${t('settings.ocr.installed')}${ocrInstallState.info.version ? ` (v${ocrInstallState.info.version})` : ''}`
-                      : t('settings.ocr.notInstalled')}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  {t('settings.ocr.targetDirectory')}
-                </div>
-                <div className="mt-2 break-all font-mono text-sm text-gray-900 dark:text-gray-100">
-                  {ocrInstallState.info?.installDir || t('common.unavailable')}
-                </div>
-              </div>
-
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                {t('settings.ocr.chooseFolder')}
-              </div>
-            </div>
-
-            {ocrInstallState.error && (
-              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
-                {ocrInstallState.error}
               </div>
             )}
           </section>

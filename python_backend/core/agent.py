@@ -12,6 +12,7 @@ from llms.base import BaseLLM
 from runtime.contracts import ReplayPlan, SessionCompactionRecord, SessionMemorySnapshot
 from runtime.events import RunEvent
 from runtime.logs import append_run_event
+from runtime.reference_index import reference_root_catalog_path
 from skills.base import SkillProvider, SkillSummary
 from tools.base import BaseTool, ToolRegistry, ToolResult
 from tools.shell_execute import ShellExecuteTool
@@ -388,6 +389,66 @@ class Agent:
 
     @staticmethod
     def _serialize_tool_message_content(content: Any) -> str:
+        if isinstance(content, dict) and content.get("event") == "standard_catalog_search_results":
+            query = str(content.get("query") or "").strip()
+            summary = content.get("summary") if isinstance(content.get("summary"), dict) else {}
+            results = content.get("results") if isinstance(content.get("results"), list) else []
+            recommended_actions = (
+                content.get("recommended_next_actions")
+                if isinstance(content.get("recommended_next_actions"), list)
+                else []
+            )
+
+            lines = [
+                f"Standard catalog search results for: {query or '(empty query)'}",
+                (
+                    "Summary: "
+                    f"{int(summary.get('hit_count') or 0)} candidate standard(s) "
+                    f"from {int(summary.get('indexed_document_count') or 0)} indexed document(s) "
+                    f"across {int(summary.get('indexed_root_count') or 0)} catalog root(s)."
+                ),
+            ]
+
+            if recommended_actions:
+                lines.append("Recommended next actions:")
+                for index, action in enumerate(recommended_actions[:3], start=1):
+                    tool = str(action.get("tool") or "").strip() or "inspect_document"
+                    path = str(action.get("path") or "").strip()
+                    reason = str(action.get("reason") or "").strip()
+                    standard_code = str(action.get("standard_code") or "").strip()
+                    page_start = action.get("page_start")
+                    page_end = action.get("page_end")
+                    page_hint = ""
+                    if isinstance(page_start, int) and isinstance(page_end, int):
+                        page_hint = f" pages {page_start}-{page_end}"
+                    lines.append(
+                        f"{index}. Use `{tool}` on `{path}`{page_hint} for "
+                        f"{standard_code or 'the top candidate'} because {reason or 'it is the best match'}"
+                    )
+
+            if results:
+                lines.append("Top candidate standards:")
+                for index, item in enumerate(results[:5], start=1):
+                    standard_code = str(item.get("standard_code") or "").strip() or "(unknown code)"
+                    title = str(item.get("title") or "").strip() or "(untitled)"
+                    path = str(item.get("path") or "").strip()
+                    score = item.get("score")
+                    scope_summary = str(item.get("scope_summary") or "").strip()
+                    follow_up = item.get("recommended_follow_up") if isinstance(item.get("recommended_follow_up"), dict) else {}
+                    follow_up_tool = str(follow_up.get("tool") or "").strip()
+                    follow_up_reason = str(follow_up.get("reason") or "").strip()
+                    lines.append(
+                        f"{index}. {standard_code}: {title} (score={score}, path={path})"
+                    )
+                    if scope_summary:
+                        lines.append(f"   Scope summary: {scope_summary}")
+                    if follow_up_tool:
+                        lines.append(
+                            f"   Next: `{follow_up_tool}` because {follow_up_reason or 'it is the recommended follow-up'}"
+                        )
+
+            return "\n".join(lines)
+
         if isinstance(content, str):
             return content
         if isinstance(content, (dict, list, int, float, bool)) or content is None:
@@ -1331,6 +1392,10 @@ class Agent:
             prompt_sections.append(self._format_scenario_prompt_section(self.scenario_system_prompt))
 
         prompt_sections.append(self._format_runtime_environment_section(session))
+        if self.reference_library_roots and self._is_tool_available_to_model("search_standard_catalog"):
+            prompt_sections.append(
+                self._format_reference_catalog_guidance_section(self.reference_library_roots)
+            )
         if self._is_tool_available_to_model("delegate_task"):
             prompt_sections.append(self._format_delegation_guidance_section())
 
@@ -1728,6 +1793,20 @@ class Agent:
                 "- Expect the delegated worker to return a concise `summary` plus structured `data`.",
             ]
         )
+
+    @staticmethod
+    def _format_reference_catalog_guidance_section(reference_library_roots: List[str]) -> str:
+        lines = [
+            "Reference-library routing guidance:",
+            "- When a catalog file exists for a reference-library root, use `search_standard_catalog` first to shortlist candidate standards before opening large PDFs.",
+            "- After identifying a likely standard, inspect its structure with `pdf_get_info`, `pdf_get_outline`, or `get_document_structure` before broad page reads.",
+            "- Use targeted reads such as `pdf_read_lines`, `read_document_segment`, or a narrow `pdf_read_pages` range to confirm the relevant clause.",
+            "- Fall back to `search_documents` only when the catalog is unavailable, stale, or too coarse for the question.",
+        ]
+        for root_path in reference_library_roots:
+            catalog_path = reference_root_catalog_path(root_path)
+            lines.append(f"- Catalog path: {catalog_path}")
+        return "\n".join(lines)
 
     @staticmethod
     def _format_skill_catalog_section(skills: List[SkillSummary]) -> str:

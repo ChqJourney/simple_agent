@@ -4,7 +4,6 @@ import {
   ExecutionRole,
   InputType,
   ModelProfile,
-  OcrConfig,
   ProviderCatalogModel,
   ProviderConfig,
   ProviderMemoryEntry,
@@ -42,10 +41,6 @@ export const MAX_BASE_FONT_SIZE = 20;
 
 export const DEFAULT_APPEARANCE_CONFIG: Required<AppearanceConfig> = {
   base_font_size: 16,
-};
-
-export const DEFAULT_OCR_CONFIG: Required<OcrConfig> = {
-  enabled: false,
 };
 
 const SUPPORTED_PROVIDERS: ProviderType[] = ['openai', 'deepseek', 'kimi', 'glm', 'minimax', 'qwen'];
@@ -88,12 +83,6 @@ export function normalizeContextProviders(contextProviders?: ContextProviderConf
     tools: {
       disabled: normalizeDisabledList(contextProviders?.tools?.disabled),
     },
-  };
-}
-
-export function normalizeOcrConfig(ocr?: OcrConfig): Required<OcrConfig> {
-  return {
-    enabled: ocr?.enabled ?? DEFAULT_OCR_CONFIG.enabled,
   };
 }
 
@@ -401,7 +390,6 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
     : undefined;
 
   return {
-    ...config,
     ...primaryProfile,
     profiles: {
       primary: primaryProfile,
@@ -413,7 +401,6 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
     runtime: normalizeRuntimeConfig(config.runtime),
     appearance: normalizeAppearanceConfig(config.appearance),
     context_providers: normalizeContextProviders(config.context_providers),
-    ocr: normalizeOcrConfig(config.ocr),
     reference_library: normalizeReferenceLibraryConfig(config.reference_library),
   };
 }

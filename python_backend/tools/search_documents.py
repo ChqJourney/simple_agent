@@ -9,6 +9,7 @@ from document_readers.excel_reader import search_excel_workbook
 from document_readers.pdf_reader import ExtractionOptions, PdfReader
 from document_readers.pptx_reader import search_pptx_document
 from document_readers.word_reader import search_word_document
+from runtime.reference_index import reference_root_catalog_path
 
 from .base import BaseTool, ToolResult
 from .path_utils import resolve_workspace_path
@@ -111,6 +112,36 @@ class SearchDocumentsTool(BaseTool):
         "required": ["query"],
         "additionalProperties": False,
     }
+
+    @staticmethod
+    def _matching_reference_root_with_catalog(
+        root_path: Path,
+        reference_library_roots: Optional[list[str]],
+    ) -> Optional[Path]:
+        if not root_path.is_dir():
+            return None
+
+        for candidate_root in reference_library_roots or []:
+            reference_root = Path(candidate_root).resolve()
+            if root_path != reference_root:
+                continue
+            if reference_root_catalog_path(reference_root).exists():
+                return reference_root
+        return None
+
+    @staticmethod
+    def _should_route_to_standard_catalog_first(
+        *,
+        root_path: Path,
+        file_glob: Optional[str],
+        reference_library_roots: Optional[list[str]],
+    ) -> Optional[Path]:
+        if file_glob and "pdf" not in file_glob.lower():
+            return None
+        return SearchDocumentsTool._matching_reference_root_with_catalog(
+            root_path,
+            reference_library_roots,
+        )
 
     @staticmethod
     def _document_type(path: Path) -> str:
@@ -610,6 +641,25 @@ class SearchDocumentsTool(BaseTool):
                 success=False,
                 output=None,
                 error=f"Path not found: {path}",
+            )
+
+        catalog_reference_root = self._should_route_to_standard_catalog_first(
+            root_path=root_path,
+            file_glob=file_glob,
+            reference_library_roots=reference_library_roots,
+        )
+        if catalog_reference_root is not None:
+            catalog_path = reference_root_catalog_path(catalog_reference_root)
+            return ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=self.name,
+                success=False,
+                output=None,
+                error=(
+                    "A standard catalog already exists for this reference-library root. "
+                    "Use search_standard_catalog first to shortlist the right standard file, "
+                    f"then search or read the chosen PDF directly. Catalog path: {catalog_path}"
+                ),
             )
 
         try:

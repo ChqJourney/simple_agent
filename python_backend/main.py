@@ -391,11 +391,11 @@ async def _start_reference_index_build(
         }
         runtime_state.reference_index_builds[build_id] = build_state
 
-    task = asyncio.create_task(
-        _run_reference_index_build_task(build_id, root_id, resolved_root_path, mode)
+    task = _register_pending_task(
+        asyncio.create_task(
+            _run_reference_index_build_task(build_id, root_id, resolved_root_path, mode)
+        )
     )
-    runtime_state.pending_tasks.add(task)
-    task.add_done_callback(_forget_task)
     return _serialize_reference_index_build(build_state)
 
 
@@ -731,6 +731,21 @@ def create_llm(config: Dict[str, Any]) -> BaseLLM:
     return create_llm_for_execution_spec(execution_spec)
 
 
+def _register_pending_task(
+    task: asyncio.Task,
+    *,
+    connection_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> asyncio.Task:
+    runtime_state.pending_tasks.add(task)
+    if connection_id:
+        runtime_state.task_connections[task] = connection_id
+    if session_id:
+        runtime_state.task_sessions[task] = session_id
+    task.add_done_callback(_forget_task)
+    return task
+
+
 def _forget_task(task: asyncio.Task) -> None:
     runtime_state.pending_tasks.discard(task)
     connection_id = runtime_state.task_connections.pop(task, None)
@@ -751,7 +766,11 @@ def _forget_task(task: asyncio.Task) -> None:
         llm = getattr(agent, "llm", None) if agent is not None else None
         if llm is not None:
             try:
-                asyncio.get_running_loop().create_task(_close_llm_instance(llm))
+                _register_pending_task(
+                    asyncio.get_running_loop().create_task(_close_llm_instance(llm)),
+                    connection_id=connection_id,
+                    session_id=session_id,
+                )
             except RuntimeError:
                 logger.debug(
                     "No running loop available to close agent llm for session %s",
@@ -955,15 +974,14 @@ async def _schedule_background_compaction_task(
         if existing_task is not None and not existing_task.done():
             return
 
-        task = asyncio.create_task(
-            _run_background_compaction_task(agent, session, trigger_run_id)
+        task = _register_pending_task(
+            asyncio.create_task(
+                _run_background_compaction_task(agent, session, trigger_run_id)
+            ),
+            connection_id=connection_id,
+            session_id=session.session_id,
         )
-        runtime_state.pending_tasks.add(task)
         runtime_state.active_session_compaction_tasks[session.session_id] = task
-        runtime_state.task_sessions[task] = session.session_id
-        if connection_id:
-            runtime_state.task_connections[task] = connection_id
-        task.add_done_callback(_forget_task)
 
 
 async def get_or_create_agent(
@@ -1427,18 +1445,26 @@ async def handle_user_message(
         agent.reset_interrupt()
 
         if isinstance(attachments, list) and attachments:
-            task = asyncio.create_task(
-                run_agent_task(
-                    agent,
-                    normalized_content,
-                    session,
-                    send_callback,
-                    attachments=attachments,
-                )
+            task = _register_pending_task(
+                asyncio.create_task(
+                    run_agent_task(
+                        agent,
+                        normalized_content,
+                        session,
+                        send_callback,
+                        attachments=attachments,
+                    )
+                ),
+                connection_id=connection_id,
+                session_id=session_id,
             )
         else:
-            task = asyncio.create_task(
-                run_agent_task(agent, normalized_content, session, send_callback)
+            task = _register_pending_task(
+                asyncio.create_task(
+                    run_agent_task(agent, normalized_content, session, send_callback)
+                ),
+                connection_id=connection_id,
+                session_id=session_id,
             )
 
         should_generate_title = bool(normalized_content.strip()) and not session.title
@@ -1447,24 +1473,18 @@ async def handle_user_message(
             background_spec = build_execution_spec(current_config, "background")
             title_llm = create_llm_for_execution_spec(background_spec)
             if callable(getattr(title_llm, "complete", None)):
-                title_task = asyncio.create_task(
-                    _run_title_task_with_cleanup(
-                        session, title_llm, normalized_content, send_callback
-                    )
+                title_task = _register_pending_task(
+                    asyncio.create_task(
+                        _run_title_task_with_cleanup(
+                            session, title_llm, normalized_content, send_callback
+                        )
+                    ),
+                    connection_id=connection_id,
+                    session_id=session_id,
                 )
 
         async with state_lock:
-            runtime_state.pending_tasks.add(task)
             runtime_state.active_session_tasks[session_id] = task
-            runtime_state.task_connections[task] = connection_id
-            runtime_state.task_sessions[task] = session_id
-            if title_task is not None:
-                runtime_state.pending_tasks.add(title_task)
-                runtime_state.task_connections[title_task] = connection_id
-                runtime_state.task_sessions[title_task] = session_id
-        task.add_done_callback(_forget_task)
-        if title_task is not None:
-            title_task.add_done_callback(_forget_task)
 
     except Exception as e:
         if session_reserved:

@@ -14,7 +14,7 @@ from runtime.events import RunEvent
 from runtime.logs import append_run_event
 from runtime.reference_index import reference_root_catalog_path
 from skills.base import SkillProvider, SkillSummary
-from tools.base import BaseTool, ToolRegistry, ToolResult
+from tools.base import BaseTool, ToolExecutionError, ToolRegistry, ToolResult
 from tools.shell_execute import ShellExecuteTool
 
 logger = logging.getLogger(__name__)
@@ -868,13 +868,7 @@ class Agent:
                 if isinstance(result, RunInterrupted):
                     raise result
                 if isinstance(result, Exception):
-                    indexed_results[index] = ToolResult(
-                        tool_call_id=call_id,
-                        tool_name=call_name,
-                        success=False,
-                        output=None,
-                        error=str(result)
-                    )
+                    raise result
                 elif isinstance(result, ToolResult):
                     indexed_results[index] = result
 
@@ -1245,15 +1239,15 @@ class Agent:
             return timeout_result
         except RunInterrupted:
             raise
-        except Exception as e:
-            logger.exception(f"Tool execution failed: {tool.name}")
-            safe_error = "Tool execution failed. Check backend logs."
+        except ToolExecutionError as exc:
+            error_message = str(exc).strip() or "Tool execution failed."
             error_result = ToolResult(
                 tool_call_id=tool_call_id,
                 tool_name=tool.name,
                 success=False,
-                output=None,
-                error=safe_error
+                output=exc.output,
+                error=error_message,
+                metadata=dict(exc.metadata),
             )
 
             await self.user_manager.send_to_frontend({
@@ -1262,8 +1256,8 @@ class Agent:
                 "tool_call_id": tool_call_id,
                 "tool_name": tool.name,
                 "success": False,
-                "output": None,
-                "error": safe_error
+                "output": error_result.output,
+                "error": error_message,
             })
             await self._emit_run_event(
                 session,
@@ -1273,13 +1267,18 @@ class Agent:
                     "tool_call_id": tool_call_id,
                     "tool_name": tool.name,
                     "success": False,
-                    "error": safe_error,
+                    "error": error_message,
                 },
             )
             if tool.name == "delegate_task":
-                await self._emit_delegated_task_completed(session, run_id, tool_call_id, error_result)
+                await self._emit_delegated_task_completed(
+                    session, run_id, tool_call_id, error_result
+                )
 
             return error_result
+        except Exception as e:
+            logger.exception(f"Tool execution failed: {tool.name}")
+            raise
 
     async def _resolve_question_tool_result(
         self,

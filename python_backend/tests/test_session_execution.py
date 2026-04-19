@@ -53,6 +53,16 @@ class ClosableLLM:
         self.closed = True
 
 
+class BlockingClosableLLM:
+    def __init__(self) -> None:
+        self.closed = False
+        self.allow_close = asyncio.Event()
+
+    async def aclose(self) -> None:
+        await self.allow_close.wait()
+        self.closed = True
+
+
 class BackgroundCompactionAgent:
     def __init__(self) -> None:
         self.calls = 0
@@ -132,6 +142,11 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         self.blocker.set()
+        for agent in (self.agent_a, self.agent_b):
+            llm = getattr(agent, "llm", None)
+            allow_close = getattr(llm, "allow_close", None)
+            if isinstance(allow_close, asyncio.Event):
+                allow_close.set()
         if backend_main.runtime_state.pending_tasks:
             await asyncio.gather(*backend_main.runtime_state.pending_tasks, return_exceptions=True)
 
@@ -195,6 +210,38 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("session-a", backend_main.runtime_state.active_agents)
         self.assertTrue(closable_llm.closed)
+
+    async def test_completed_task_tracks_agent_llm_close_until_cleanup_finishes(self) -> None:
+        closable_llm = BlockingClosableLLM()
+        self.agent_a.llm = closable_llm
+
+        await backend_main.handle_user_message(
+            {
+                "session_id": "session-a",
+                "content": "alpha",
+                "workspace_path": self.temp_dir.name,
+            },
+            self.send_callback,
+            "conn-a",
+        )
+        await asyncio.sleep(0)
+
+        self.blocker.set()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        self.assertEqual(1, len(backend_main.runtime_state.pending_tasks))
+        pending_task = next(iter(backend_main.runtime_state.pending_tasks))
+        self.assertFalse(pending_task.done())
+
+        closable_llm.allow_close.set()
+        await asyncio.gather(
+            *backend_main.runtime_state.pending_tasks, return_exceptions=True
+        )
+        await asyncio.sleep(0)
+
+        self.assertTrue(closable_llm.closed)
+        self.assertEqual(0, len(backend_main.runtime_state.pending_tasks))
 
     async def test_cleanup_connection_tasks_only_cancels_owned_session_runs(self) -> None:
         await backend_main.handle_user_message(

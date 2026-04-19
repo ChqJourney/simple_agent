@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.agent import Agent
 from core.user import UserManager
-from tools.base import BaseTool, ToolRegistry, ToolResult
+from tools.base import BaseTool, ToolExecutionError, ToolRegistry, ToolResult
 from tools.delegate_task import DelegateTaskTool
 from tools.todo_task import TodoTaskTool
 
@@ -38,6 +38,24 @@ class RequiredTextTool(BaseTool):
             success=True,
             output={"text": text},
         )
+
+
+class ExpectedFailureTool(BaseTool):
+    name = "expected_failure_tool"
+    description = "Tool that fails with a recoverable business error."
+    parameters = {"type": "object", "properties": {}}
+
+    async def execute(self, **kwargs):
+        raise ToolExecutionError("Recoverable tool failure", output={"kind": "expected"})
+
+
+class CrashTool(BaseTool):
+    name = "crash_tool"
+    description = "Tool that crashes unexpectedly."
+    parameters = {"type": "object", "properties": {}}
+
+    async def execute(self, **kwargs):
+        raise RuntimeError("boom")
 
 
 class ToolCallThenDoneLLM:
@@ -185,6 +203,68 @@ class ToolArgumentValidationTests(unittest.IsolatedAsyncioTestCase):
                 and message.get("tool_name") == "delegate_task"
                 and not message.get("success")
                 and "Unexpected argument(s): unexpected" in str(message.get("error", ""))
+                for message in self.frontend_messages
+            )
+        )
+
+    async def test_recoverable_tool_execution_error_returns_failed_tool_result(self) -> None:
+        session = await self.user_manager.create_session(
+            self.temp_dir.name, "session-expected-failure"
+        )
+        await self.user_manager.bind_session_to_connection(
+            "session-expected-failure", "conn-1"
+        )
+
+        registry = ToolRegistry()
+        registry.register(ExpectedFailureTool())
+        agent = Agent(
+            ToolCallThenDoneLLM(tool_name="expected_failure_tool", arguments={}),
+            registry,
+            self.user_manager,
+        )
+
+        await agent.run("trigger expected failure", session)
+
+        self.assertTrue(
+            any(
+                message.get("type") == "tool_result"
+                and message.get("tool_name") == "expected_failure_tool"
+                and not message.get("success")
+                and message.get("error") == "Recoverable tool failure"
+                and message.get("output") == {"kind": "expected"}
+                for message in self.frontend_messages
+            )
+        )
+        self.assertTrue(
+            any(message.get("type") == "completed" for message in self.frontend_messages)
+        )
+
+    async def test_unexpected_tool_exception_fails_the_run_instead_of_returning_tool_result(self) -> None:
+        session = await self.user_manager.create_session(self.temp_dir.name, "session-crash")
+        await self.user_manager.bind_session_to_connection("session-crash", "conn-1")
+
+        registry = ToolRegistry()
+        registry.register(CrashTool())
+        agent = Agent(
+            ToolCallThenDoneLLM(tool_name="crash_tool", arguments={}),
+            registry,
+            self.user_manager,
+        )
+
+        await agent.run("trigger crash", session)
+
+        self.assertTrue(
+            any(
+                message.get("type") == "error"
+                and message.get("session_id") == "session-crash"
+                and message.get("error") == "Agent run failed. Check backend logs."
+                for message in self.frontend_messages
+            )
+        )
+        self.assertFalse(
+            any(
+                message.get("type") == "tool_result"
+                and message.get("tool_name") == "crash_tool"
                 for message in self.frontend_messages
             )
         )

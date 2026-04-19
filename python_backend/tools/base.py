@@ -8,6 +8,19 @@ from .policies import ToolExecutionPolicy
 logger = logging.getLogger(__name__)
 
 
+class ToolExecutionError(Exception):
+    def __init__(
+        self,
+        message: str,
+        *,
+        output: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(message)
+        self.output = output
+        self.metadata = metadata or {}
+
+
 class ToolResult(BaseModel):
     tool_call_id: str
     tool_name: str

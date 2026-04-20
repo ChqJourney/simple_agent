@@ -223,6 +223,39 @@ function Invoke-CheckedProcess {
     }
 }
 
+function Invoke-PipInstallWithRetry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PythonExecutable,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Packages,
+        [string]$WorkingDirectory,
+        [int]$MaxAttempts = 3,
+        [int]$RetryDelaySeconds = 5
+    )
+
+    if ($MaxAttempts -lt 1) {
+        throw "MaxAttempts must be at least 1."
+    }
+
+    $arguments = @("-m", "pip", "install", "--disable-pip-version-check") + $Packages
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            Invoke-CheckedCommand -FilePath $PythonExecutable -Arguments $arguments -WorkingDirectory $WorkingDirectory
+            return
+        }
+        catch {
+            if ($attempt -ge $MaxAttempts) {
+                throw
+            }
+
+            Write-Warning "pip install failed on attempt $attempt/$MaxAttempts. Retrying in $RetryDelaySeconds seconds..."
+            Start-Sleep -Seconds $RetryDelaySeconds
+        }
+    }
+}
+
 function Get-ReleaseVersion {
     param(
         [string]$Version

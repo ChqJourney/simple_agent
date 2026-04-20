@@ -36,7 +36,7 @@ else {
 
 Write-Host "Using build interpreter: $buildPython"
 
-Invoke-CheckedCommand -FilePath $buildPython -Arguments @("-m", "pip", "install", "-r", "requirements.txt", "pyinstaller") -WorkingDirectory $backendRoot
+Invoke-PipInstallWithRetry -PythonExecutable $buildPython -Packages @("-r", "requirements.txt", "pyinstaller") -WorkingDirectory $backendRoot
 
 # Verify that key runtime deps are actually importable before building.
 # PyInstaller silently skips hidden imports that don't exist on the build

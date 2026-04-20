@@ -767,6 +767,34 @@ describe("SettingsPage", () => {
     expect(navigateMock).toHaveBeenCalledWith(-1);
   });
 
+  it("saves a custom model id from the settings form", () => {
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getAllByLabelText("Custom model ID")[0], {
+      target: { value: "gpt-4.1-nano-preview" },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Use model" })[0]);
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(setConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai",
+        model: "gpt-4.1-nano-preview",
+        profiles: expect.objectContaining({
+          primary: expect.objectContaining({
+            provider: "openai",
+            model: "gpt-4.1-nano-preview",
+          }),
+        }),
+      })
+    );
+    expect(sendConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-4.1-nano-preview",
+      })
+    );
+  });
+
   it("remembers api key and base url per provider when switching providers", () => {
     render(<SettingsPage />);
 

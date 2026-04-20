@@ -158,6 +158,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   const [dynamicModels, setDynamicModels] = useState<ProviderCatalogModel[]>([]);
   const [isLoadingDynamicModels, setIsLoadingDynamicModels] = useState(false);
   const [dynamicModelsError, setDynamicModelsError] = useState<string | null>(null);
+  const [customModelInput, setCustomModelInput] = useState('');
 
   const handleChange = (key: keyof ProviderConfig, value: string | boolean) => {
     onChange({ ...config, [key]: value });
@@ -256,25 +257,38 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   const selectedContextLength = provider && config.model
     ? selectedModelMetadata?.context_length ?? getDefaultContextLength(provider, config.model)
     : undefined;
+  const baseModelEntries = useMemo(() => (
+    dynamicModels.length > 0
+      ? dynamicModels
+      : builtInModels.map((modelName) => ({ id: modelName }))
+  ), [builtInModels, dynamicModels]);
+  const baseModelIds = useMemo(() => new Set(baseModelEntries.map((entry) => entry.id)), [baseModelEntries]);
+  const selectedModelIsListed = Boolean(config.model && baseModelIds.has(config.model));
 
   const modelOptions = useMemo(() => {
     if (!provider) {
       return [];
     }
 
-    const baseModels = dynamicModels.length > 0
-      ? dynamicModels
-      : builtInModels.map((modelName) => ({ id: modelName }));
-    const mergedModels = config.model && !baseModels.some((entry) => entry.id === config.model)
-      ? [{ id: config.model }, ...baseModels]
-      : baseModels;
+    const mergedModels = config.model && !baseModelEntries.some((entry) => entry.id === config.model)
+      ? [{ id: config.model }, ...baseModelEntries]
+      : baseModelEntries;
 
     return mergedModels.map((entry) => ({
       value: entry.id,
       label: entry.id,
       hint: buildModelHint(provider, entry.id, t, entry),
     }));
-  }, [builtInModels, config.model, dynamicModels, provider, t]);
+  }, [baseModelEntries, config.model, provider, t]);
+
+  useEffect(() => {
+    if (!config.model || selectedModelIsListed) {
+      setCustomModelInput('');
+      return;
+    }
+
+    setCustomModelInput(config.model);
+  }, [config.model, selectedModelIsListed]);
 
   const modelCatalogStatus = !provider
     ? null
@@ -295,6 +309,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
     : modelCatalogStatus?.tone === 'warning'
       ? 'text-amber-600 dark:text-amber-400'
       : 'text-gray-500 dark:text-gray-400';
+  const canApplyCustomModel = customModelInput.trim().length > 0 && customModelInput.trim() !== (config.model || '');
 
   return (
     <div className="space-y-4">
@@ -359,6 +374,42 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
                 )}
               </div>
             )}
+          </div>
+
+          <div>
+            <label
+              htmlFor={`${idPrefix}-custom-model`}
+              className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
+              {t('settings.provider.customModel')}
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                id={`${idPrefix}-custom-model`}
+                type="text"
+                value={customModelInput}
+                onChange={(event) => setCustomModelInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && canApplyCustomModel) {
+                    event.preventDefault();
+                    handleModelChange(customModelInput.trim());
+                  }
+                }}
+                placeholder={t('settings.provider.customModelPlaceholder')}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              />
+              <button
+                type="button"
+                onClick={() => handleModelChange(customModelInput.trim())}
+                disabled={!canApplyCustomModel}
+                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
+              >
+                {t('settings.provider.useCustomModel')}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              {t('settings.provider.customModelHint')}
+            </p>
           </div>
 
           <div>

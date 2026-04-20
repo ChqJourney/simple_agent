@@ -77,4 +77,34 @@ describe("ProviderConfigForm", () => {
 
     expect(listProviderModelsMock).toHaveBeenCalledTimes(1);
   });
+
+  it("lets the user apply a custom model id that is not in the catalog", async () => {
+    const onChange = vi.fn();
+
+    render(
+      <ProviderConfigForm
+        config={{
+          provider: "openai",
+          model: "gpt-4o",
+          api_key: "test-key",
+          base_url: "https://api.openai.com/v1",
+          enable_reasoning: false,
+        }}
+        onChange={onChange}
+        enableDynamicModelCatalog={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Custom model ID"), {
+      target: { value: "gpt-4.1-nano-preview" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use model" }));
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai",
+        model: "gpt-4.1-nano-preview",
+      }),
+    );
+  });
 });

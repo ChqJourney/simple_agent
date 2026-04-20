@@ -19,6 +19,7 @@ interface SessionState {
   currentToolName?: string;
   currentToolArgumentCharacters?: number;
   pendingToolConfirm?: ToolCall;
+  queuedToolConfirms?: ToolCall[];
   pendingQuestion?: PendingQuestion;
 }
 
@@ -76,11 +77,68 @@ const createEmptySession = (): SessionState => ({
   currentToolName: undefined,
   currentToolArgumentCharacters: undefined,
   pendingToolConfirm: undefined,
+  queuedToolConfirms: [],
   pendingQuestion: undefined,
 });
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function getQueuedToolConfirms(session: SessionState): ToolCall[] {
+  return session.queuedToolConfirms ? [...session.queuedToolConfirms] : [];
+}
+
+function queuePendingToolConfirm(session: SessionState, toolCall: ToolCall): Pick<SessionState, 'pendingToolConfirm' | 'queuedToolConfirms'> {
+  const queuedToolConfirms = getQueuedToolConfirms(session);
+  if (session.pendingToolConfirm?.tool_call_id === toolCall.tool_call_id) {
+    return {
+      pendingToolConfirm: session.pendingToolConfirm,
+      queuedToolConfirms,
+    };
+  }
+
+  if (queuedToolConfirms.some((pending) => pending.tool_call_id === toolCall.tool_call_id)) {
+    return {
+      pendingToolConfirm: session.pendingToolConfirm,
+      queuedToolConfirms,
+    };
+  }
+
+  if (!session.pendingToolConfirm) {
+    return {
+      pendingToolConfirm: toolCall,
+      queuedToolConfirms,
+    };
+  }
+
+  return {
+    pendingToolConfirm: session.pendingToolConfirm,
+    queuedToolConfirms: [...queuedToolConfirms, toolCall],
+  };
+}
+
+function removePendingToolConfirm(session: SessionState, toolCallId?: string): Pick<SessionState, 'pendingToolConfirm' | 'queuedToolConfirms'> {
+  const queuedToolConfirms = getQueuedToolConfirms(session);
+  if (!toolCallId) {
+    return {
+      pendingToolConfirm: undefined,
+      queuedToolConfirms: [],
+    };
+  }
+
+  if (session.pendingToolConfirm?.tool_call_id === toolCallId) {
+    const [nextPendingToolConfirm, ...remainingToolConfirms] = queuedToolConfirms;
+    return {
+      pendingToolConfirm: nextPendingToolConfirm,
+      queuedToolConfirms: remainingToolConfirms,
+    };
+  }
+
+  return {
+    pendingToolConfirm: session.pendingToolConfirm,
+    queuedToolConfirms: queuedToolConfirms.filter((pending) => pending.tool_call_id !== toolCallId),
+  };
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -223,12 +281,13 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setPendingToolConfirm: (sessionId, toolCall) => set((state) => {
     const session = state.sessions[sessionId] || createEmptySession();
+    const pendingToolConfirmState = queuePendingToolConfirm(session, toolCall);
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...session,
-          pendingToolConfirm: toolCall,
+          ...pendingToolConfirmState,
         },
       },
     };
@@ -236,18 +295,18 @@ export const useChatStore = create<ChatState>((set) => ({
 
   clearPendingToolConfirm: (sessionId, toolCallId) => set((state) => {
     const session = state.sessions[sessionId];
-    if (!session?.pendingToolConfirm) return state;
-
-    if (toolCallId && session.pendingToolConfirm.tool_call_id !== toolCallId) {
+    if (!session?.pendingToolConfirm && !session?.queuedToolConfirms?.length) {
       return state;
     }
+
+    const pendingToolConfirmState = removePendingToolConfirm(session, toolCallId);
 
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...session,
-          pendingToolConfirm: undefined,
+          ...pendingToolConfirmState,
         },
       },
     };
@@ -377,10 +436,7 @@ export const useChatStore = create<ChatState>((set) => ({
         ...state.sessions,
         [sessionId]: {
           ...session,
-          pendingToolConfirm:
-            session.pendingToolConfirm?.tool_call_id === toolCallId
-              ? undefined
-              : session.pendingToolConfirm,
+          ...removePendingToolConfirm(session, toolCallId),
           pendingQuestion:
             session.pendingQuestion?.tool_call_id === toolCallId
               ? undefined
@@ -501,6 +557,7 @@ export const useChatStore = create<ChatState>((set) => ({
           currentToolName: undefined,
           currentToolArgumentCharacters: undefined,
           pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
           pendingQuestion: undefined,
         },
       },
@@ -578,6 +635,7 @@ export const useChatStore = create<ChatState>((set) => ({
           currentToolName: undefined,
           currentToolArgumentCharacters: undefined,
           pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
           pendingQuestion: undefined,
         },
       },
@@ -609,6 +667,7 @@ export const useChatStore = create<ChatState>((set) => ({
           currentToolName: undefined,
           currentToolArgumentCharacters: undefined,
           pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
           pendingQuestion: undefined,
         },
       },
@@ -686,6 +745,7 @@ export const useChatStore = create<ChatState>((set) => ({
           currentToolName: undefined,
           currentToolArgumentCharacters: undefined,
           pendingQuestion: undefined,
+          queuedToolConfirms: [],
         },
       },
     };
@@ -714,6 +774,7 @@ export const useChatStore = create<ChatState>((set) => ({
           currentToolName: undefined,
           currentToolArgumentCharacters: undefined,
           pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
           pendingQuestion: undefined,
         },
       },

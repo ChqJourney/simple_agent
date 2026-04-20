@@ -77,17 +77,23 @@ vi.mock("../Run", () => ({
   RunTimeline: () => <div>RunTimeline</div>,
 }));
 
-vi.mock("../Tools", async () => {
-  const actual = await vi.importActual<typeof import("../Tools")>("../Tools");
-  return {
-    ...actual,
-    ToolConfirmModal: ({ onDecision }: { onDecision: (decision: "approve_once" | "approve_always" | "reject") => void }) => (
-      <button type="button" onClick={() => onDecision("approve_once")} aria-label="approve tool">
-        approve tool
-      </button>
-    ),
-  };
-});
+	vi.mock("../Tools", async () => {
+	  const actual = await vi.importActual<typeof import("../Tools")>("../Tools");
+	  return {
+	    ...actual,
+	    ToolConfirmModal: ({
+	      toolCall,
+	      onDecision,
+	    }: {
+	      toolCall: { tool_call_id: string };
+	      onDecision: (decision: "approve_once" | "approve_always" | "reject") => void;
+	    }) => (
+	      <button type="button" onClick={() => onDecision("approve_once")} aria-label={`approve tool ${toolCall.tool_call_id}`}>
+	        {toolCall.tool_call_id}
+	      </button>
+	    ),
+	  };
+	});
 
 describe("ChatContainer", () => {
   beforeEach(() => {
@@ -135,6 +141,7 @@ describe("ChatContainer", () => {
           assistantStatus: "idle",
           currentToolName: undefined,
           pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
           pendingQuestion: {
             tool_call_id: "question-1",
             tool_name: "ask_question",
@@ -202,6 +209,7 @@ describe("ChatContainer", () => {
           assistantStatus: "idle",
           currentToolName: undefined,
           pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
           pendingQuestion: {
             tool_call_id: "question-2",
             tool_name: "ask_question",
@@ -252,12 +260,49 @@ describe("ChatContainer", () => {
 
     render(<ChatContainer />);
 
-    expect(screen.getByRole("button", { name: "approve tool" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "approve tool tool-1" })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "approve tool" }));
+    fireEvent.click(screen.getByRole("button", { name: "approve tool tool-1" }));
 
     expect(confirmToolMock).toHaveBeenCalledWith("session-a", "tool-1", "approve_once", "session");
-    expect(screen.getByRole("button", { name: "approve tool" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "approve tool tool-1" })).toBeTruthy();
+  });
+
+  it("promotes the next queued tool approval after approving the current one", () => {
+    confirmToolMock.mockReturnValue(true);
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [],
+          currentStreamingContent: "",
+          currentReasoningContent: "",
+          isStreaming: false,
+          assistantStatus: "tool_calling",
+          currentToolName: "file_write",
+          pendingToolConfirm: {
+            tool_call_id: "tool-1",
+            name: "file_write",
+            arguments: { path: "README.md" },
+          },
+          queuedToolConfirms: [
+            {
+              tool_call_id: "tool-2",
+              name: "file_write",
+              arguments: { path: "NOTES.md" },
+            },
+          ],
+          pendingQuestion: undefined,
+        },
+      },
+    });
+
+    render(<ChatContainer />);
+
+    fireEvent.click(screen.getByRole("button", { name: "approve tool tool-1" }));
+
+    expect(confirmToolMock).toHaveBeenCalledWith("session-a", "tool-1", "approve_once", "session");
+    expect(useChatStore.getState().sessions["session-a"]?.pendingToolConfirm?.tool_call_id).toBe("tool-2");
+    expect(screen.getByRole("button", { name: "approve tool tool-2" })).toBeTruthy();
   });
 
   it("does not render the run timeline inline above the chat anymore", () => {

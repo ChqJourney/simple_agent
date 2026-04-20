@@ -202,6 +202,32 @@ SCENARIO_IDS: Set[str] = {"default", "standard_qa", "checklist_evaluation"}
 SUPPORTED_PROVIDERS: Set[str] = {"openai", "deepseek", "kimi", "glm", "minimax", "qwen"}
 
 
+@dataclass
+class UserMessageRequest:
+    session_id: Any
+    content: str
+    attachments: Any
+    workspace_path: Any
+
+
+@dataclass
+class PreparedUserMessageRun:
+    request: UserMessageRequest
+    connection_id: str
+    current_config: Dict[str, Any]
+    workspace: str
+    session_reserved: bool
+
+
+@dataclass
+class UserMessageRunContext:
+    prepared: PreparedUserMessageRun
+    session: Session
+    conversation_spec: Dict[str, Any]
+    active_profile: Dict[str, Any]
+    agent: Agent
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -1268,11 +1294,9 @@ async def handle_config(data: Dict[str, Any], send_callback: SendCallback) -> No
         )
 
 
-async def handle_user_message(
+def _normalize_user_message_request(
     data: Dict[str, Any],
-    send_callback: SendCallback,
-    connection_id: str,
-) -> None:
+) -> tuple[Optional[UserMessageRequest], Optional[Dict[str, Any]]]:
     session_id = data.get("session_id")
     content = data.get("content")
     attachments = data.get("attachments")
@@ -1280,220 +1304,309 @@ async def handle_user_message(
     normalized_content = content if isinstance(content, str) else ""
 
     if not session_id:
-        await send_callback({"type": "error", "error": "Missing session_id"})
-        return
+        return None, {"type": "error", "error": "Missing session_id"}
 
     if not normalized_content and not attachments:
-        await send_callback(
-            {"type": "error", "session_id": session_id, "error": "Missing content"}
-        )
-        return
+        return None, {
+            "type": "error",
+            "session_id": session_id,
+            "error": "Missing content",
+        }
 
+    return (
+        UserMessageRequest(
+            session_id=session_id,
+            content=normalized_content,
+            attachments=attachments,
+            workspace_path=workspace_path,
+        ),
+        None,
+    )
+
+
+async def _prepare_user_message_run(
+    request: UserMessageRequest,
+    connection_id: str,
+) -> tuple[Optional[PreparedUserMessageRun], Optional[Dict[str, Any]]]:
     async with state_lock:
         current_config = runtime_state.current_config
         workspace = (
-            workspace_path
-            if workspace_path
+            request.workspace_path
+            if request.workspace_path
             else runtime_state.connection_workspaces.get(
                 connection_id, runtime_state.default_workspace
             )
         )
-        existing_task = runtime_state.active_session_tasks.get(session_id)
+        existing_task = runtime_state.active_session_tasks.get(request.session_id)
 
         if existing_task is not None and (
             existing_task is SESSION_TASK_RESERVED or not existing_task.done()
         ):
-            llm = None
-            workspace = None
-            session_reserved = False
-            duplicate_run = True
-        else:
-            duplicate_run = False
-            session_reserved = current_config is not None
-            if session_reserved:
-                runtime_state.active_session_tasks[session_id] = SESSION_TASK_RESERVED
-
-    if duplicate_run:
-        await send_callback(
-            {
+            return None, {
                 "type": "error",
-                "session_id": session_id,
-                "error": f"Session {session_id} already has an active run",
+                "session_id": request.session_id,
+                "error": f"Session {request.session_id} already has an active run",
             }
-        )
-        return
+
+        session_reserved = current_config is not None
+        if session_reserved:
+            runtime_state.active_session_tasks[request.session_id] = SESSION_TASK_RESERVED
 
     if not current_config:
+        return None, {
+            "type": "error",
+            "session_id": request.session_id,
+            "error": "LLM not configured. Please send a config message first.",
+        }
+
+    return (
+        PreparedUserMessageRun(
+            request=request,
+            connection_id=connection_id,
+            current_config=cast(Dict[str, Any], current_config),
+            workspace=workspace,
+            session_reserved=session_reserved,
+        ),
+        None,
+    )
+
+
+async def _fail_prepared_user_message_run(
+    prepared: PreparedUserMessageRun,
+    send_callback: SendCallback,
+    error: str,
+) -> None:
+    if prepared.session_reserved:
+        await _release_reserved_session(prepared.request.session_id)
+    await send_callback(
+        {
+            "type": "error",
+            "session_id": prepared.request.session_id,
+            "error": error,
+        }
+    )
+
+
+def _user_message_has_image_attachments(attachments: Any) -> bool:
+    return isinstance(attachments, list) and any(
+        isinstance(attachment, dict) and attachment.get("kind") == "image"
+        for attachment in attachments
+    )
+
+
+def _conversation_supports_image_input(conversation_spec: Dict[str, Any]) -> bool:
+    capability_summary = conversation_spec.get("capability_summary", {})
+    supported_input_types = (
+        capability_summary.get("supported_input_types")
+        if isinstance(capability_summary, dict)
+        else None
+    )
+    if not isinstance(supported_input_types, list):
+        supported_input_types = []
+    return "image" in supported_input_types
+
+
+async def _load_or_create_user_message_session(
+    prepared: PreparedUserMessageRun,
+    send_callback: SendCallback,
+) -> Optional[Session]:
+    session = user_manager.get_session(prepared.request.session_id)
+    if session and not _workspace_paths_match(session.workspace_path, prepared.workspace):
+        await _fail_prepared_user_message_run(
+            prepared,
+            send_callback,
+            (
+                f"Session {prepared.request.session_id} belongs to a different workspace. "
+                "Create a new session for this workspace."
+            ),
+        )
+        return None
+
+    if session is None:
+        session = await user_manager.create_session(
+            prepared.workspace, prepared.request.session_id
+        )
+    return session
+
+
+async def _build_user_message_run_context(
+    prepared: PreparedUserMessageRun,
+    session: Session,
+    send_callback: SendCallback,
+) -> Optional[UserMessageRunContext]:
+    conversation_spec = build_execution_spec(prepared.current_config, "conversation")
+    active_profile = conversation_spec["profile"]
+    active_lock_ref = (
+        lock_ref_from_profile(active_profile) if active_profile else None
+    )
+
+    if session.locked_model and (
+        not active_profile
+        or not session_lock_matches_profile(session.locked_model, active_profile)
+    ):
+        await _fail_prepared_user_message_run(
+            prepared,
+            send_callback,
+            (
+                f"Session {prepared.request.session_id} is locked to "
+                f"{session.locked_model.provider}/{session.locked_model.model}"
+            ),
+        )
+        return None
+
+    if session.locked_model is None and active_lock_ref is not None:
+        session.locked_model = active_lock_ref
+        await session.save_metadata_async()
         await send_callback(
             {
-                "type": "error",
-                "session_id": session_id,
-                "error": "LLM not configured. Please send a config message first.",
+                "type": "session_lock_updated",
+                "session_id": prepared.request.session_id,
+                "locked_model": active_lock_ref.model_dump(mode="json"),
             }
         )
+
+    await user_manager.bind_session_to_connection(
+        prepared.request.session_id, prepared.connection_id
+    )
+
+    if not active_profile:
+        await _fail_prepared_user_message_run(
+            prepared,
+            send_callback,
+            "Failed to resolve active model profile for this session.",
+        )
+        return None
+
+    if _user_message_has_image_attachments(prepared.request.attachments) and not _conversation_supports_image_input(conversation_spec):
+        await _fail_prepared_user_message_run(
+            prepared,
+            send_callback,
+            (
+                f"Model {active_profile.get('provider')}/{active_profile.get('model')} "
+                "does not support image input."
+            ),
+        )
+        return None
+
+    scenario_spec = get_scenario_spec(getattr(session, "scenario_id", None))
+    agent = await get_or_create_agent(
+        prepared.request.session_id,
+        conversation_spec,
+        scenario_spec,
+    )
+    if not agent:
+        await _fail_prepared_user_message_run(
+            prepared,
+            send_callback,
+            "Failed to create agent",
+        )
+        return None
+
+    return UserMessageRunContext(
+        prepared=prepared,
+        session=session,
+        conversation_spec=conversation_spec,
+        active_profile=cast(Dict[str, Any], active_profile),
+        agent=agent,
+    )
+
+
+async def _start_user_message_run_tasks(
+    context: UserMessageRunContext,
+    send_callback: SendCallback,
+) -> None:
+    prepared = context.prepared
+    request = prepared.request
+    context.agent.reset_interrupt()
+
+    if isinstance(request.attachments, list) and request.attachments:
+        task = _register_pending_task(
+            asyncio.create_task(
+                run_agent_task(
+                    context.agent,
+                    request.content,
+                    context.session,
+                    send_callback,
+                    attachments=request.attachments,
+                )
+            ),
+            connection_id=prepared.connection_id,
+            session_id=request.session_id,
+        )
+    else:
+        task = _register_pending_task(
+            asyncio.create_task(
+                run_agent_task(context.agent, request.content, context.session, send_callback)
+            ),
+            connection_id=prepared.connection_id,
+            session_id=request.session_id,
+        )
+
+    should_generate_title = bool(request.content.strip()) and not context.session.title
+    if should_generate_title:
+        background_spec = build_execution_spec(prepared.current_config, "background")
+        title_llm = create_llm_for_execution_spec(background_spec)
+        if callable(getattr(title_llm, "complete", None)):
+            _register_pending_task(
+                asyncio.create_task(
+                    _run_title_task_with_cleanup(
+                        context.session,
+                        title_llm,
+                        request.content,
+                        send_callback,
+                    )
+                ),
+                connection_id=prepared.connection_id,
+                session_id=request.session_id,
+            )
+
+    async with state_lock:
+        runtime_state.active_session_tasks[request.session_id] = task
+
+
+async def handle_user_message(
+    data: Dict[str, Any],
+    send_callback: SendCallback,
+    connection_id: str,
+) -> None:
+    request, payload_error = _normalize_user_message_request(data)
+    if payload_error is not None:
+        await send_callback(payload_error)
+        return
+
+    prepared, preparation_error = await _prepare_user_message_run(
+        cast(UserMessageRequest, request),
+        connection_id,
+    )
+    if preparation_error is not None:
+        await send_callback(preparation_error)
         return
 
     try:
-        session = user_manager.get_session(session_id)
-        if session and not _workspace_paths_match(session.workspace_path, workspace):
-            await _release_reserved_session(session_id)
-            await send_callback(
-                {
-                    "type": "error",
-                    "session_id": session_id,
-                    "error": (
-                        f"Session {session_id} belongs to a different workspace. "
-                        "Create a new session for this workspace."
-                    ),
-                }
-            )
-            return
-        if not session:
-            session = await user_manager.create_session(workspace, session_id)
-
-        conversation_spec = build_execution_spec(current_config, "conversation")
-        active_profile = conversation_spec["profile"]
-
-        if current_config:
-            active_lock_ref = (
-                lock_ref_from_profile(active_profile) if active_profile else None
-            )
-
-            if session.locked_model and (
-                not active_profile
-                or not session_lock_matches_profile(
-                    session.locked_model, active_profile
-                )
-            ):
-                await _release_reserved_session(session_id)
-                await send_callback(
-                    {
-                        "type": "error",
-                        "session_id": session_id,
-                        "error": (
-                            f"Session {session_id} is locked to "
-                            f"{session.locked_model.provider}/{session.locked_model.model}"
-                        ),
-                    }
-                )
-                return
-
-            if session.locked_model is None and active_lock_ref is not None:
-                session.locked_model = active_lock_ref
-                await session.save_metadata_async()
-                await send_callback(
-                    {
-                        "type": "session_lock_updated",
-                        "session_id": session_id,
-                        "locked_model": active_lock_ref.model_dump(mode="json"),
-                    }
-                )
-
-        await user_manager.bind_session_to_connection(session_id, connection_id)
-
-        if not active_profile:
-            await _release_reserved_session(session_id)
-            await send_callback(
-                {
-                    "type": "error",
-                    "session_id": session_id,
-                    "error": "Failed to resolve active model profile for this session.",
-                }
-            )
-            return
-
-        has_image_attachments = isinstance(attachments, list) and any(
-            isinstance(attachment, dict) and attachment.get("kind") == "image"
-            for attachment in attachments
+        session = await _load_or_create_user_message_session(
+            cast(PreparedUserMessageRun, prepared),
+            send_callback,
         )
-        if has_image_attachments:
-            capability_summary = conversation_spec.get("capability_summary", {})
-            supported_input_types = (
-                capability_summary.get("supported_input_types")
-                if isinstance(capability_summary, dict)
-                else None
-            )
-            if not isinstance(supported_input_types, list):
-                supported_input_types = []
-            if "image" not in supported_input_types:
-                await _release_reserved_session(session_id)
-                await send_callback(
-                    {
-                        "type": "error",
-                        "session_id": session_id,
-                        "error": (
-                            f"Model {active_profile.get('provider')}/{active_profile.get('model')} "
-                            "does not support image input."
-                        ),
-                    }
-                )
-                return
-
-        scenario_spec = get_scenario_spec(getattr(session, "scenario_id", None))
-        agent = await get_or_create_agent(session_id, conversation_spec, scenario_spec)
-        if not agent:
-            await _release_reserved_session(session_id)
-            await send_callback(
-                {
-                    "type": "error",
-                    "session_id": session_id,
-                    "error": "Failed to create agent",
-                }
-            )
+        if session is None:
             return
 
-        agent.reset_interrupt()
+        run_context = await _build_user_message_run_context(
+            cast(PreparedUserMessageRun, prepared),
+            session,
+            send_callback,
+        )
+        if run_context is None:
+            return
 
-        if isinstance(attachments, list) and attachments:
-            task = _register_pending_task(
-                asyncio.create_task(
-                    run_agent_task(
-                        agent,
-                        normalized_content,
-                        session,
-                        send_callback,
-                        attachments=attachments,
-                    )
-                ),
-                connection_id=connection_id,
-                session_id=session_id,
-            )
-        else:
-            task = _register_pending_task(
-                asyncio.create_task(
-                    run_agent_task(agent, normalized_content, session, send_callback)
-                ),
-                connection_id=connection_id,
-                session_id=session_id,
-            )
-
-        should_generate_title = bool(normalized_content.strip()) and not session.title
-        title_task = None
-        if should_generate_title:
-            background_spec = build_execution_spec(current_config, "background")
-            title_llm = create_llm_for_execution_spec(background_spec)
-            if callable(getattr(title_llm, "complete", None)):
-                title_task = _register_pending_task(
-                    asyncio.create_task(
-                        _run_title_task_with_cleanup(
-                            session, title_llm, normalized_content, send_callback
-                        )
-                    ),
-                    connection_id=connection_id,
-                    session_id=session_id,
-                )
-
-        async with state_lock:
-            runtime_state.active_session_tasks[session_id] = task
-
+        await _start_user_message_run_tasks(run_context, send_callback)
     except Exception as e:
-        if session_reserved:
-            await _release_reserved_session(session_id)
+        if prepared is not None and prepared.session_reserved:
+            await _release_reserved_session(prepared.request.session_id)
         logger.exception(f"Failed to handle user message: {e}")
         await send_callback(
             _error_payload(
                 "Failed to start the agent run. Check backend logs.",
-                session_id=session_id,
+                session_id=request.session_id,
             )
         )
 
@@ -1606,12 +1719,19 @@ async def handle_interrupt(data: Dict[str, Any]) -> None:
         await user_manager.cancel_pending_for_session(session_id, reason="interrupted")
 
     if isinstance(active_task, asyncio.Task) and not active_task.done():
-        active_task.cancel()
         try:
-            await asyncio.wait_for(
-                asyncio.gather(active_task, return_exceptions=True),
+            done, _ = await asyncio.wait(
+                {active_task},
                 timeout=INTERRUPT_TASK_CANCEL_GRACE_SECONDS,
             )
+            if done:
+                await asyncio.gather(active_task, return_exceptions=True)
+            else:
+                active_task.cancel()
+                await asyncio.wait_for(
+                    asyncio.gather(active_task, return_exceptions=True),
+                    timeout=INTERRUPT_TASK_CANCEL_GRACE_SECONDS,
+                )
         except asyncio.TimeoutError:
             logger.warning(
                 "Timed out waiting %.2fs for session %s run task to cancel cleanly",

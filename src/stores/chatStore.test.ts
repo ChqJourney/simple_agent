@@ -90,6 +90,33 @@ describe("chatStore run events", () => {
     expect(useChatStore.getState().sessions["session-a"]?.currentToolArgumentCharacters).toBeUndefined();
   });
 
+  it("queues multiple pending tool approvals and promotes the next one when the current tool is cleared", () => {
+    useChatStore.getState().setPendingToolConfirm("session-a", {
+      tool_call_id: "tool-1",
+      name: "file_write",
+      arguments: { path: "one.txt" },
+    });
+    useChatStore.getState().setPendingToolConfirm("session-a", {
+      tool_call_id: "tool-2",
+      name: "file_write",
+      arguments: { path: "two.txt" },
+    });
+
+    expect(useChatStore.getState().sessions["session-a"]?.pendingToolConfirm?.tool_call_id).toBe("tool-1");
+    expect(useChatStore.getState().sessions["session-a"]?.queuedToolConfirms).toEqual([
+      {
+        tool_call_id: "tool-2",
+        name: "file_write",
+        arguments: { path: "two.txt" },
+      },
+    ]);
+
+    useChatStore.getState().clearPendingToolConfirm("session-a", "tool-1");
+
+    expect(useChatStore.getState().sessions["session-a"]?.pendingToolConfirm?.tool_call_id).toBe("tool-2");
+    expect(useChatStore.getState().sessions["session-a"]?.queuedToolConfirms).toEqual([]);
+  });
+
   it("stores context estimates independently from the latest request usage", () => {
     useChatStore.getState().startStreaming("session-a");
     useChatStore.getState().setCompleted("session-a", {
@@ -149,6 +176,7 @@ describe("chatStore run events", () => {
           assistantStatus: "streaming",
           currentToolName: undefined,
           pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
           pendingQuestion: undefined,
         },
       },
@@ -207,6 +235,13 @@ describe("chatStore run events", () => {
             name: "file_write",
             arguments: {},
           },
+          queuedToolConfirms: [
+            {
+              tool_call_id: "tool-2",
+              name: "file_write",
+              arguments: {},
+            },
+          ],
           pendingQuestion: undefined,
         },
       },
@@ -219,6 +254,7 @@ describe("chatStore run events", () => {
       status: "completed",
     });
     expect(useChatStore.getState().sessions["session-a"]?.pendingToolConfirm).toBeUndefined();
+    expect(useChatStore.getState().sessions["session-a"]?.queuedToolConfirms).toEqual([]);
     expect(useChatStore.getState().sessions["session-a"]?.assistantStatus).toBe("idle");
   });
 });

@@ -234,6 +234,7 @@ describe("WebSocketProvider", () => {
           assistantStatus: "streaming",
           currentToolName: undefined,
           pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
           pendingQuestion: undefined,
         },
       },
@@ -337,6 +338,40 @@ describe("WebSocketProvider", () => {
     expect(useChatStore.getState().sessions["session-a"]?.currentToolArgumentCharacters).toBe(8192);
   });
 
+  it("queues multiple tool confirmation requests for the same session", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "tool_confirm_request",
+      session_id: "session-a",
+      tool_call_id: "tool-1",
+      name: "file_write",
+      arguments: { path: "one.txt" },
+    });
+    websocketMockState.messageHandler?.({
+      type: "tool_confirm_request",
+      session_id: "session-a",
+      tool_call_id: "tool-2",
+      name: "file_write",
+      arguments: { path: "two.txt" },
+    });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().sessions["session-a"]?.pendingToolConfirm?.tool_call_id).toBe("tool-1");
+    });
+    expect(useChatStore.getState().sessions["session-a"]?.queuedToolConfirms).toEqual([
+      {
+        tool_call_id: "tool-2",
+        name: "file_write",
+        arguments: { path: "two.txt" },
+      },
+    ]);
+  });
+
   it("preserves partial content before surfacing backend errors marked with preserve_partial", async () => {
     render(
       <WebSocketProvider>
@@ -355,6 +390,7 @@ describe("WebSocketProvider", () => {
           assistantStatus: "streaming",
           currentToolName: undefined,
           pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
           pendingQuestion: undefined,
         },
       },

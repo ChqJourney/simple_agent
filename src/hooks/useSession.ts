@@ -46,6 +46,7 @@ function hasActiveReply(session: {
   currentReasoningContent: string;
   assistantStatus: string;
   pendingToolConfirm?: unknown;
+  queuedToolConfirms?: unknown[];
   pendingQuestion?: unknown;
 } | undefined): boolean {
   if (!session) {
@@ -62,6 +63,7 @@ function hasActiveReply(session: {
     || session.assistantStatus === 'preparing_tool'
     || session.assistantStatus === 'tool_calling'
     || Boolean(session.pendingToolConfirm)
+    || Boolean(session.queuedToolConfirms?.length)
     || Boolean(session.pendingQuestion)
   );
 }

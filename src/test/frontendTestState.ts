@@ -43,6 +43,7 @@ type ChatSessionFixture = {
   currentToolName?: string;
   currentToolArgumentCharacters?: number;
   pendingToolConfirm?: ToolCall;
+  queuedToolConfirms?: ToolCall[];
   pendingQuestion?: PendingQuestion;
 };
 
@@ -132,6 +133,7 @@ export function createChatSessionFixture(overrides: Partial<ChatSessionFixture> 
     currentToolName: undefined,
     currentToolArgumentCharacters: undefined,
     pendingToolConfirm: undefined,
+    queuedToolConfirms: [],
     pendingQuestion: undefined,
     ...overrides,
   };

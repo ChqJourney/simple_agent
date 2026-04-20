@@ -487,6 +487,37 @@ class SessionExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.agent_a.interrupted)
         self.assertTrue(task.cancelled())
 
+    async def test_interrupt_allows_active_run_task_to_finish_after_pending_confirmations_release(self) -> None:
+        release = asyncio.Event()
+
+        async def cooperative_run() -> None:
+            await release.wait()
+
+        task = asyncio.create_task(cooperative_run())
+        backend_main.runtime_state.pending_tasks.add(task)
+        backend_main.runtime_state.active_session_tasks["session-a"] = task
+        backend_main.runtime_state.task_connections[task] = "conn-a"
+        backend_main.runtime_state.task_sessions[task] = "session-a"
+
+        original_cancel_pending = backend_main.user_manager.cancel_pending_for_session
+
+        async def release_pending_for_session(session_id: str, reason: str = "interrupted") -> None:
+            self.assertEqual("session-a", session_id)
+            self.assertEqual("interrupted", reason)
+            release.set()
+            await asyncio.sleep(0)
+
+        backend_main.user_manager.cancel_pending_for_session = release_pending_for_session
+        try:
+            await backend_main.handle_interrupt({"session_id": "session-a"})
+            await asyncio.sleep(0)
+        finally:
+            backend_main.user_manager.cancel_pending_for_session = original_cancel_pending
+
+        self.assertTrue(self.agent_a.interrupted)
+        self.assertTrue(task.done())
+        self.assertFalse(task.cancelled())
+
     async def test_handle_message_routes_structured_question_responses(self) -> None:
         await backend_main.user_manager.bind_session_to_connection("session-a", "conn-a")
 

@@ -36,7 +36,7 @@ SCENARIO_REGISTRY: Dict[str, ScenarioSpec] = {
             "and approved reference materials. Prefer retrieving evidence before answering. "
             "Avoid hidden workspace metadata such as .agent unless the user explicitly asks for it. "
             "When a generated standard catalog exists, use search_standard_catalog first to shortlist "
-            "candidate standards before opening large PDFs. "
+            "candidate standards before opening large documents. "
             "When search_documents returns matches, prefer using the returned absolute_path "
             "for follow-up reads so you keep the file target unambiguous. "
             "For large PDFs, start with pdf_get_info, pdf_get_outline, or get_document_structure "

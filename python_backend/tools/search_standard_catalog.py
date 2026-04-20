@@ -79,12 +79,45 @@ def _score_document(
 
 def _build_follow_up_action(document: Dict[str, Any]) -> Dict[str, Any]:
     path = _normalize_text(document.get("path"))
+    file_type = _normalize_text(document.get("file_type")).lower()
+    if not file_type and path:
+        file_type = Path(path).suffix.lower().lstrip(".")
     scope_source = document.get("scope_source")
     outline_titles = [
         _normalize_text(title)
         for title in (document.get("outline_titles") or [])
         if _normalize_text(title)
     ]
+
+    if file_type == "md":
+        if isinstance(scope_source, dict):
+            line_start = scope_source.get("line_start")
+            line_end = scope_source.get("line_end")
+            label = _normalize_text(scope_source.get("label")) or "Scope"
+            if isinstance(line_start, int) and isinstance(line_end, int):
+                return {
+                    "tool": "read_document_segment",
+                    "path": path,
+                    "locator": {
+                        "type": "text_line_range",
+                        "line_start": line_start,
+                        "line_end": line_end,
+                    },
+                    "reason": f"Read the {label} section first to confirm applicability.",
+                }
+
+        if outline_titles:
+            return {
+                "tool": "get_document_structure",
+                "path": path,
+                "reason": "Inspect the markdown heading structure first, then open Scope or the closest matching section.",
+            }
+
+        return {
+            "tool": "file_read",
+            "path": path,
+            "reason": "Start with the opening lines to confirm scope and structure.",
+        }
 
     if isinstance(scope_source, dict):
         page_start = scope_source.get("page_start")
@@ -124,10 +157,12 @@ def _build_top_level_next_actions(results: List[Dict[str, Any]]) -> List[Dict[st
                 "standard_code": _normalize_text(item.get("standard_code")),
                 "title": _normalize_text(item.get("title")),
                 "path": _normalize_text(item.get("path")),
+                "file_type": _normalize_text(item.get("file_type")),
                 "tool": _normalize_text(follow_up.get("tool")),
                 "reason": _normalize_text(follow_up.get("reason")),
                 "page_start": follow_up.get("page_start"),
                 "page_end": follow_up.get("page_end"),
+                "locator": follow_up.get("locator") if isinstance(follow_up.get("locator"), dict) else None,
             }
         )
     return actions
@@ -137,7 +172,7 @@ class SearchStandardCatalogTool(BaseTool):
     name = "search_standard_catalog"
     description = (
         "Search the generated standard catalog files under configured reference-library roots "
-        "to quickly identify which standard PDFs are likely relevant before opening large documents."
+        "to quickly identify which standard documents are likely relevant before opening large files."
     )
     display_name = "Search Standard Catalog"
     category = "workspace"
@@ -145,8 +180,8 @@ class SearchStandardCatalogTool(BaseTool):
     risk_level = "low"
     preferred_order = 9
     use_when = (
-        "Use when a reference-library standard catalog exists and you need to decide which standard PDFs "
-        "to inspect before reading outlines, pages, or clauses."
+        "Use when a reference-library standard catalog exists and you need to decide which standard documents "
+        "to inspect before reading outlines, sections, pages, or clauses."
     )
     avoid_when = "Avoid when the exact target PDF is already known or when no standard catalog has been built yet."
     user_summary_template = "Searching the standard catalog for {query}"
@@ -240,6 +275,7 @@ class SearchStandardCatalogTool(BaseTool):
                         "path": _normalize_text(item.get("path")),
                         "relative_path": _normalize_text(item.get("relative_path")),
                         "file_name": _normalize_text(item.get("file_name")),
+                        "file_type": _normalize_text(item.get("file_type")),
                         "title": _normalize_text(item.get("title")),
                         "standard_code": _normalize_text(item.get("standard_code")),
                         "scope_summary": _normalize_text(item.get("scope_summary")),

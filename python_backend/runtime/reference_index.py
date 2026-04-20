@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,7 @@ CATALOG_VERSION = 1
 MAX_OUTLINE_TITLES = 12
 MAX_SCOPE_PAGES = 4
 MAX_SCOPE_TEXT_CHARS = 6000
+MAX_MARKDOWN_LINES = 400
 
 SCOPE_TITLE_PATTERNS = (
     "scope",
@@ -30,6 +32,11 @@ SCOPE_TITLE_PATTERNS = (
     "scope and object",
 )
 
+SUPPORTED_STANDARD_EXTENSIONS = {".pdf", ".md"}
+PDF_STANDARD_EXTENSIONS = {".pdf"}
+MARKDOWN_STANDARD_EXTENSIONS = {".md"}
+MARKDOWN_HEADING_RE = re.compile(r"^(#{1,6})\s+(?P<title>.+?)\s*$")
+
 STANDARD_CODE_PATTERN = re.compile(
     r"\b(?:IEC(?:\s+TRF)?|ISO|UL|EN|ASTM|ANSI|CISPR|GB/?T|GB|YY/?T|YY)"
     r"\s*[A-Z0-9]+(?:[-./][A-Z0-9]+){0,6}\b",
@@ -37,7 +44,7 @@ STANDARD_CODE_PATTERN = re.compile(
 )
 
 SUMMARY_PROMPT = (
-    "You are summarizing the coverage of a standards PDF for retrieval routing. "
+    "You are summarizing the coverage of a standards document for retrieval routing. "
     "Use only the provided document evidence. Return strict JSON with keys "
     "`scope_summary` and `topics`. `scope_summary` must be one concise sentence. "
     "`topics` must be an array of up to 6 short phrases. If evidence is limited, "
@@ -180,7 +187,75 @@ def _read_scope_excerpt(file_path: Path, page_count: int, outline_items: list[di
     return excerpt[:MAX_SCOPE_TEXT_CHARS], source
 
 
-def _extract_document_data_sync(file_path: Path, root_path: Path) -> Dict[str, Any]:
+def _read_text_file(file_path: Path) -> str:
+    return file_path.read_text(encoding="utf-8", errors="replace")
+
+
+def _parse_markdown_outline(text: str) -> list[dict[str, Any]]:
+    outline_items: list[dict[str, Any]] = []
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        match = MARKDOWN_HEADING_RE.match(raw_line)
+        if not match:
+            continue
+        title = _safe_str(match.group("title"))
+        if not title:
+            continue
+        outline_items.append(
+            {
+                "title": title,
+                "line_number": line_number,
+                "level": len(match.group(1)),
+            }
+        )
+    return outline_items
+
+
+def _scope_line_range(scope_item: dict[str, Any], outline_items: list[dict[str, Any]], total_lines: int) -> tuple[int, int]:
+    start_line = int(scope_item.get("line_number") or 1)
+    next_lines = [
+        int(item.get("line_number") or 0)
+        for item in outline_items
+        if int(item.get("line_number") or 0) > start_line
+    ]
+    if next_lines:
+        end_line = max(start_line, min(next_lines) - 1)
+    else:
+        end_line = min(total_lines, start_line + MAX_MARKDOWN_LINES - 1)
+    end_line = min(end_line, start_line + MAX_MARKDOWN_LINES - 1, total_lines)
+    return start_line, max(start_line, end_line)
+
+
+def _read_markdown_scope_excerpt(text: str, outline_items: list[dict[str, Any]]) -> tuple[str, Dict[str, Any]]:
+    lines = text.splitlines()
+    total_lines = len(lines)
+    if total_lines == 0:
+        return "", {"type": "front_lines", "label": "Front matter", "line_start": 1, "line_end": 1}
+    scope_item = _find_scope_outline_item(outline_items)
+    source: Dict[str, Any]
+
+    if scope_item is not None:
+        line_start, line_end = _scope_line_range(scope_item, outline_items, total_lines)
+        source = {
+            "type": "heading_section",
+            "label": _safe_str(scope_item.get("title")) or "Scope",
+            "line_start": line_start,
+            "line_end": line_end,
+        }
+    else:
+        line_start = 1
+        line_end = min(total_lines, MAX_MARKDOWN_LINES)
+        source = {
+            "type": "front_lines",
+            "label": "Front matter",
+            "line_start": line_start,
+            "line_end": line_end,
+        }
+
+    excerpt = "\n".join(lines[max(0, line_start - 1):line_end]).strip()
+    return excerpt[:MAX_SCOPE_TEXT_CHARS], source
+
+
+def _extract_pdf_document_data_sync(file_path: Path, root_path: Path) -> Dict[str, Any]:
     stat_result = file_path.stat()
     info = get_pdf_info(file_path)
     outline = get_pdf_outline(file_path, max_depth=4)
@@ -231,6 +306,49 @@ def _extract_document_data_sync(file_path: Path, root_path: Path) -> Dict[str, A
         "modified_at_ns": int(stat_result.st_mtime_ns),
         "sha256": sha256,
     }
+
+
+def _extract_markdown_document_data_sync(file_path: Path, root_path: Path) -> Dict[str, Any]:
+    stat_result = file_path.stat()
+    text = _read_text_file(file_path)
+    outline_items = _parse_markdown_outline(text)
+    outline_titles = [
+        _safe_str(item.get("title"))
+        for item in outline_items
+        if _safe_str(item.get("title"))
+    ][:MAX_OUTLINE_TITLES]
+    title = outline_titles[0] if outline_titles else file_path.stem
+    standard_code = _extract_standard_code(file_path.name, title)
+    scope_excerpt, scope_source = _read_markdown_scope_excerpt(text, outline_items)
+    relative_path = _path_to_rel(file_path, root_path)
+    sha256 = hashlib.sha256(file_path.read_bytes()).hexdigest()
+
+    return {
+        "doc_id": _doc_id(relative_path),
+        "relative_path": relative_path,
+        "path": str(file_path.resolve()),
+        "file_name": file_path.name,
+        "title": title,
+        "standard_code": standard_code,
+        "page_count": 0,
+        "outline_titles": outline_titles,
+        "outline_count": len(outline_items),
+        "scope_excerpt": scope_excerpt,
+        "scope_source": scope_source,
+        "size_bytes": int(stat_result.st_size),
+        "modified_at": _modified_iso(stat_result),
+        "modified_at_ns": int(stat_result.st_mtime_ns),
+        "sha256": sha256,
+    }
+
+
+def _extract_document_data_sync(file_path: Path, root_path: Path) -> Dict[str, Any]:
+    suffix = file_path.suffix.lower()
+    if suffix in PDF_STANDARD_EXTENSIONS:
+        return _extract_pdf_document_data_sync(file_path, root_path)
+    if suffix in MARKDOWN_STANDARD_EXTENSIONS:
+        return _extract_markdown_document_data_sync(file_path, root_path)
+    raise ValueError(f"Unsupported standard document type: {file_path.suffix}")
 
 
 def _fallback_scope_summary(document: Dict[str, Any]) -> str:
@@ -323,9 +441,13 @@ async def summarize_document_scope(document: Dict[str, Any], llm: Optional[BaseL
         }
 
 
-def _discover_pdf_files(root_path: Path) -> list[Path]:
+def _discover_standard_files(root_path: Path) -> list[Path]:
     return sorted(
-        [path for path in root_path.rglob("*") if path.is_file() and path.suffix.lower() == ".pdf"],
+        [
+            path
+            for path in root_path.rglob("*")
+            if path.is_file() and path.suffix.lower() in SUPPORTED_STANDARD_EXTENSIONS
+        ],
         key=lambda candidate: _path_to_rel(candidate, root_path).lower(),
     )
 
@@ -378,7 +500,7 @@ def compute_reference_index_status(root_id: str, root_path: str) -> Dict[str, An
             "last_built_at": None,
         }
 
-    discovered_files = _discover_pdf_files(resolved_root_path)
+    discovered_files = _discover_standard_files(resolved_root_path)
     discovered_rel_paths = {_path_to_rel(path, resolved_root_path): path for path in discovered_files}
 
     new_count = 0
@@ -453,7 +575,7 @@ async def build_reference_index(
             "counts": {"created": 0, "updated": 0, "removed": 0, "unchanged": 0},
         },
     )
-    discovered_files = _discover_pdf_files(resolved_root_path)
+    discovered_files = _discover_standard_files(resolved_root_path)
     total_documents = len(discovered_files)
     await _emit_progress(
         progress_callback,
@@ -461,7 +583,7 @@ async def build_reference_index(
             "phase": "preparing",
             "progress_percent": 0 if total_documents > 0 else 100,
             "detail": (
-                f"Found {total_documents} PDF file(s). Preparing to build the standard catalog..."
+                f"Found {total_documents} standard document(s). Preparing to build the standard catalog..."
             ),
             "total_documents": total_documents,
             "processed_documents": 0,
@@ -521,7 +643,7 @@ async def build_reference_index(
             {
                 "phase": "extracting",
                 "progress_percent": int(processed_count * 100 / total_documents) if total_documents > 0 else 100,
-                "detail": f"Reading PDF metadata and scope: {relative_path}",
+                "detail": f"Reading standard document metadata and scope: {relative_path}",
                 "current_document": {
                     "relative_path": relative_path,
                     "file_name": file_path.name,
@@ -567,6 +689,7 @@ async def build_reference_index(
             "relative_path": document_payload["relative_path"],
             "path": document_payload["path"],
             "file_name": document_payload["file_name"],
+            "file_type": file_path.suffix.lower().lstrip("."),
             "title": document_payload["title"],
             "standard_code": document_payload["standard_code"],
             "page_count": document_payload["page_count"],
@@ -594,7 +717,7 @@ async def build_reference_index(
                 "phase": "processing",
                 "progress_percent": int(processed_count * 100 / total_documents) if total_documents > 0 else 100,
                 "detail": (
-                    f"Indexed {'new' if existing_entry is None else 'updated'} PDF: {relative_path}"
+                    f"Indexed {'new' if existing_entry is None else 'updated'} standard document: {relative_path}"
                 ),
                 "current_document": {
                     "relative_path": relative_path,

@@ -849,9 +849,9 @@ class Agent:
     def _format_reference_catalog_guidance_section(reference_library_roots: List[str]) -> str:
         lines = [
             "Reference-library routing guidance:",
-            "- When a catalog file exists for a reference-library root, use `search_standard_catalog` first to shortlist candidate standards before opening large PDFs.",
-            "- After identifying a likely standard, inspect its structure with `pdf_get_info`, `pdf_get_outline`, or `get_document_structure` before broad page reads.",
-            "- Use targeted reads such as `pdf_read_lines`, `read_document_segment`, or a narrow `pdf_read_pages` range to confirm the relevant clause.",
+            "- When a catalog file exists for a reference-library root, use `search_standard_catalog` first to shortlist candidate standards before opening large documents.",
+            "- After identifying a likely standard, inspect its structure with `pdf_get_info`, `pdf_get_outline`, `get_document_structure`, or a targeted `file_read` depending on file type.",
+            "- Use targeted reads such as `pdf_read_lines`, `read_document_segment`, a narrow `pdf_read_pages` range, or scoped markdown reads to confirm the relevant clause.",
             "- Fall back to `search_documents` only when the catalog is unavailable, stale, or too coarse for the question.",
         ]
         for root_path in reference_library_roots:

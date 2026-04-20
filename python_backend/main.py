@@ -580,7 +580,7 @@ def _build_reference_library_context(
         "\n\nConfigured reference library roots:\n"
         + "\n".join(root_lines)
         + "\nIf a root catalog file exists at the listed catalog path, read it first to narrow down "
-        + "which standards are relevant before opening large PDFs. Use these roots with generic read/search tools. "
+        + "which standards are relevant before opening large documents. Use these roots with generic read/search tools. "
         + "Prefer search_documents first when no catalog is available, then use the returned absolute_path for follow-up reads."
     )
     return prompt_suffix, root_paths, tuple(signature_items)

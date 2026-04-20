@@ -130,6 +130,39 @@ class ReferenceIndexTests(unittest.IsolatedAsyncioTestCase):
                 "expected at least one summarizing progress event",
             )
 
+    async def test_build_reference_index_includes_markdown_standard_documents(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root_path = Path(temp_dir)
+            markdown_standard = root_path / "IEC-60730-1.md"
+            markdown_standard.write_text(
+                "# IEC 60730-1 Automatic electrical controls\n\n"
+                "## Scope\n\n"
+                "This standard covers automatic electrical controls for household use.\n\n"
+                "## Requirements\n\n"
+                "Clause details.\n",
+                encoding="utf-8",
+            )
+
+            with patch("runtime.reference_index.summarize_document_scope", side_effect=_fake_summary):
+                result = await reference_index.build_reference_index("root-md", str(root_path))
+
+            self.assertEqual("ready", result["status"])
+            self.assertEqual(1, result["document_count"])
+            status = reference_index.compute_reference_index_status("root-md", str(root_path))
+            self.assertEqual("ready", status["status"])
+            self.assertEqual(1, status["document_count"])
+            self.assertEqual(1, status["indexed_document_count"])
+
+            catalog_path = reference_index.reference_root_catalog_path(str(root_path))
+            payload = reference_index._load_catalog(catalog_path)
+            self.assertIsNotNone(payload)
+            documents = payload["documents"]
+            self.assertEqual(1, len(documents))
+            self.assertEqual("IEC-60730-1.md", documents[0]["file_name"])
+            self.assertEqual("md", documents[0]["file_type"])
+            self.assertEqual("IEC 60730-1", documents[0]["standard_code"])
+            self.assertEqual("heading_section", documents[0]["scope_source"]["type"])
+
     def test_status_reports_missing_root(self) -> None:
         status = reference_index.compute_reference_index_status("root-missing", "/tmp/does-not-exist-reference-index")
         self.assertEqual("missing_root", status["status"])

@@ -295,7 +295,7 @@ describe("SettingsPage", () => {
             status: "running",
             phase: "extracting",
             progress_percent: 25,
-            detail: "Reading PDF metadata and scope: IEC-60335-1.pdf",
+            detail: "Reading standard document metadata and scope: IEC-60335-1.pdf",
             total_documents: 12,
             processed_documents: 3,
             counts: { created: 1, updated: 0, removed: 0, unchanged: 2 },
@@ -403,8 +403,8 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Index" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Reading PDF metadata and scope: IEC-60335-1.pdf")).toBeTruthy();
-      expect(screen.getByText("3/12 PDF files processed")).toBeTruthy();
+      expect(screen.getByText("Reading standard document metadata and scope: IEC-60335-1.pdf")).toBeTruthy();
+      expect(screen.getByText("3/12 standard documents processed")).toBeTruthy();
     });
 
     await waitFor(() => {

@@ -124,6 +124,51 @@ class SearchStandardCatalogToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("pdf_get_outline", result.output["results"][0]["recommended_follow_up"]["tool"])
             self.assertIn("Inspect the PDF outline first", result.output["results"][0]["recommended_follow_up"]["reason"])
 
+    async def test_recommends_targeted_text_read_for_markdown_standards(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root_path = Path(temp_dir)
+            markdown_path = root_path / "IEC-60730-1.md"
+            markdown_path.write_text("# IEC 60730-1\n\n## Scope\n\nControls.\n", encoding="utf-8")
+            _write_catalog(
+                root_path,
+                [
+                    {
+                        "path": str(markdown_path.resolve()),
+                        "relative_path": "IEC-60730-1.md",
+                        "file_name": "IEC-60730-1.md",
+                        "file_type": "md",
+                        "title": "Automatic electrical controls for household and similar use",
+                        "standard_code": "IEC 60730-1",
+                        "scope_summary": "Requirements for automatic electrical controls.",
+                        "topics": ["automatic controls"],
+                        "outline_titles": ["IEC 60730-1", "Scope", "Requirements"],
+                        "scope_source": {"type": "heading_section", "label": "Scope", "line_start": 3, "line_end": 5},
+                    }
+                ],
+            )
+
+            result = await SearchStandardCatalogTool().execute(
+                tool_call_id="catalog-md-1",
+                query="automatic controls",
+                reference_library_roots=[str(root_path)],
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual("md", result.output["results"][0]["file_type"])
+            self.assertEqual("read_document_segment", result.output["results"][0]["recommended_follow_up"]["tool"])
+            self.assertEqual(
+                {"type": "text_line_range", "line_start": 3, "line_end": 5},
+                result.output["results"][0]["recommended_follow_up"]["locator"],
+            )
+            self.assertEqual(
+                "read_document_segment",
+                result.output["recommended_next_actions"][0]["tool"],
+            )
+            self.assertEqual(
+                {"type": "text_line_range", "line_start": 3, "line_end": 5},
+                result.output["recommended_next_actions"][0]["locator"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

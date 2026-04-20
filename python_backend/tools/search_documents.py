@@ -657,8 +657,8 @@ class SearchDocumentsTool(BaseTool):
                 output=None,
                 error=(
                     "A standard catalog already exists for this reference-library root. "
-                    "Use search_standard_catalog first to shortlist the right standard file, "
-                    f"then search or read the chosen PDF directly. Catalog path: {catalog_path}"
+                    "Use search_standard_catalog first to shortlist the right standard document, "
+                    f"then search or read the chosen file directly. Catalog path: {catalog_path}"
                 ),
             )
 

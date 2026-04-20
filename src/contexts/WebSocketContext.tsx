@@ -74,6 +74,7 @@ function hasTransientChatState(session: {
   pendingToolConfirm?: unknown;
   queuedToolConfirms?: unknown[];
   pendingQuestion?: unknown;
+  queuedQuestions?: unknown[];
 }): boolean {
   return (
     session.isStreaming
@@ -87,6 +88,7 @@ function hasTransientChatState(session: {
     || Boolean(session.pendingToolConfirm)
     || Boolean(session.queuedToolConfirms?.length)
     || Boolean(session.pendingQuestion)
+    || Boolean(session.queuedQuestions?.length)
   );
 }
 

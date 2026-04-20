@@ -42,6 +42,42 @@ describe("chatStore run events", () => {
     expect(useChatStore.getState().sessions["session-a"]?.pendingQuestion?.status).toBe("idle");
   });
 
+  it("queues multiple pending questions and promotes the next one when the current question is cleared", () => {
+    useChatStore.getState().setPendingQuestion("session-a", {
+      tool_call_id: "question-1",
+      tool_name: "ask_question",
+      question: "Continue deployment?",
+      details: "Traffic is low right now.",
+      options: ["continue", "wait"],
+      status: "idle",
+    });
+    useChatStore.getState().setPendingQuestion("session-a", {
+      tool_call_id: "question-2",
+      tool_name: "ask_question",
+      question: "Which environment?",
+      details: "We need the target before running the deploy.",
+      options: ["staging", "production"],
+      status: "idle",
+    });
+
+    expect(useChatStore.getState().sessions["session-a"]?.pendingQuestion?.tool_call_id).toBe("question-1");
+    expect(useChatStore.getState().sessions["session-a"]?.queuedQuestions).toEqual([
+      {
+        tool_call_id: "question-2",
+        tool_name: "ask_question",
+        question: "Which environment?",
+        details: "We need the target before running the deploy.",
+        options: ["staging", "production"],
+        status: "idle",
+      },
+    ]);
+
+    useChatStore.getState().clearPendingQuestion("session-a", "question-1");
+
+    expect(useChatStore.getState().sessions["session-a"]?.pendingQuestion?.tool_call_id).toBe("question-2");
+    expect(useChatStore.getState().sessions["session-a"]?.queuedQuestions).toEqual([]);
+  });
+
   it("stores latest usage snapshots on completion", () => {
     useChatStore.getState().startStreaming("session-a");
     useChatStore.getState().addToken("session-a", "hello world");
@@ -178,6 +214,7 @@ describe("chatStore run events", () => {
           pendingToolConfirm: undefined,
           queuedToolConfirms: [],
           pendingQuestion: undefined,
+          queuedQuestions: [],
         },
       },
     });
@@ -243,6 +280,7 @@ describe("chatStore run events", () => {
             },
           ],
           pendingQuestion: undefined,
+          queuedQuestions: [],
         },
       },
     });

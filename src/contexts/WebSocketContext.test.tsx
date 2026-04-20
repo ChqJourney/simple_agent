@@ -236,6 +236,7 @@ describe("WebSocketProvider", () => {
           pendingToolConfirm: undefined,
           queuedToolConfirms: [],
           pendingQuestion: undefined,
+          queuedQuestions: [],
         },
       },
     });
@@ -372,6 +373,47 @@ describe("WebSocketProvider", () => {
     ]);
   });
 
+  it("queues multiple question requests for the same session", async () => {
+    render(
+      <WebSocketProvider>
+        <Probe />
+      </WebSocketProvider>
+    );
+
+    websocketMockState.messageHandler?.({
+      type: "question_request",
+      session_id: "session-a",
+      tool_call_id: "question-1",
+      tool_name: "ask_question",
+      question: "Continue deployment?",
+      details: "Traffic is low right now.",
+      options: ["continue", "wait"],
+    });
+    websocketMockState.messageHandler?.({
+      type: "question_request",
+      session_id: "session-a",
+      tool_call_id: "question-2",
+      tool_name: "ask_question",
+      question: "Which environment?",
+      details: "We need the target before running the deploy.",
+      options: ["staging", "production"],
+    });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().sessions["session-a"]?.pendingQuestion?.tool_call_id).toBe("question-1");
+    });
+    expect(useChatStore.getState().sessions["session-a"]?.queuedQuestions).toEqual([
+      {
+        tool_call_id: "question-2",
+        tool_name: "ask_question",
+        question: "Which environment?",
+        details: "We need the target before running the deploy.",
+        options: ["staging", "production"],
+        status: "idle",
+      },
+    ]);
+  });
+
   it("preserves partial content before surfacing backend errors marked with preserve_partial", async () => {
     render(
       <WebSocketProvider>
@@ -392,6 +434,7 @@ describe("WebSocketProvider", () => {
           pendingToolConfirm: undefined,
           queuedToolConfirms: [],
           pendingQuestion: undefined,
+          queuedQuestions: [],
         },
       },
     });

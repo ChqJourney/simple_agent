@@ -48,6 +48,7 @@ function hasActiveReply(session: {
   pendingToolConfirm?: unknown;
   queuedToolConfirms?: unknown[];
   pendingQuestion?: unknown;
+  queuedQuestions?: unknown[];
 } | undefined): boolean {
   if (!session) {
     return false;
@@ -65,6 +66,7 @@ function hasActiveReply(session: {
     || Boolean(session.pendingToolConfirm)
     || Boolean(session.queuedToolConfirms?.length)
     || Boolean(session.pendingQuestion)
+    || Boolean(session.queuedQuestions?.length)
   );
 }
 

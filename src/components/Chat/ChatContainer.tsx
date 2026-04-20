@@ -33,7 +33,9 @@ const emptySession = {
   currentToolName: undefined as string | undefined,
   currentToolArgumentCharacters: undefined as number | undefined,
   pendingToolConfirm: undefined as { tool_call_id: string; name: string; arguments: Record<string, unknown> } | undefined,
+  queuedToolConfirms: [] as { tool_call_id: string; name: string; arguments: Record<string, unknown> }[],
   pendingQuestion: undefined as PendingQuestion | undefined,
+  queuedQuestions: [] as PendingQuestion[],
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -108,7 +110,9 @@ export const ChatContainer = () => {
     currentToolName,
     currentToolArgumentCharacters,
     pendingToolConfirm,
+    queuedToolConfirms,
     pendingQuestion,
+    queuedQuestions,
   } = useChatStore(
     useShallow((state) => {
       if (!currentSessionId) return emptySession;
@@ -122,7 +126,9 @@ export const ChatContainer = () => {
         currentToolName: session.currentToolName,
         currentToolArgumentCharacters: session.currentToolArgumentCharacters,
         pendingToolConfirm: session.pendingToolConfirm,
+        queuedToolConfirms: session.queuedToolConfirms,
         pendingQuestion: session.pendingQuestion,
+        queuedQuestions: session.queuedQuestions,
       } : emptySession;
     })
   );
@@ -238,7 +244,9 @@ export const ChatContainer = () => {
       && !streamingContent
       && !reasoningContent
       && !pendingToolConfirm
+      && (queuedToolConfirms?.length ?? 0) === 0
       && !pendingQuestion
+      && (queuedQuestions?.length ?? 0) === 0
     )
   );
 

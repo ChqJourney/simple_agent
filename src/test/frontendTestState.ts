@@ -45,6 +45,7 @@ type ChatSessionFixture = {
   pendingToolConfirm?: ToolCall;
   queuedToolConfirms?: ToolCall[];
   pendingQuestion?: PendingQuestion;
+  queuedQuestions?: PendingQuestion[];
 };
 
 type RunSessionFixture = {
@@ -135,6 +136,7 @@ export function createChatSessionFixture(overrides: Partial<ChatSessionFixture> 
     pendingToolConfirm: undefined,
     queuedToolConfirms: [],
     pendingQuestion: undefined,
+    queuedQuestions: [],
     ...overrides,
   };
 }

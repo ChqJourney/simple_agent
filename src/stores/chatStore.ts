@@ -21,6 +21,7 @@ interface SessionState {
   pendingToolConfirm?: ToolCall;
   queuedToolConfirms?: ToolCall[];
   pendingQuestion?: PendingQuestion;
+  queuedQuestions?: PendingQuestion[];
 }
 
 interface ChatState {
@@ -79,6 +80,7 @@ const createEmptySession = (): SessionState => ({
   pendingToolConfirm: undefined,
   queuedToolConfirms: [],
   pendingQuestion: undefined,
+  queuedQuestions: [],
 });
 
 function nowIso(): string {
@@ -138,6 +140,72 @@ function removePendingToolConfirm(session: SessionState, toolCallId?: string): P
   return {
     pendingToolConfirm: session.pendingToolConfirm,
     queuedToolConfirms: queuedToolConfirms.filter((pending) => pending.tool_call_id !== toolCallId),
+  };
+}
+
+function getQueuedQuestions(session: SessionState): PendingQuestion[] {
+  return session.queuedQuestions ? [...session.queuedQuestions] : [];
+}
+
+function queuePendingQuestion(
+  session: SessionState,
+  question: PendingQuestion,
+): Pick<SessionState, 'pendingQuestion' | 'queuedQuestions'> {
+  const normalizedQuestion: PendingQuestion = {
+    ...question,
+    status: question.status || 'idle',
+  };
+  const queuedQuestions = getQueuedQuestions(session);
+  if (session.pendingQuestion?.tool_call_id === normalizedQuestion.tool_call_id) {
+    return {
+      pendingQuestion: session.pendingQuestion,
+      queuedQuestions,
+    };
+  }
+
+  if (queuedQuestions.some((pending) => pending.tool_call_id === normalizedQuestion.tool_call_id)) {
+    return {
+      pendingQuestion: session.pendingQuestion,
+      queuedQuestions,
+    };
+  }
+
+  if (!session.pendingQuestion) {
+    return {
+      pendingQuestion: normalizedQuestion,
+      queuedQuestions,
+    };
+  }
+
+  return {
+    pendingQuestion: session.pendingQuestion,
+    queuedQuestions: [...queuedQuestions, normalizedQuestion],
+  };
+}
+
+function removePendingQuestion(
+  session: SessionState,
+  toolCallId?: string,
+): Pick<SessionState, 'pendingQuestion' | 'queuedQuestions'> {
+  const queuedQuestions = getQueuedQuestions(session);
+  if (!toolCallId) {
+    return {
+      pendingQuestion: undefined,
+      queuedQuestions: [],
+    };
+  }
+
+  if (session.pendingQuestion?.tool_call_id === toolCallId) {
+    const [nextPendingQuestion, ...remainingQuestions] = queuedQuestions;
+    return {
+      pendingQuestion: nextPendingQuestion,
+      queuedQuestions: remainingQuestions,
+    };
+  }
+
+  return {
+    pendingQuestion: session.pendingQuestion,
+    queuedQuestions: queuedQuestions.filter((pending) => pending.tool_call_id !== toolCallId),
   };
 }
 
@@ -314,15 +382,13 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setPendingQuestion: (sessionId, question) => set((state) => {
     const session = state.sessions[sessionId] || createEmptySession();
+    const pendingQuestionState = queuePendingQuestion(session, question);
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...session,
-          pendingQuestion: {
-            ...question,
-            status: question.status || 'idle',
-          },
+          ...pendingQuestionState,
         },
       },
     };
@@ -374,18 +440,18 @@ export const useChatStore = create<ChatState>((set) => ({
 
   clearPendingQuestion: (sessionId, toolCallId) => set((state) => {
     const session = state.sessions[sessionId];
-    if (!session?.pendingQuestion) return state;
-
-    if (toolCallId && session.pendingQuestion.tool_call_id !== toolCallId) {
+    if (!session?.pendingQuestion && !session?.queuedQuestions?.length) {
       return state;
     }
+
+    const pendingQuestionState = removePendingQuestion(session, toolCallId);
 
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...session,
-          pendingQuestion: undefined,
+          ...pendingQuestionState,
         },
       },
     };
@@ -430,6 +496,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
     const resolvedToolName = toolName || 'tool';
     const renderedOutput = renderToolResultDetails(success, output, error);
+    const pendingQuestionState = removePendingQuestion(session, toolCallId);
 
     return {
       sessions: {
@@ -437,10 +504,7 @@ export const useChatStore = create<ChatState>((set) => ({
         [sessionId]: {
           ...session,
           ...removePendingToolConfirm(session, toolCallId),
-          pendingQuestion:
-            session.pendingQuestion?.tool_call_id === toolCallId
-              ? undefined
-              : session.pendingQuestion,
+          ...pendingQuestionState,
           messages: [
             ...session.messages,
             {
@@ -559,6 +623,7 @@ export const useChatStore = create<ChatState>((set) => ({
           pendingToolConfirm: undefined,
           queuedToolConfirms: [],
           pendingQuestion: undefined,
+          queuedQuestions: [],
         },
       },
     };
@@ -637,6 +702,7 @@ export const useChatStore = create<ChatState>((set) => ({
           pendingToolConfirm: undefined,
           queuedToolConfirms: [],
           pendingQuestion: undefined,
+          queuedQuestions: [],
         },
       },
     };
@@ -669,6 +735,7 @@ export const useChatStore = create<ChatState>((set) => ({
           pendingToolConfirm: undefined,
           queuedToolConfirms: [],
           pendingQuestion: undefined,
+          queuedQuestions: [],
         },
       },
     };
@@ -694,6 +761,7 @@ export const useChatStore = create<ChatState>((set) => ({
           ...session,
           messages: newMessages,
           pendingQuestion: undefined,
+          queuedQuestions: [],
         },
       },
     };
@@ -745,6 +813,7 @@ export const useChatStore = create<ChatState>((set) => ({
           currentToolName: undefined,
           currentToolArgumentCharacters: undefined,
           pendingQuestion: undefined,
+          queuedQuestions: [],
           queuedToolConfirms: [],
         },
       },
@@ -776,6 +845,7 @@ export const useChatStore = create<ChatState>((set) => ({
           pendingToolConfirm: undefined,
           queuedToolConfirms: [],
           pendingQuestion: undefined,
+          queuedQuestions: [],
         },
       },
     };

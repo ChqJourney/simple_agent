@@ -97,7 +97,7 @@ class ToolExecutionCoordinator:
                 await self._emit_pre_execution_tool_failure(session, run_id, result)
                 continue
 
-            if self._should_serialize_tool_execution(function_name, arguments):
+            if self._should_serialize_tool_execution(tool, function_name, arguments):
                 serial_calls.append((index, tool_call_id, tool, arguments))
             else:
                 parallel_tasks.append(
@@ -138,8 +138,13 @@ class ToolExecutionCoordinator:
 
     @staticmethod
     def _should_serialize_tool_execution(
+        tool: BaseTool,
         function_name: str, arguments: Dict[str, Any]
     ) -> bool:
+        if getattr(tool, "category", "") == "interaction":
+            return True
+        if not bool(getattr(tool, "read_only", False)):
+            return True
         if function_name not in SERIAL_HEAVY_PDF_TOOLS:
             return False
 

@@ -1,0 +1,1 @@
+export { StandardQaReportPanel } from './StandardQaReportPanel';

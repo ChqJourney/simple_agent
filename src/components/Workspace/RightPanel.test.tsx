@@ -17,6 +17,10 @@ vi.mock("../Checklist", () => ({
   ChecklistResultPanel: () => <div>Checklist Content</div>,
 }));
 
+vi.mock("../Report", () => ({
+  StandardQaReportPanel: () => <div>Report Content</div>,
+}));
+
 describe("RightPanel", () => {
   beforeEach(() => {
     resetFrontendTestState();
@@ -121,6 +125,27 @@ describe("RightPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Checklist" }));
 
     expect(screen.getByText("Checklist Content")).toBeTruthy();
+  });
+
+  it("shows and auto-focuses the report tab for standard QA sessions", async () => {
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: [
+        createSessionMetaFixture({
+          scenario_id: "standard_qa",
+          scenario_version: 1,
+          scenario_label: "Standard QA",
+        }),
+      ],
+    }));
+
+    render(<RightPanel />);
+
+    expect(screen.getByRole("button", { name: "Report" })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText("Report Content")).toBeTruthy();
+      expect(useUIStore.getState().rightPanelTab).toBe("report");
+    });
   });
 
   it("falls back to file tree when the checklist tab is no longer available", async () => {

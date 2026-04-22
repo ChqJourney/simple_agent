@@ -39,6 +39,16 @@ from runtime.reference_index import (
     compute_reference_index_status,
     reference_root_catalog_path,
 )
+from runtime.reporting import (
+    ReportGenerationError,
+    encode_pdf_base64,
+    generate_standard_qa_report,
+    generate_standard_qa_report_streaming,
+    generate_standard_qa_summary,
+    load_standard_qa_session,
+    render_report_pdf,
+    suggested_report_filename,
+)
 from runtime.router import (
     build_execution_spec,
     lock_ref_from_profile,
@@ -184,6 +194,7 @@ class BackendRuntimeState:
     task_connections: Dict[asyncio.Task, str] = field(default_factory=dict)
     task_sessions: Dict[asyncio.Task, str] = field(default_factory=dict)
     reference_index_builds: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    report_generations: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     auth_token: str = ""
     auth_token_host_managed: bool = False
     authenticated_connections: Set[str] = field(default_factory=set)
@@ -276,6 +287,49 @@ def _serialize_reference_index_build(build_state: Dict[str, Any]) -> Dict[str, A
     }
 
 
+def _serialize_report_generation(report_state: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "report_id": str(report_state.get("report_id") or ""),
+        "session_id": str(report_state.get("session_id") or ""),
+        "workspace_path": str(report_state.get("workspace_path") or ""),
+        "status": str(report_state.get("status") or "queued"),
+        "phase": str(report_state.get("phase") or "queued"),
+        "progress_percent": int(report_state.get("progress_percent") or 0),
+        "detail": str(report_state.get("detail") or ""),
+        "generated_characters": int(report_state.get("generated_characters") or 0),
+        "generated_tokens": int(report_state.get("generated_tokens") or 0),
+        "started_at": str(report_state.get("started_at") or ""),
+        "updated_at": str(report_state.get("updated_at") or ""),
+        "completed_at": (
+            str(report_state.get("completed_at"))
+            if report_state.get("completed_at") is not None
+            else None
+        ),
+        "filename": (
+            str(report_state.get("filename"))
+            if report_state.get("filename") is not None
+            else None
+        ),
+        "pdf_base64": (
+            str(report_state.get("pdf_base64"))
+            if report_state.get("pdf_base64") is not None
+            else None
+        ),
+        "digest": (
+            str(report_state.get("digest"))
+            if report_state.get("digest") is not None
+            else None
+        ),
+        "generated_at": (
+            str(report_state.get("generated_at"))
+            if report_state.get("generated_at") is not None
+            else None
+        ),
+        "cached": bool(report_state.get("cached")),
+        "error": str(report_state.get("error")) if report_state.get("error") is not None else None,
+    }
+
+
 async def _update_reference_index_build(
     build_id: str,
     updates: Dict[str, Any],
@@ -287,6 +341,193 @@ async def _update_reference_index_build(
         build_state.update(updates)
         build_state["updated_at"] = _utc_now_iso()
         return _serialize_reference_index_build(build_state)
+
+
+async def _update_report_generation(
+    report_id: str,
+    updates: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    async with state_lock:
+        report_state = runtime_state.report_generations.get(report_id)
+        if report_state is None:
+            return None
+        report_state.update(updates)
+        report_state["updated_at"] = _utc_now_iso()
+        return _serialize_report_generation(report_state)
+
+
+async def _run_standard_qa_report_task(
+    report_id: str,
+    workspace_path: str,
+    session_id: str,
+    current_config: Dict[str, Any],
+    force: bool,
+) -> None:
+    llm: Optional[BaseLLM] = None
+
+    def progress_percent_for_phase(phase: str, generated_tokens: int = 0) -> int:
+        if phase == "cached":
+            return 70
+        if phase == "loading":
+            return 10
+        if phase == "llm_stream":
+            return min(76, 20 + generated_tokens // 35)
+        if phase == "parsing":
+            return 82
+        if phase == "rendering":
+            return 90
+        if phase == "encoding":
+            return 96
+        if phase == "completed":
+            return 100
+        return 5
+
+    async def report_progress_callback(progress: Dict[str, Any]) -> None:
+        phase = str(progress.get("phase") or "llm_stream")
+        generated_tokens = int(progress.get("generated_tokens") or 0)
+        await _update_report_generation(
+            report_id,
+            {
+                "status": "running",
+                "phase": phase,
+                "progress_percent": progress_percent_for_phase(phase, generated_tokens),
+                "detail": str(progress.get("detail") or ""),
+                "generated_characters": int(progress.get("generated_characters") or 0),
+                "generated_tokens": generated_tokens,
+            },
+        )
+
+    try:
+        await _update_report_generation(
+            report_id,
+            {
+                "status": "running",
+                "phase": "loading",
+                "progress_percent": 10,
+                "detail": "Loading Standard QA session and evidence context.",
+            },
+        )
+        session = await asyncio.to_thread(load_standard_qa_session, workspace_path, session_id)
+        execution_spec = build_execution_spec(current_config, "conversation")
+        llm = create_llm_for_execution_spec(execution_spec)
+        report_payload = await generate_standard_qa_report_streaming(
+            session,
+            llm,
+            force=force,
+            progress_callback=report_progress_callback,
+        )
+        await _update_report_generation(
+            report_id,
+            {
+                "status": "running",
+                "phase": "rendering",
+                "progress_percent": 90,
+                "detail": "Rendering PDF with professional report layout.",
+            },
+        )
+        pdf_bytes = await asyncio.to_thread(
+            render_report_pdf,
+            report_payload.get("data") or {},
+            session=session,
+            summary=None,
+        )
+        await _update_report_generation(
+            report_id,
+            {
+                "status": "running",
+                "phase": "encoding",
+                "progress_percent": 96,
+                "detail": "Encoding PDF for save.",
+            },
+        )
+        filename = suggested_report_filename(report_payload.get("data") or {}, session)
+        await _update_report_generation(
+            report_id,
+            {
+                "status": "completed",
+                "phase": "completed",
+                "progress_percent": 100,
+                "detail": "Report PDF is ready.",
+                "completed_at": _utc_now_iso(),
+                "filename": filename,
+                "pdf_base64": encode_pdf_base64(pdf_bytes),
+                "digest": report_payload.get("digest"),
+                "generated_at": report_payload.get("generated_at"),
+                "cached": bool(report_payload.get("cached")),
+            },
+        )
+    except ReportGenerationError as exc:
+        await _update_report_generation(
+            report_id,
+            {
+                "status": "failed",
+                "phase": "failed",
+                "completed_at": _utc_now_iso(),
+                "detail": "Report generation failed.",
+                "error": str(exc),
+            },
+        )
+    except Exception as exc:
+        logger.exception("Failed to generate Standard QA report task: %s", exc)
+        await _update_report_generation(
+            report_id,
+            {
+                "status": "failed",
+                "phase": "failed",
+                "completed_at": _utc_now_iso(),
+                "detail": "Report generation failed.",
+                "error": "Failed to generate Standard QA report PDF.",
+            },
+        )
+    finally:
+        await _close_llm_instance(llm)
+
+
+async def _start_standard_qa_report_generation(
+    workspace_path: str,
+    session_id: str,
+    current_config: Dict[str, Any],
+    force: bool,
+) -> Dict[str, Any]:
+    report_id = uuid.uuid4().hex
+    started_at = _utc_now_iso()
+    resolved_workspace_path = str(Path(workspace_path).resolve())
+    report_state: Dict[str, Any] = {
+        "report_id": report_id,
+        "workspace_path": resolved_workspace_path,
+        "session_id": session_id,
+        "status": "queued",
+        "phase": "queued",
+        "progress_percent": 0,
+        "detail": "Queued report generation.",
+        "generated_characters": 0,
+        "generated_tokens": 0,
+        "started_at": started_at,
+        "updated_at": started_at,
+        "completed_at": None,
+        "filename": None,
+        "pdf_base64": None,
+        "digest": None,
+        "generated_at": None,
+        "cached": False,
+        "error": None,
+    }
+
+    async with state_lock:
+        runtime_state.report_generations[report_id] = report_state
+
+    _register_pending_task(
+        asyncio.create_task(
+            _run_standard_qa_report_task(
+                report_id,
+                resolved_workspace_path,
+                session_id,
+                current_config,
+                force,
+            )
+        )
+    )
+    return _serialize_report_generation(report_state)
 
 
 async def _run_reference_index_build_task(
@@ -2052,6 +2293,182 @@ async def reference_index_build_progress(request: Request, data: Dict[str, Any])
         )
 
     return {"ok": True, "progress": progress_payload}
+
+
+@app.post("/reports/standard-qa/summary")
+async def standard_qa_report_summary(request: Request, data: Dict[str, Any]):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
+    workspace_path = _normalize_non_empty_string(data.get("workspace_path"))
+    session_id = _normalize_non_empty_string(data.get("session_id"))
+    force = bool(data.get("force"))
+    if not workspace_path or not session_id:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Missing workspace_path or session_id."},
+        )
+
+    async with state_lock:
+        current_config = runtime_state.current_config
+    if not isinstance(current_config, dict):
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Runtime config is not ready."},
+        )
+
+    llm: Optional[BaseLLM] = None
+    try:
+        session = await asyncio.to_thread(load_standard_qa_session, workspace_path, session_id)
+        execution_spec = build_execution_spec(current_config, "background")
+        llm = create_llm_for_execution_spec(execution_spec)
+        payload = await generate_standard_qa_summary(session, llm, force=force)
+        return {
+            "ok": True,
+            "summary": payload.get("data"),
+            "digest": payload.get("digest"),
+            "generated_at": payload.get("generated_at"),
+            "cached": bool(payload.get("cached")),
+        }
+    except ReportGenerationError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+    except Exception as exc:
+        logger.exception("Failed to generate Standard QA summary: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "Failed to generate Standard QA summary."},
+        )
+    finally:
+        await _close_llm_instance(llm)
+
+
+@app.post("/reports/standard-qa/pdf")
+async def standard_qa_report_pdf(request: Request, data: Dict[str, Any]):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
+    workspace_path = _normalize_non_empty_string(data.get("workspace_path"))
+    session_id = _normalize_non_empty_string(data.get("session_id"))
+    force = bool(data.get("force"))
+    if not workspace_path or not session_id:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Missing workspace_path or session_id."},
+        )
+
+    async with state_lock:
+        current_config = runtime_state.current_config
+    if not isinstance(current_config, dict):
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Runtime config is not ready."},
+        )
+
+    llm: Optional[BaseLLM] = None
+    try:
+        session = await asyncio.to_thread(load_standard_qa_session, workspace_path, session_id)
+        execution_spec = build_execution_spec(current_config, "conversation")
+        llm = create_llm_for_execution_spec(execution_spec)
+        report_payload = await generate_standard_qa_report(session, llm, force=force)
+        # The summary cache is optional for PDF rendering. If it is missing or stale,
+        # the primary report still remains the source of truth for the final PDF.
+        summary_data = None
+        pdf_bytes = await asyncio.to_thread(
+            render_report_pdf,
+            report_payload.get("data") or {},
+            session=session,
+            summary=summary_data,
+        )
+        filename = suggested_report_filename(report_payload.get("data") or {}, session)
+        return {
+            "ok": True,
+            "filename": filename,
+            "pdf_base64": encode_pdf_base64(pdf_bytes),
+            "digest": report_payload.get("digest"),
+            "generated_at": report_payload.get("generated_at"),
+            "cached": bool(report_payload.get("cached")),
+        }
+    except ReportGenerationError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+    except Exception as exc:
+        logger.exception("Failed to generate Standard QA report PDF: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "Failed to generate Standard QA report PDF."},
+        )
+    finally:
+        await _close_llm_instance(llm)
+
+
+@app.post("/reports/standard-qa/pdf/start")
+async def standard_qa_report_pdf_start(request: Request, data: Dict[str, Any]):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
+    workspace_path = _normalize_non_empty_string(data.get("workspace_path"))
+    session_id = _normalize_non_empty_string(data.get("session_id"))
+    force = bool(data.get("force"))
+    if not workspace_path or not session_id:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Missing workspace_path or session_id."},
+        )
+
+    async with state_lock:
+        current_config = runtime_state.current_config
+    if not isinstance(current_config, dict):
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Runtime config is not ready."},
+        )
+
+    try:
+        progress = await _start_standard_qa_report_generation(
+            workspace_path,
+            session_id,
+            current_config,
+            force,
+        )
+        return {"ok": True, "progress": progress}
+    except Exception as exc:
+        logger.exception("Failed to start Standard QA report generation: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "Failed to start Standard QA report generation."},
+        )
+
+
+@app.post("/reports/standard-qa/pdf-progress")
+async def standard_qa_report_pdf_progress(request: Request, data: Dict[str, Any]):
+    auth_error = await _require_http_auth(request)
+    if auth_error is not None:
+        return auth_error
+
+    report_id = _normalize_non_empty_string(data.get("report_id"))
+    if not report_id:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Missing report_id."},
+        )
+
+    async with state_lock:
+        report_state = runtime_state.report_generations.get(report_id)
+        progress = (
+            _serialize_report_generation(report_state)
+            if isinstance(report_state, dict)
+            else None
+        )
+
+    if progress is None:
+        return JSONResponse(
+            status_code=404,
+            content={"ok": False, "error": "Report generation task was not found."},
+        )
+
+    return {"ok": True, "progress": progress}
 
 
 @app.post("/provider-models")

@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useI18n } from '../../i18n';
 import { useChatStore } from '../../stores/chatStore';
 import type { Message } from '../../types';
 import { buildChecklistResultViewModel } from '../../utils/checklistResults';
 import { useSessionStore, useTaskStore, useUIStore, type RightPanelTab } from '../../stores';
 import { ChecklistResultPanel } from '../Checklist';
+import { StandardQaReportPanel } from '../Report';
 import { FileTree } from './FileTree';
 import { TaskList } from './TaskList';
 
@@ -12,6 +13,7 @@ const EMPTY_MESSAGES: Message[] = [];
 
 export const RightPanel: React.FC = () => {
   const { t } = useI18n();
+  const autoFocusedReportSessionsRef = useRef<Set<string>>(new Set());
   const rightPanelTab = useUIStore((state) => state.rightPanelTab);
   const setRightPanelTab = useUIStore((state) => state.setRightPanelTab);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -34,23 +36,37 @@ export const RightPanel: React.FC = () => {
     messages,
   });
   const showChecklistTab = Boolean(checklistResult);
+  const showReportTab = activeSessionMeta?.scenario_id === 'standard_qa';
   const tabs: Array<{ value: RightPanelTab; label: string }> = [
+    ...(showReportTab ? [{ value: 'report' as const, label: t('report.standardQa.tab') }] : []),
     { value: 'filetree', label: t('workspace.rightPanel.fileTree') },
     ...(showChecklistTab ? [{ value: 'checklist' as const, label: t('checklist.panel.tab') }] : []),
     ...(showTaskTab ? [{ value: 'tasklist' as const, label: t('workspace.rightPanel.tasks') }] : []),
   ];
   const hasActiveTab = (
-    rightPanelTab === 'filetree'
+    (rightPanelTab === 'report' && showReportTab)
+    || rightPanelTab === 'filetree'
     || (rightPanelTab === 'checklist' && showChecklistTab)
     || (rightPanelTab === 'tasklist' && showTaskTab)
   );
-  const activeTab: RightPanelTab = hasActiveTab ? rightPanelTab : 'filetree';
+  const activeTab: RightPanelTab = hasActiveTab ? rightPanelTab : showReportTab ? 'report' : 'filetree';
 
   useEffect(() => {
     if (!hasActiveTab) {
-      setRightPanelTab('filetree');
+      setRightPanelTab(showReportTab ? 'report' : 'filetree');
     }
-  }, [hasActiveTab, setRightPanelTab]);
+  }, [hasActiveTab, setRightPanelTab, showReportTab]);
+
+  useEffect(() => {
+    if (!currentSessionId || !showReportTab) {
+      return;
+    }
+    if (autoFocusedReportSessionsRef.current.has(currentSessionId)) {
+      return;
+    }
+    autoFocusedReportSessionsRef.current.add(currentSessionId);
+    setRightPanelTab('report');
+  }, [currentSessionId, setRightPanelTab, showReportTab]);
 
   return (
     <div className="flex flex-col h-full">
@@ -76,6 +92,9 @@ export const RightPanel: React.FC = () => {
         {activeTab === 'filetree' && <FileTree />}
         {activeTab === 'checklist' && checklistResult && (
           <ChecklistResultPanel result={checklistResult} sessionId={currentSessionId} />
+        )}
+        {activeTab === 'report' && showReportTab && (
+          <StandardQaReportPanel session={activeSessionMeta} messages={messages} />
         )}
         {activeTab === 'tasklist' && <TaskList />}
       </div>

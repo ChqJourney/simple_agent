@@ -52,3 +52,7 @@ export const backendTestConfigUrl = `${configuredHttpBase}/test-config`;
 export const backendReferenceIndexStatusUrl = `${configuredHttpBase}/reference-index/status`;
 export const backendReferenceIndexBuildUrl = `${configuredHttpBase}/reference-index/build`;
 export const backendReferenceIndexBuildProgressUrl = `${configuredHttpBase}/reference-index/build-progress`;
+export const backendStandardQaReportSummaryUrl = `${configuredHttpBase}/reports/standard-qa/summary`;
+export const backendStandardQaReportPdfUrl = `${configuredHttpBase}/reports/standard-qa/pdf`;
+export const backendStandardQaReportPdfStartUrl = `${configuredHttpBase}/reports/standard-qa/pdf/start`;
+export const backendStandardQaReportPdfProgressUrl = `${configuredHttpBase}/reports/standard-qa/pdf-progress`;

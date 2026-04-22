@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine as _};
 use std::{
     error::Error as StdError,
     fs,
@@ -264,6 +265,45 @@ fn open_file_path(app: tauri::AppHandle, selected_path: String) -> Result<(), St
     app.opener()
         .open_path(&selected_path, None::<&str>)
         .map_err(|error| format!("Failed to open file: {error}"))
+}
+
+#[tauri::command]
+fn write_report_pdf(selected_path: String, pdf_base64: String) -> Result<(), String> {
+    let file_path = Path::new(&selected_path);
+    if file_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_lowercase)
+        .as_deref()
+        != Some("pdf")
+    {
+        return Err("Report output path must end with .pdf".to_string());
+    }
+
+    if let Some(parent) = file_path.parent() {
+        if !parent.exists() {
+            return Err(format!(
+                "Report output directory does not exist: {}",
+                parent.display()
+            ));
+        }
+        if !parent.is_dir() {
+            return Err(format!(
+                "Report output parent is not a directory: {}",
+                parent.display()
+            ));
+        }
+    }
+
+    let bytes = general_purpose::STANDARD
+        .decode(pdf_base64.as_bytes())
+        .map_err(|error| format!("Failed to decode PDF payload: {error}"))?;
+
+    if bytes.is_empty() {
+        return Err("PDF payload is empty.".to_string());
+    }
+
+    fs::write(file_path, bytes).map_err(|error| format!("Failed to write PDF report: {error}"))
 }
 
 #[tauri::command]
@@ -710,6 +750,7 @@ pub fn run() {
             delete_session_history,
             open_workspace_folder,
             open_file_path,
+            write_report_pdf,
             scan_system_skills,
             scan_workspace_skills,
             get_backend_auth_token,

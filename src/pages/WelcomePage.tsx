@@ -23,7 +23,7 @@ type WorkspacePrepareResult =
 export const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useI18n();
-  const { workspaces, addWorkspace, setCurrentWorkspace, syncWorkspacePath } = useWorkspaceStore();
+  const { workspaces, addWorkspace, setCurrentWorkspace, syncWorkspacePath, removeWorkspace } = useWorkspaceStore();
   const setPageLoading = useUIStore((state) => state.setPageLoading);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -154,6 +154,7 @@ export const WelcomePage: React.FC = () => {
             <WorkspaceList
               workspaces={recentWorkspaces}
               onSelect={handleOpenWorkspace}
+              onDelete={removeWorkspace}
             />
           </div>
         )}

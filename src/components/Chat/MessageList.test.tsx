@@ -586,6 +586,85 @@ describe("MessageList", () => {
     expect(screen.getByText("attempt 2 - LLM stream stalled before completion.")).toBeTruthy();
   });
 
+  it("keeps runtime notices at their chronological position within turn details", () => {
+    const messages: Message[] = [
+      {
+        id: "user-1",
+        role: "user",
+        content: "Investigate",
+        status: "completed",
+        timestamp: "2026-03-28T10:00:00.000Z",
+      },
+      {
+        id: "assistant-tool-call",
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            tool_call_id: "tool-1",
+            name: "shell_execute",
+            arguments: { command: "npm test" },
+          },
+        ],
+        status: "completed",
+        timestamp: "2026-03-28T10:00:01.000Z",
+      },
+      {
+        id: "tool-result-1",
+        role: "tool",
+        content: "shell_execute 执行成功",
+        tool_call_id: "tool-1",
+        name: "shell_execute",
+        toolMessage: {
+          kind: "result",
+          toolName: "shell_execute",
+          success: true,
+          details: "exit_code: 0\nstdout:\nPASS",
+        },
+        status: "completed",
+        timestamp: "2026-03-28T10:00:02.000Z",
+      },
+      {
+        id: "reasoning-1",
+        role: "reasoning",
+        content: "Now I can interpret the test result.",
+        status: "completed",
+        timestamp: "2026-03-28T10:00:04.000Z",
+      },
+    ];
+
+    render(
+      <MessageList
+        messages={messages}
+        runEvents={[
+          {
+            event_type: "run_started",
+            session_id: "session-1",
+            run_id: "run-1",
+            payload: {},
+            timestamp: "2026-03-28T10:00:00.000Z",
+          },
+          {
+            event_type: "retry_scheduled",
+            session_id: "session-1",
+            run_id: "run-1",
+            payload: {
+              attempt: 2,
+              details: "LLM stream stalled before completion.",
+            },
+            timestamp: "2026-03-28T10:00:03.000Z",
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /runtime notices 1/i }));
+
+    const detailContent = screen.getByText("Retry scheduled").closest(".space-y-3")?.textContent || "";
+    expect(detailContent.indexOf("shell_execute 执行成功")).toBeLessThan(detailContent.indexOf("Retry scheduled"));
+    expect(detailContent.indexOf("Retry scheduled")).toBeLessThan(detailContent.indexOf("Now I can interpret the test result."));
+  });
+
   it("renders delegated worker cards in the message flow and opens a detail modal", async () => {
     const delegatedOutput = {
       event: "delegated_task",

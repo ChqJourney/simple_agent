@@ -15,7 +15,12 @@ export interface RuntimeNoticeViewModel {
   label: string;
   details?: string;
   tone: 'default' | 'warning' | 'error';
+  timestamp?: string;
 }
+
+type DetailTimelineItem =
+  | { kind: 'message'; message: Message; order: number; timestamp?: string }
+  | { kind: 'notice'; notice: RuntimeNoticeViewModel; order: number; timestamp?: string };
 
 interface AssistantTurnProps {
   messages: Message[];
@@ -116,6 +121,49 @@ function getRoundDetailsLabel(
 
 function renderToolMessage(message: Message) {
   return <ToolMessageDisplay message={message} collapsible={false} />;
+}
+
+function getTimestampMs(timestamp?: string): number | null {
+  if (!timestamp) {
+    return null;
+  }
+
+  const value = Date.parse(timestamp);
+  return Number.isFinite(value) ? value : null;
+}
+
+function sortDetailTimelineItems(items: DetailTimelineItem[]): DetailTimelineItem[] {
+  return [...items].sort((left, right) => {
+    const leftTimestamp = getTimestampMs(left.timestamp);
+    const rightTimestamp = getTimestampMs(right.timestamp);
+
+    if (leftTimestamp !== null && rightTimestamp !== null && leftTimestamp !== rightTimestamp) {
+      return leftTimestamp - rightTimestamp;
+    }
+
+    return left.order - right.order;
+  });
+}
+
+function renderRuntimeNotice(notice: RuntimeNoticeViewModel) {
+  const toneClasses = notice.tone === 'error'
+    ? 'border-red-200/80 bg-red-50/80 text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-200'
+    : notice.tone === 'warning'
+      ? 'border-amber-200/80 bg-amber-50/80 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200'
+      : 'border-gray-200/80 bg-white/70 text-gray-800 dark:border-gray-700/80 dark:bg-gray-900/50 dark:text-gray-100';
+
+  return (
+    <div className={`rounded-2xl border p-4 ${toneClasses}`}>
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-80">
+        {notice.label}
+      </div>
+      {notice.details && (
+        <div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">
+          {notice.details}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function renderDetailMessage(
@@ -223,6 +271,20 @@ export const AssistantTurn = ({
   const isFailedTurn = formalAssistantMessage?.status === 'error';
   const [isExpanded, setIsExpanded] = useState(isStreaming);
   const wasStreamingRef = useRef(isStreaming);
+  const detailTimelineItems = sortDetailTimelineItems([
+    ...visibleDetailMessages.map((message, index): DetailTimelineItem => ({
+      kind: 'message',
+      message,
+      order: index,
+      timestamp: message.timestamp,
+    })),
+    ...runtimeNotices.map((notice, index): DetailTimelineItem => ({
+      kind: 'notice',
+      notice,
+      order: visibleDetailMessages.length + index,
+      timestamp: notice.timestamp,
+    })),
+  ]);
 
   useEffect(() => {
     if (isStreaming) {
@@ -286,38 +348,22 @@ export const AssistantTurn = ({
 
           {isExpanded && (
             <div className="mt-4 space-y-3 border-t border-gray-200/80 pt-4 dark:border-gray-700/80">
-              {runtimeNotices.map((notice) => {
-                const toneClasses = notice.tone === 'error'
-                  ? 'border-red-200/80 bg-red-50/80 text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-200'
-                  : notice.tone === 'warning'
-                    ? 'border-amber-200/80 bg-amber-50/80 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200'
-                    : 'border-gray-200/80 bg-white/70 text-gray-800 dark:border-gray-700/80 dark:bg-gray-900/50 dark:text-gray-100';
-
-                return (
-                  <div
-                    key={notice.id}
-                    className={`rounded-2xl border p-4 ${toneClasses}`}
-                  >
-                    <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-80">
-                      {notice.label}
+              {detailTimelineItems.map((item) => {
+                if (item.kind === 'notice') {
+                  return (
+                    <div key={item.notice.id}>
+                      {renderRuntimeNotice(item.notice)}
                     </div>
-                    {notice.details && (
-                      <div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">
-                        {notice.details}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                }
 
-              {visibleDetailMessages.map((message) => {
-                const content = renderDetailMessage(message, hiddenDelegatedToolCallIds, t);
+                const content = renderDetailMessage(item.message, hiddenDelegatedToolCallIds, t);
                 if (!content) {
                   return null;
                 }
 
                 return (
-                  <div key={message.id}>
+                  <div key={item.message.id}>
                     {content}
                   </div>
                 );

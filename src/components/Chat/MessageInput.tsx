@@ -34,6 +34,7 @@ interface MessageInputProps {
   onExecutionModeChange?: (mode: ExecutionMode) => void;
   onInterrupt?: () => void;
   isStreaming?: boolean;
+  canInterrupt?: boolean;
   disabled?: boolean;
   placeholder?: string;
   executionMode?: ExecutionMode;
@@ -336,6 +337,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   onExecutionModeChange,
   onInterrupt,
   isStreaming = false,
+  canInterrupt = true,
   disabled = false,
   placeholder,
   executionMode = 'regular',
@@ -808,7 +810,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             <button
               type="button"
               onClick={onInterrupt}
-              disabled={disabled}
+              disabled={!canInterrupt}
               aria-label={t('chat.input.stopGenerating')}
               title={t('chat.input.stopGenerating')}
               className="absolute bottom-3 right-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500 text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-700"

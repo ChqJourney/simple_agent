@@ -405,6 +405,7 @@ function buildRuntimeNotices(
         label,
         details,
         tone,
+        timestamp: event.timestamp,
       };
     });
 }

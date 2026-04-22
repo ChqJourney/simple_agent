@@ -4,6 +4,7 @@ import { ChatContainer } from "./ChatContainer";
 import { useChatStore } from "../../stores/chatStore";
 import { useChecklistStore } from "../../stores/checklistStore";
 import { useConfigStore } from "../../stores/configStore";
+import { useRunStore } from "../../stores/runStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore } from "../../stores/uiStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
@@ -67,9 +68,30 @@ vi.mock("./MessageList", () => ({
 }));
 
 vi.mock("./MessageInput", () => ({
-  MessageInput: (props: { disabled?: boolean; placeholder?: string; supportsImageAttachments?: boolean }) => {
+  MessageInput: (props: {
+    canInterrupt?: boolean;
+    disabled?: boolean;
+    isStreaming?: boolean;
+    onInterrupt?: () => void;
+    placeholder?: string;
+    supportsImageAttachments?: boolean;
+  }) => {
     messageInputPropsMock(props);
-    return <div>{props.disabled ? "MessageInput disabled" : "MessageInput enabled"}</div>;
+    return (
+      <div>
+        {props.disabled ? "MessageInput disabled" : "MessageInput enabled"}
+        {props.isStreaming && (
+          <button
+            type="button"
+            aria-label="stop generating"
+            disabled={!props.canInterrupt}
+            onClick={props.onInterrupt}
+          >
+            stop
+          </button>
+        )}
+      </div>
+    );
   },
 }));
 
@@ -109,6 +131,7 @@ describe("ChatContainer", () => {
     messageListPropsMock.mockReset();
     useConfigStore.setState({ config: null as never });
     useChecklistStore.setState({ sessions: {} });
+    useRunStore.setState({ sessions: {} });
     useSessionStore.setState((state) => ({
       ...state,
       currentSessionId: "session-a",
@@ -569,6 +592,56 @@ describe("ChatContainer", () => {
         content: "Retry this request",
       })
     );
+  });
+
+  it("allows interrupting an active run even when the composer is disabled for sending", () => {
+    useChatStore.setState({
+      sessions: {
+        "session-a": {
+          messages: [],
+          currentStreamingContent: "",
+          currentReasoningContent: "",
+          isStreaming: false,
+          assistantStatus: "idle",
+          currentToolName: undefined,
+          pendingToolConfirm: undefined,
+          queuedToolConfirms: [],
+          pendingQuestion: undefined,
+          queuedQuestions: [],
+        },
+      },
+    });
+    useRunStore.setState({
+      sessions: {
+        "session-a": {
+          events: [
+            {
+              event_type: "run_started",
+              session_id: "session-a",
+              run_id: "run-1",
+              payload: {},
+              timestamp: "2026-03-28T10:00:00.000Z",
+            },
+          ],
+          currentRunId: "run-1",
+          status: "running",
+        },
+      },
+    });
+
+    render(<ChatContainer />);
+
+    expect(messageInputPropsMock.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        disabled: true,
+        isStreaming: true,
+        canInterrupt: true,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "stop generating" }));
+
+    expect(interruptMock).toHaveBeenCalledWith("session-a");
   });
 
   it("updates the scenario on an empty session instead of creating a new one", () => {

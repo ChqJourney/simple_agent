@@ -100,4 +100,28 @@ describe("WelcomePage", () => {
       "C:/Users/patri/source/repos/repo"
     );
   });
+
+  it("removes a workspace from the recent workspace list without opening it", () => {
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      workspaces: [
+        {
+          id: "workspace-1",
+          name: "repo",
+          path: "C:/Users/patri/source/repos/repo",
+          lastOpened: "2026-03-12T10:00:00.000Z",
+          createdAt: "2026-03-12T09:00:00.000Z",
+        },
+      ],
+    }));
+
+    render(<WelcomePage />);
+
+    fireEvent.mouseEnter(screen.getByText("repo").closest(".group") as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "Remove workspace" }));
+
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(screen.queryByText("repo")).toBeNull();
+  });
 });

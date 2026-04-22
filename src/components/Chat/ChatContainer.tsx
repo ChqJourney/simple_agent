@@ -47,6 +47,14 @@ const PROVIDER_LABELS: Record<string, string> = {
   qwen: 'Qwen',
 };
 
+const INTERRUPTIBLE_ASSISTANT_STATUSES = new Set([
+  'waiting',
+  'thinking',
+  'streaming',
+  'preparing_tool',
+  'tool_calling',
+]);
+
 export const ChatContainer = () => {
   const { t } = useI18n();
   const { currentSessionId, createSession, updateSessionScenario } = useSession();
@@ -139,6 +147,11 @@ export const ChatContainer = () => {
         : []
     ))
   );
+  const activeRunStatus = useRunStore((state) => (
+    currentSessionId
+      ? state.sessions[currentSessionId]?.status || 'idle'
+      : 'idle'
+  ));
   const activeScenarioId = activeSessionMeta?.scenario_id ?? 'default';
   const checklistResult = buildChecklistResultViewModel({
     scenarioId: activeScenarioId,
@@ -249,6 +262,18 @@ export const ChatContainer = () => {
       && (queuedQuestions?.length ?? 0) === 0
     )
   );
+  const isInterruptibleRun = Boolean(
+    currentSessionId
+    && (
+      isStreaming
+      || activeRunStatus === 'running'
+      || INTERRUPTIBLE_ASSISTANT_STATUSES.has(assistantStatus)
+      || pendingToolConfirm
+      || pendingQuestion
+      || (queuedToolConfirms?.length ?? 0) > 0
+      || (queuedQuestions?.length ?? 0) > 0
+    )
+  );
 
   const handleScenarioSelect = useCallback((scenarioId: ScenarioOption['id']) => {
     const scenario = scenarioOptions.find((option) => option.id === scenarioId);
@@ -281,9 +306,9 @@ export const ChatContainer = () => {
   }, [confirmTool, currentSessionId, pendingToolConfirm]);
 
   const handleInterrupt = useCallback(() => {
-    if (!currentSessionId || !isStreaming) return;
+    if (!currentSessionId || !isInterruptibleRun) return;
     interrupt(currentSessionId);
-  }, [currentSessionId, interrupt, isStreaming]);
+  }, [currentSessionId, interrupt, isInterruptibleRun]);
 
   const handleQuestionAnswer = useCallback((answer: string) => {
     if (!currentSessionId || !pendingQuestion || pendingQuestion.status === 'submitting') return;
@@ -408,7 +433,8 @@ export const ChatContainer = () => {
         executionMode={activeExecutionMode}
         onExecutionModeChange={handleExecutionModeChange}
         onInterrupt={handleInterrupt}
-        isStreaming={isStreaming}
+        isStreaming={isInterruptibleRun}
+        canInterrupt={isConnected && Boolean(currentSessionId) && isInterruptibleRun}
         disabled={!canSendMessage}
         supportsImageAttachments={supportsImageAttachments}
         placeholder={composerPlaceholder}

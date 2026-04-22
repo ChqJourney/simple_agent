@@ -400,16 +400,24 @@ describe("SettingsPage", () => {
       expect(screen.getByRole("button", { name: "Create Index" })).toBeTruthy();
     });
 
+    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Create Index" }));
 
-    await waitFor(() => {
-      expect(screen.getByText("Reading standard document metadata and scope: IEC-60335-1.pdf")).toBeTruthy();
-      expect(screen.getByText("3/12 standard documents processed")).toBeTruthy();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    await waitFor(() => {
-      expect(screen.getByText("Index updated: 4 created, 1 updated, 0 removed.")).toBeTruthy();
-    }, { timeout: 4000 });
+    expect(screen.getByText("Reading standard document metadata and scope: IEC-60335-1.pdf")).toBeTruthy();
+    expect(screen.getByText("3/12 standard documents processed")).toBeTruthy();
+
+    await act(async () => {
+      vi.advanceTimersByTime(800);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Index updated: 4 created, 1 updated, 0 removed.")).toBeTruthy();
   });
 
   it("shows default runtime values when runtime config is missing", () => {

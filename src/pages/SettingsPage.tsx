@@ -30,7 +30,7 @@ import {
 } from '../utils/config';
 import { buildBackendAuthHeaders, getBackendAuthToken } from '../utils/backendAuth';
 import { backendTestConfigUrl } from '../utils/backendEndpoint';
-import { getDefaultContextLength } from '../utils/modelCapabilities';
+import { getDefaultContextLength, supportsReasoning } from '../utils/modelCapabilities';
 import {
   fetchReferenceIndexBuildProgress,
   fetchReferenceIndexStatus,
@@ -77,6 +77,14 @@ const SETTINGS_PANEL_CLASS =
   'rounded-2xl border border-slate-200/70 bg-slate-50/85 p-4 dark:border-slate-700/70 dark:bg-slate-900/35';
 const SETTINGS_ROW_CLASS =
   'rounded-2xl border border-gray-200 px-4 py-4 dark:border-gray-700/80 dark:bg-gray-950/18';
+const PROVIDER_LABELS: Record<ProviderType, string> = {
+  openai: 'OpenAI',
+  deepseek: 'DeepSeek',
+  kimi: 'Kimi (Moonshot)',
+  glm: 'GLM (Zhipu)',
+  minimax: 'MiniMax',
+  qwen: 'Qwen (Tongyi Qianwen)',
+};
 
 const rootSupportsStandardIndex = (root: ReferenceLibraryRoot): boolean => (
   !root.kinds || root.kinds.includes('standard')
@@ -93,6 +101,7 @@ export const SettingsPage: React.FC = () => {
   const [draftBaseFontSize, setDraftBaseFontSize] = useState<number>(
     normalizeBaseFontSize(config?.appearance?.base_font_size ?? baseFontSize)
   );
+  const [activeModelEditor, setActiveModelEditor] = useState<ProfileName | null>(null);
   const [connectionTests, setConnectionTests] = useState<Record<ProfileName, ConnectionTestState>>({
     primary: { status: 'idle', error: null },
     background: { status: 'idle', error: null },
@@ -179,6 +188,23 @@ export const SettingsPage: React.FC = () => {
     setDraftConfig(config || {});
     setDraftBaseFontSize(normalizeBaseFontSize(config?.appearance?.base_font_size ?? baseFontSize));
   }, [config]);
+
+  useEffect(() => {
+    if (!activeModelEditor) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActiveModelEditor(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeModelEditor]);
 
   useEffect(() => {
     let cancelled = false;
@@ -857,6 +883,134 @@ export const SettingsPage: React.FC = () => {
     navigate(-1);
   };
 
+  const getProfileTitle = (profileName: ProfileName): string => (
+    profileName === 'primary' ? t('settings.model.primary') : t('settings.model.background')
+  );
+
+  const getProviderLabel = (provider?: ProviderType): string => (
+    provider ? PROVIDER_LABELS[provider] : t('common.unavailable')
+  );
+
+  const renderConnectionTestFeedback = (profileName: ProfileName) => {
+    const connectionState = connectionTests[profileName];
+    if (connectionState.status === 'success') {
+      return (
+        <span className="text-sm text-emerald-600 dark:text-emerald-400">
+          {profileName === 'primary' ? t('settings.model.primaryConnected') : t('settings.model.backgroundConnected')}
+        </span>
+      );
+    }
+
+    if (connectionState.status === 'error') {
+      return (
+        <span className="text-sm text-red-500">
+          {profileName === 'primary' ? t('settings.model.primaryFailed') : t('settings.model.backgroundFailed')}
+          {connectionState.error ? `: ${connectionState.error}` : ''}
+        </span>
+      );
+    }
+
+    return null;
+  };
+
+  const renderModelProfileCard = (
+    profileName: ProfileName,
+    profile: Partial<ModelProfile>,
+    options?: { description?: string; testButtonVariant?: 'primary' | 'secondary' },
+  ) => {
+    const connectionState = connectionTests[profileName];
+    const reasoningSupported = Boolean(
+      profile.provider && profile.model && supportsReasoning(profile.provider, profile.model)
+    );
+    const isTestable = isProfileTestable(profile);
+    const testButtonClassName = options?.testButtonVariant === 'secondary'
+      ? 'rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800'
+      : 'rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white';
+
+    return (
+      <section className={SETTINGS_CARD_CLASS}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">{getProfileTitle(profileName)}</h3>
+            {options?.description && (
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {options.description}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setActiveModelEditor(profileName)}
+            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700/80 dark:text-gray-200 dark:hover:bg-gray-800/80"
+            aria-haspopup="dialog"
+          >
+            {profileName === 'primary' ? t('settings.model.changePrimary') : t('settings.model.changeBackground')}
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-4">
+          <div className={SETTINGS_PANEL_CLASS}>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+              {t('settings.model.currentProvider')}
+            </div>
+            <p className="mt-3 text-base font-semibold text-gray-900 dark:text-white">
+              {getProviderLabel(profile.provider)}
+            </p>
+          </div>
+
+          <div className={SETTINGS_PANEL_CLASS}>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+              {t('settings.model.currentModel')}
+            </div>
+            <p className="mt-3 break-all text-base font-semibold text-gray-900 dark:text-white">
+              {profile.model || t('common.unavailable')}
+            </p>
+          </div>
+
+          <div className={SETTINGS_PANEL_CLASS}>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+              {t('settings.model.reasoningSupport')}
+            </div>
+            <p className="mt-3 text-base font-semibold text-gray-900 dark:text-white">
+              {reasoningSupported ? t('common.supported') : t('common.unsupported')}
+            </p>
+          </div>
+
+          <div className={SETTINGS_PANEL_CLASS}>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+              {t('settings.model.reasoningEnabled')}
+            </div>
+            <p className="mt-3 text-base font-semibold text-gray-900 dark:text-white">
+              {reasoningSupported && profile.enable_reasoning ? t('common.enabled') : t('common.disabled')}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-dashed border-gray-200 px-4 py-4 dark:border-gray-700/80 dark:bg-gray-950/12">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => void handleTest(profileName)}
+              disabled={connectionState.status === 'testing' || !isTestable}
+              className={testButtonClassName}
+            >
+              {connectionState.status === 'testing'
+                ? (profileName === 'primary' ? t('settings.model.primaryTesting') : t('settings.model.backgroundTesting'))
+                : (profileName === 'primary' ? t('settings.model.primaryTest') : t('settings.model.backgroundTest'))}
+            </button>
+            {renderConnectionTestFeedback(profileName)}
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  const activeEditorTitle = activeModelEditor ? getProfileTitle(activeModelEditor) : '';
+  const activeEditorProfile = activeModelEditor
+    ? (activeModelEditor === 'primary' ? primaryProfile : backgroundProfile)
+    : null;
+
   const renderTabContent = () => {
     if (activeTab === 'model') {
       return (
@@ -870,44 +1024,13 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div className="space-y-5">
-              <ProviderConfigForm
-                title={t('settings.model.primary')}
-                config={primaryProfile}
-                onCatalogLoaded={handleProviderCatalogLoaded}
-                configuredProviders={configuredProviders}
-                onChange={(nextConfig) => updateProfile('primary', nextConfig)}
-                onTestConnection={() => void handleTest('primary')}
-                canTestConnection={isProfileTestable(primaryProfile)}
-                testConnectionStatus={connectionTests.primary.status}
-                testConnectionError={connectionTests.primary.error}
-                testConnectionLabel={t('settings.model.primaryTest')}
-                testConnectionBusyLabel={t('settings.model.primaryTesting')}
-                testConnectionSuccessLabel={t('settings.model.primaryConnected')}
-                testConnectionFailureLabel={t('settings.model.primaryFailed')}
-                testButtonVariant="primary"
-              />
-
-              <div className="rounded-2xl border border-dashed border-gray-200 p-4 dark:border-gray-700/80 dark:bg-gray-950/12">
-                <ProviderConfigForm
-                  title={t('settings.model.background')}
-                  config={backgroundProfile}
-                  onCatalogLoaded={handleProviderCatalogLoaded}
-                  configuredProviders={configuredProviders}
-                  onChange={(nextConfig) => updateProfile('background', nextConfig)}
-                  onTestConnection={() => void handleTest('background')}
-                  canTestConnection={isProfileTestable(backgroundProfile)}
-                  testConnectionStatus={connectionTests.background.status}
-                  testConnectionError={connectionTests.background.error}
-                  testConnectionLabel={t('settings.model.backgroundTest')}
-                  testConnectionBusyLabel={t('settings.model.backgroundTesting')}
-                  testConnectionSuccessLabel={t('settings.model.backgroundConnected')}
-                  testConnectionFailureLabel={t('settings.model.backgroundFailed')}
-                  testButtonVariant="secondary"
-                />
-                <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                  {t('settings.model.backgroundHint')}
-                </p>
-              </div>
+              {renderModelProfileCard('primary', primaryProfile, {
+                testButtonVariant: 'primary',
+              })}
+              {renderModelProfileCard('background', backgroundProfile, {
+                description: t('settings.model.backgroundHint'),
+                testButtonVariant: 'secondary',
+              })}
             </div>
           </section>
         </div>
@@ -1657,6 +1780,64 @@ export const SettingsPage: React.FC = () => {
           </section>
         </div>
       </main>
+
+      {activeModelEditor && activeEditorProfile && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
+          onClick={() => setActiveModelEditor(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('settings.model.changeDialogTitle', { profile: activeEditorTitle })}
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[1.75rem] border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700/80 dark:bg-gray-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {t('settings.model.changeDialogTitle', { profile: activeEditorTitle })}
+                </h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  {t('settings.model.changeDialogDescription')}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveModelEditor(null)}
+                className="rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800/80"
+                aria-label={t('common.close')}
+                title={t('common.close')}
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <ProviderConfigForm
+              title={activeEditorTitle}
+              config={activeEditorProfile}
+              onCatalogLoaded={handleProviderCatalogLoaded}
+              configuredProviders={configuredProviders}
+              onChange={(nextConfig) => updateProfile(activeModelEditor, nextConfig)}
+              showTitle={false}
+              showConnectionTest={false}
+            />
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setActiveModelEditor(null)}
+                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

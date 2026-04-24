@@ -55,6 +55,10 @@ function selectOption(label: string, optionText: string) {
   fireEvent.click(target!);
 }
 
+function openModelEditor(buttonName: string) {
+  fireEvent.click(screen.getByRole("button", { name: buttonName }));
+}
+
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -145,8 +149,27 @@ describe("SettingsPage", () => {
 
     expect(screen.getByText("Primary Model")).toBeTruthy();
     expect(screen.getByText("Background Model")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Change Primary Model" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Change Background Model" })).toBeTruthy();
+    expect(screen.getAllByText("Current provider").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Current model").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Thinking support").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Thinking enabled").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unsupported").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Disabled").length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("Enable reasoning")).toBeNull();
+
+    openModelEditor("Change Primary Model");
+    expect(screen.getByRole("dialog", { name: "Change Primary Model" })).toBeTruthy();
     expect(screen.getByLabelText("Primary Model Provider")).toBeTruthy();
+    expect(screen.getByLabelText("Enable reasoning")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(screen.queryByRole("dialog", { name: "Change Primary Model" })).toBeNull();
+
+    openModelEditor("Change Background Model");
+    expect(screen.getByRole("dialog", { name: "Change Background Model" })).toBeTruthy();
     expect(screen.getByLabelText("Background Model Provider")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     openTab("Runtime");
     expect(screen.getByText("Shared Runtime")).toBeTruthy();
@@ -557,6 +580,7 @@ describe("SettingsPage", () => {
   it("offers hosted providers in the provider selector", () => {
     render(<SettingsPage />);
 
+    openModelEditor("Change Primary Model");
     openSelect("Primary Model Provider");
     const providerOptions = listOpenOptions();
 
@@ -618,6 +642,7 @@ describe("SettingsPage", () => {
   it("marks configured providers in the selector and shows a saved hint", () => {
     render(<SettingsPage />);
 
+    openModelEditor("Change Primary Model");
     openSelect("Primary Model Provider");
     const providerOptions = listOpenOptions();
 
@@ -628,6 +653,7 @@ describe("SettingsPage", () => {
   it("shows image support status in the primary model list", () => {
     render(<SettingsPage />);
 
+    openModelEditor("Change Primary Model");
     openSelect("Primary Model Model");
     const modelOptions = listOpenOptions();
 
@@ -752,6 +778,7 @@ describe("SettingsPage", () => {
   it("allows saving a configured model before an API key is added", () => {
     render(<SettingsPage />);
 
+    openModelEditor("Change Primary Model");
     fireEvent.change(screen.getAllByPlaceholderText("Enter your API key")[0], {
       target: { value: "" },
     });
@@ -778,6 +805,7 @@ describe("SettingsPage", () => {
   it("saves a custom model id from the settings form", () => {
     render(<SettingsPage />);
 
+    openModelEditor("Change Primary Model");
     fireEvent.change(screen.getAllByLabelText("Custom model ID")[0], {
       target: { value: "gpt-4.1-nano-preview" },
     });
@@ -806,6 +834,7 @@ describe("SettingsPage", () => {
   it("remembers api key and base url per provider when switching providers", () => {
     render(<SettingsPage />);
 
+    openModelEditor("Change Primary Model");
     selectOption("Primary Model Provider", "Kimi (Moonshot)");
     selectOption("Primary Model Model", "kimi-k2.5");
     fireEvent.change(screen.getAllByPlaceholderText("Enter your API key")[0], {

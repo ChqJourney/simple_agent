@@ -2,7 +2,7 @@ import type { InputType, ProviderType } from '../types';
 export type ImageSupportStatus = 'supported' | 'unsupported';
 
 const OPENAI_REASONING_PREFIXES = ['o1', 'o3', 'o4', 'gpt-5'];
-const KIMI_REASONING_PREFIXES = ['kimi-k2.5'];
+const KIMI_REASONING_PREFIXES = ['kimi-k2.5', 'kimi-k2-thinking'];
 const GLM_REASONING_PREFIXES = ['glm-5', 'glm-4.7', 'glm-4.6'];
 const DEEPSEEK_REASONING_PREFIXES = ['deepseek-reasoner'];
 const MINIMAX_REASONING_PREFIXES: string[] = [];
@@ -10,7 +10,7 @@ const QWEN_REASONING_PREFIXES = ['qwen3', 'qwq'];
 
 const OPENAI_IMAGE_SUPPORTED_PREFIXES = ['gpt-4o', 'gpt-4.1', 'gpt-5'];
 const OPENAI_IMAGE_UNSUPPORTED_PREFIXES = ['o1', 'o3', 'o4'];
-const KIMI_IMAGE_SUPPORTED_PREFIXES = ['kimi-k2.5'];
+const KIMI_IMAGE_SUPPORTED_PREFIXES = ['kimi-k2.5', 'kimi-k2-thinking'];
 const KIMI_IMAGE_UNSUPPORTED_PREFIXES: string[] = [];
 const GLM_IMAGE_SUPPORTED_PREFIXES = ['glm-4.6v'];
 const GLM_IMAGE_UNSUPPORTED_PREFIXES = ['glm-5', 'glm-4.7', 'glm-4.6'];

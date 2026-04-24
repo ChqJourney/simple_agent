@@ -27,6 +27,9 @@ interface ProviderConfigProps {
   testConnectionFailureLabel?: string;
   testButtonVariant?: "primary" | "secondary";
   enableDynamicModelCatalog?: boolean;
+  showTitle?: boolean;
+  showReasoningToggle?: boolean;
+  showConnectionTest?: boolean;
 }
 
 const PROVIDERS: { value: ProviderType; label: string }[] = [
@@ -150,6 +153,9 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   testConnectionFailureLabel = "Failed",
   testButtonVariant = "primary",
   enableDynamicModelCatalog = import.meta.env.MODE !== 'test',
+  showTitle = true,
+  showReasoningToggle = true,
+  showConnectionTest = true,
 }) => {
   const { t, locale } = useI18n();
   const idPrefix = fieldIdPrefix(title);
@@ -182,7 +188,8 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
     });
   };
 
-  const showReasoningToggle = Boolean(provider && config.model && supportsReasoning(provider, config.model));
+  const canShowReasoningToggle = Boolean(provider && config.model);
+  const reasoningSupported = Boolean(provider && config.model && supportsReasoning(provider, config.model));
   const builtInModels = provider ? BUILT_IN_MODELS[provider] : [];
   const resolvedBaseUrl = provider
     ? normalizeBaseUrl(provider, config.base_url || '')
@@ -313,7 +320,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
 
   return (
     <div className="space-y-4">
-      {title && (
+      {showTitle && title && (
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
           {title}
         </h3>
@@ -438,13 +445,14 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
             />
           </div>
 
-          {showReasoningToggle && (
+          {showReasoningToggle && canShowReasoningToggle && (
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
                 id={`${idPrefix}-enable-reasoning`}
-                checked={config.enable_reasoning ?? true}
+                checked={reasoningSupported ? (config.enable_reasoning ?? false) : false}
                 onChange={(e) => handleChange('enable_reasoning', e.target.checked)}
+                disabled={!reasoningSupported}
                 className="rounded border-gray-300 dark:border-gray-600"
               />
               <label htmlFor={`${idPrefix}-enable-reasoning`} className="text-sm text-gray-700 dark:text-gray-300">
@@ -453,7 +461,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
             </div>
           )}
 
-          {onTestConnection && (
+          {showConnectionTest && onTestConnection && (
             <div className="rounded-2xl border border-dashed border-gray-200 p-4 dark:border-gray-700">
               <div className="flex flex-wrap items-center gap-3">
                 <button

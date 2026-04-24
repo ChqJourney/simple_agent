@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { InputType, ProviderType } from "../types";
-import { getImageSupportStatus, getSupportedInputTypes, supportsImageInput } from "./modelCapabilities";
+import {
+  getDefaultReasoningEnabled,
+  getImageSupportStatus,
+  getSupportedInputTypes,
+  supportsImageInput,
+  supportsReasoning,
+} from "./modelCapabilities";
 
 const imageCapableCases = [
   { provider: "openai", model: "gpt-4o", supportedInputTypes: ["text", "image"] },
   { provider: "openai", model: "gpt-4o-mini", supportedInputTypes: ["text", "image"] },
   { provider: "kimi", model: "kimi-k2.5", supportedInputTypes: ["text", "image"] },
+  { provider: "kimi", model: "kimi-k2-thinking", supportedInputTypes: ["text", "image"] },
   { provider: "glm", model: "glm-4.6v", supportedInputTypes: ["text", "image"] },
 ] satisfies ReadonlyArray<{
   provider: ProviderType;
@@ -53,5 +60,18 @@ describe("model image capabilities", () => {
       expect(getSupportedInputTypes(provider, model)).toEqual(["text"]);
       expect(supportsImageInput(provider, model)).toBe(false);
     });
+  });
+});
+
+describe("model reasoning capabilities", () => {
+  it("marks known reasoning models as reasoning-capable", () => {
+    expect(supportsReasoning("kimi", "kimi-k2-thinking")).toBe(true);
+    expect(getDefaultReasoningEnabled("kimi", "kimi-k2-thinking")).toBe(true);
+    expect(supportsReasoning("kimi", "kimi-k2.5")).toBe(true);
+  });
+
+  it("treats unknown models conservatively as not reasoning-capable", () => {
+    expect(supportsReasoning("kimi", "kimi-chat")).toBe(false);
+    expect(getDefaultReasoningEnabled("kimi", "kimi-chat")).toBe(false);
   });
 });

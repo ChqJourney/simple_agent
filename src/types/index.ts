@@ -100,11 +100,18 @@ export type ProviderType = 'openai' | 'deepseek' | 'kimi' | 'glm' | 'minimax' | 
 export type InputType = 'text' | 'image';
 export type ExecutionRole = 'conversation' | 'background' | 'compaction' | 'delegated_task';
 export type ScenarioId = 'default' | 'standard_qa' | 'checklist_evaluation';
+export type ImageSupportStatus = 'supported' | 'unsupported' | 'unknown';
+export type ReasoningSupportStatus = 'supported' | 'unsupported' | 'unknown';
+export type ReasoningToggleStatus = 'can_toggle' | 'fixed_on' | 'fixed_off' | 'unknown';
+export type ReasoningMode = 'default' | 'on' | 'off';
 
 export interface ProviderCatalogModel {
   id: string;
   context_length?: number;
   supports_image_in?: boolean;
+  image_support?: ImageSupportStatus;
+  reasoning_support?: ReasoningSupportStatus;
+  reasoning_toggle?: ReasoningToggleStatus;
 }
 
 export interface ModelProfile {
@@ -113,6 +120,7 @@ export interface ModelProfile {
   api_key: string;
   base_url: string;
   enable_reasoning: boolean;
+  reasoning_mode?: ReasoningMode;
   input_type?: InputType;
   profile_name?: string;
 }
@@ -234,6 +242,7 @@ export interface ClientConfig {
   api_key: string;
   base_url: string;
   enable_reasoning: boolean;
+  reasoning_mode?: ReasoningMode;
   input_type?: InputType;
   profiles?: ProviderConfig['profiles'];
   system_prompt?: string;

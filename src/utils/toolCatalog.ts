@@ -1,5 +1,5 @@
-import { buildBackendAuthHeaders, getBackendAuthToken } from './backendAuth';
 import { backendToolsUrl } from './backendEndpoint';
+import { fetchWithBackendAuth } from './backendRequest';
 
 export interface ToolCatalogEntry {
   name: string;
@@ -14,14 +14,7 @@ interface ToolCatalogResponse {
 }
 
 export async function listTools(): Promise<ToolCatalogEntry[]> {
-  const authToken = await getBackendAuthToken({ isTestMode: import.meta.env.MODE === 'test' });
-  if (!authToken) {
-    throw new Error('Backend auth handshake failed');
-  }
-
-  const response = await fetch(backendToolsUrl, {
-    headers: buildBackendAuthHeaders(authToken),
-  });
+  const response = await fetchWithBackendAuth(backendToolsUrl);
 
   if (response.status === 404) {
     throw new Error('Backend endpoint /tools not found. Please update backend build.');

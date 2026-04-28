@@ -1,24 +1,12 @@
-import type { InputType, ProviderType } from '../types';
-export type ImageSupportStatus = 'supported' | 'unsupported';
+import type { ImageSupportStatus, InputType, ProviderCatalogModel, ProviderType } from '../types';
 
 const OPENAI_REASONING_PREFIXES = ['o1', 'o3', 'o4', 'gpt-5'];
 const KIMI_REASONING_PREFIXES = ['kimi-k2.5', 'kimi-k2-thinking'];
 const GLM_REASONING_PREFIXES = ['glm-5', 'glm-4.7', 'glm-4.6'];
-const DEEPSEEK_REASONING_PREFIXES = ['deepseek-reasoner'];
+const DEEPSEEK_REASONING_PREFIXES = ['deepseek-reasoner', 'deepseek-v4-'];
 const MINIMAX_REASONING_PREFIXES: string[] = [];
 const QWEN_REASONING_PREFIXES = ['qwen3', 'qwq'];
 
-const OPENAI_IMAGE_SUPPORTED_PREFIXES = ['gpt-4o', 'gpt-4.1', 'gpt-5'];
-const OPENAI_IMAGE_UNSUPPORTED_PREFIXES = ['o1', 'o3', 'o4'];
-const KIMI_IMAGE_SUPPORTED_PREFIXES = ['kimi-k2.5', 'kimi-k2-thinking'];
-const KIMI_IMAGE_UNSUPPORTED_PREFIXES: string[] = [];
-const GLM_IMAGE_SUPPORTED_PREFIXES = ['glm-4.6v'];
-const GLM_IMAGE_UNSUPPORTED_PREFIXES = ['glm-5', 'glm-4.7', 'glm-4.6'];
-const DEEPSEEK_IMAGE_UNSUPPORTED_PREFIXES = ['deepseek-chat', 'deepseek-reasoner'];
-const MINIMAX_IMAGE_SUPPORTED_PREFIXES: string[] = [];
-const MINIMAX_IMAGE_UNSUPPORTED_PREFIXES = ['minimax-m2'];
-const QWEN_IMAGE_SUPPORTED_PREFIXES = ['qvq','qwen3.5','qwen3.5-plus', 'qwen3.5-plus-2026-02-15'];
-const QWEN_IMAGE_UNSUPPORTED_PREFIXES = ['qwq','qwen3-max-2026-01-23', 'qwen3-coder-next'];
 const DEFAULT_CONTEXT_LENGTH_PREFIXES: Partial<Record<ProviderType, Record<string, number>>> = {
   openai: {
     'gpt-4o': 128000,
@@ -86,60 +74,24 @@ export function supportsReasoning(provider: ProviderType, model: string): boolea
   }
 }
 
-export function getImageSupportStatus(provider: ProviderType, model: string): ImageSupportStatus {
-  const normalizedModel = normalizeModel(model);
-  if (!normalizedModel) {
-    return 'unsupported';
+export function resolveReasoningSupport(
+  provider: ProviderType,
+  model: string,
+  metadata?: ProviderCatalogModel,
+): boolean {
+  if (metadata?.reasoning_support === 'supported') {
+    return true;
+  }
+  if (metadata?.reasoning_support === 'unsupported') {
+    return false;
   }
 
-  switch (provider) {
-    case 'openai':
-      if (matchesPrefix(normalizedModel, OPENAI_IMAGE_SUPPORTED_PREFIXES)) {
-        return 'supported';
-      }
-      if (matchesPrefix(normalizedModel, OPENAI_IMAGE_UNSUPPORTED_PREFIXES)) {
-        return 'unsupported';
-      }
-      return 'unsupported';
-    case 'kimi':
-      if (matchesPrefix(normalizedModel, KIMI_IMAGE_SUPPORTED_PREFIXES)) {
-        return 'supported';
-      }
-      if (matchesPrefix(normalizedModel, KIMI_IMAGE_UNSUPPORTED_PREFIXES)) {
-        return 'unsupported';
-      }
-      return 'unsupported';
-    case 'glm':
-      if (matchesPrefix(normalizedModel, GLM_IMAGE_SUPPORTED_PREFIXES)) {
-        return 'supported';
-      }
-      if (matchesPrefix(normalizedModel, GLM_IMAGE_UNSUPPORTED_PREFIXES)) {
-        return 'unsupported';
-      }
-      return 'unsupported';
-    case 'deepseek':
-      return matchesPrefix(normalizedModel, DEEPSEEK_IMAGE_UNSUPPORTED_PREFIXES)
-        ? 'unsupported'
-        : 'unsupported';
-    case 'minimax':
-      if (matchesPrefix(normalizedModel, MINIMAX_IMAGE_SUPPORTED_PREFIXES)) {
-        return 'supported';
-      }
-      if (matchesPrefix(normalizedModel, MINIMAX_IMAGE_UNSUPPORTED_PREFIXES)) {
-        return 'unsupported';
-      }
-      return 'unsupported';
-    case 'qwen':
-      if (matchesPrefix(normalizedModel, QWEN_IMAGE_SUPPORTED_PREFIXES)) {
-        return 'supported';
-      }
-      if (matchesPrefix(normalizedModel, QWEN_IMAGE_UNSUPPORTED_PREFIXES)) {
-        return 'unsupported';
-      }
-      return 'unsupported';
-    default:
-      return 'unsupported';
-  }
+  return supportsReasoning(provider, model);
+}
+
+export function getImageSupportStatus(provider: ProviderType, model: string): ImageSupportStatus {
+  void provider;
+  return model.trim() ? 'unknown' : 'unsupported';
 }
 
 export function supportsImageInput(provider: ProviderType, model: string): boolean {

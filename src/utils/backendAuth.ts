@@ -4,6 +4,7 @@ export const BACKEND_AUTH_HEADER = 'X-Tauri-Agent-Auth';
 
 interface BackendAuthOptions {
   isTestMode?: boolean;
+  forceRefresh?: boolean;
   onError?: (error: string, details?: string) => void;
 }
 
@@ -67,6 +68,10 @@ async function fetchAuthTokenFromHttp(onError?: BackendAuthOptions['onError']): 
 export async function getBackendAuthToken(options: BackendAuthOptions = {}): Promise<string | null> {
   if (options.isTestMode) {
     return 'test-auth-token';
+  }
+
+  if (options.forceRefresh) {
+    resetBackendAuthTokenCache();
   }
 
   if (cachedAuthToken !== null) {

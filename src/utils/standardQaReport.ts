@@ -1,10 +1,10 @@
-import { buildBackendAuthHeaders, getBackendAuthToken } from './backendAuth';
 import {
   backendStandardQaReportPdfProgressUrl,
   backendStandardQaReportPdfStartUrl,
   backendStandardQaReportPdfUrl,
   backendStandardQaReportSummaryUrl,
 } from './backendEndpoint';
+import { fetchWithBackendAuth } from './backendRequest';
 
 export interface StandardQaReportSummary {
   title: string;
@@ -64,14 +64,6 @@ interface StandardQaReportResponse {
   progress?: StandardQaReportProgress;
 }
 
-async function getAuthToken(): Promise<string> {
-  const authToken = await getBackendAuthToken({ isTestMode: import.meta.env.MODE === 'test' });
-  if (!authToken) {
-    throw new Error('Backend auth handshake failed');
-  }
-  return authToken;
-}
-
 function buildPayload(workspacePath: string, sessionId: string, force = false) {
   return {
     workspace_path: workspacePath,
@@ -86,12 +78,10 @@ async function postReportRequest(
   sessionId: string,
   force = false
 ): Promise<StandardQaReportResponse> {
-  const authToken = await getAuthToken();
-  const response = await fetch(url, {
+  const response = await fetchWithBackendAuth(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...buildBackendAuthHeaders(authToken),
     },
     body: JSON.stringify(buildPayload(workspacePath, sessionId, force)),
   });
@@ -165,12 +155,10 @@ export async function startStandardQaReportPdfGeneration(
 }
 
 export async function fetchStandardQaReportPdfProgress(reportId: string): Promise<StandardQaReportProgress> {
-  const authToken = await getAuthToken();
-  const response = await fetch(backendStandardQaReportPdfProgressUrl, {
+  const response = await fetchWithBackendAuth(backendStandardQaReportPdfProgressUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...buildBackendAuthHeaders(authToken),
     },
     body: JSON.stringify({ report_id: reportId }),
   });

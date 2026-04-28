@@ -228,6 +228,26 @@ def _normalize_provider_catalog(data: Dict[str, Any]) -> Dict[str, list[Dict[str
             if isinstance(supports_image_in, bool):
                 normalized_entry["supports_image_in"] = supports_image_in
 
+            image_support = entry.get("image_support")
+            if image_support in {"supported", "unsupported", "unknown"}:
+                normalized_entry["image_support"] = image_support
+            elif isinstance(supports_image_in, bool):
+                normalized_entry["image_support"] = (
+                    "supported" if supports_image_in else "unsupported"
+                )
+
+            reasoning_support = entry.get("reasoning_support")
+            if reasoning_support in {"supported", "unsupported", "unknown"}:
+                normalized_entry["reasoning_support"] = reasoning_support
+            elif isinstance(reasoning_support, bool):
+                normalized_entry["reasoning_support"] = (
+                    "supported" if reasoning_support else "unsupported"
+                )
+
+            reasoning_toggle = entry.get("reasoning_toggle")
+            if reasoning_toggle in {"can_toggle", "fixed_on", "fixed_off", "unknown"}:
+                normalized_entry["reasoning_toggle"] = reasoning_toggle
+
             normalized_entries.append(normalized_entry)
 
         if normalized_entries:
@@ -241,6 +261,7 @@ def _normalize_profile(
     *,
     role: str,
     fallback_provider: Optional[str] = None,
+    provider_catalog: Optional[Dict[str, list[Dict[str, Any]]]] = None,
 ) -> Optional[Dict[str, Any]]:
     if not data:
         return None
@@ -264,7 +285,9 @@ def _normalize_profile(
             "api_key": api_key,
             "base_url": base_url,
             "enable_reasoning": bool(data.get("enable_reasoning", False)),
+            "reasoning_mode": data.get("reasoning_mode"),
             "input_type": data.get("input_type") or "text",
+            "provider_catalog": provider_catalog or {},
         }
     )
     normalized["provider"] = provider
@@ -276,6 +299,7 @@ def _normalize_profile(
 
 
 def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
+    provider_catalog = _normalize_provider_catalog(data)
     raw_profiles = data.get("profiles") if isinstance(data.get("profiles"), dict) else {}
     primary_input = raw_profiles.get("primary") if isinstance(raw_profiles, dict) else None
     background_input = raw_profiles.get("background") if isinstance(raw_profiles, dict) else None
@@ -283,9 +307,15 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
     primary_profile = _normalize_profile(
         primary_input if isinstance(primary_input, dict) else data,
         role="primary",
+        provider_catalog=provider_catalog,
     )
     if primary_profile is None:
-        primary_profile = _normalize_profile(data, role="primary", fallback_provider="openai")
+        primary_profile = _normalize_profile(
+            data,
+            role="primary",
+            fallback_provider="openai",
+            provider_catalog=provider_catalog,
+        )
     if primary_profile is None:
         raise ValueError("Primary model configuration requires both provider and model.")
 
@@ -295,6 +325,7 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
             background_input,
             role="background",
             fallback_provider=primary_profile["provider"],
+            provider_catalog=provider_catalog,
         )
 
     runtime = _normalize_runtime_policy(data)
@@ -307,7 +338,7 @@ def normalize_runtime_config(data: Dict[str, Any]) -> Dict[str, Any]:
             **({"background": background_profile} if background_profile else {}),
         },
         "system_prompt": _normalize_system_prompt(data),
-        "provider_catalog": _normalize_provider_catalog(data),
+        "provider_catalog": provider_catalog,
         "runtime": runtime,
         "appearance": appearance,
         "context_providers": _normalize_context_providers(data),

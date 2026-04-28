@@ -11,6 +11,7 @@ import {
   ProviderCatalogModel,
   ProviderConfig,
   ProviderType,
+  ReasoningMode,
   ReferenceLibraryKind,
   ReferenceLibraryRoot,
   RuntimePolicy,
@@ -28,9 +29,18 @@ import {
   resolveProfileForRole,
   resolveRuntimePolicy,
 } from '../utils/config';
-import { buildBackendAuthHeaders, getBackendAuthToken } from '../utils/backendAuth';
 import { backendTestConfigUrl } from '../utils/backendEndpoint';
-import { getDefaultContextLength, supportsReasoning } from '../utils/modelCapabilities';
+import { fetchWithBackendAuth } from '../utils/backendRequest';
+import { getDefaultContextLength } from '../utils/modelCapabilities';
+import {
+  resolveConfiguredInputType,
+  resolveImageSupportStatus,
+} from '../utils/imageConfig';
+import {
+  resolveReasoningMode,
+  resolveReasoningSupportStatus,
+  toLegacyEnableReasoning,
+} from '../utils/reasoningConfig';
 import {
   fetchReferenceIndexBuildProgress,
   fetchReferenceIndexStatus,
@@ -70,7 +80,7 @@ const APP_FONT_LABEL = 'Inter';
 const APP_FONT_STACK = "'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif";
 const CONNECTION_TEST_TIMEOUT_MS = 15000;
 const SETTINGS_PAGE_CLASS =
-  'min-h-screen bg-[linear-gradient(180deg,rgba(241,245,249,0.9),rgba(255,255,255,1))] dark:bg-[radial-gradient(circle_at_top,rgba(142,160,182,0.14),transparent_34%),linear-gradient(180deg,rgba(23,26,31,0.98),rgba(18,21,26,1)_52%,rgba(13,16,20,1)_100%)]';
+  'min-h-screen overflow-y-scroll [scrollbar-gutter:stable] bg-[linear-gradient(180deg,rgba(241,245,249,0.9),rgba(255,255,255,1))] dark:bg-[radial-gradient(circle_at_top,rgba(142,160,182,0.14),transparent_34%),linear-gradient(180deg,rgba(23,26,31,0.98),rgba(18,21,26,1)_52%,rgba(13,16,20,1)_100%)]';
 const SETTINGS_CARD_CLASS =
   'rounded-[1.75rem] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700/80 dark:bg-gray-900/72 dark:shadow-black/10';
 const SETTINGS_PANEL_CLASS =
@@ -88,6 +98,56 @@ const PROVIDER_LABELS: Record<ProviderType, string> = {
 
 const rootSupportsStandardIndex = (root: ReferenceLibraryRoot): boolean => (
   !root.kinds || root.kinds.includes('standard')
+);
+
+const getReasoningSupportLabel = (
+  metadata: ProviderCatalogModel | undefined,
+  t: ReturnType<typeof useI18n>['t']
+): string => {
+  const support = resolveReasoningSupportStatus(metadata);
+  if (support === 'supported') {
+    return t('common.supported');
+  }
+  if (support === 'unsupported') {
+    return t('common.unsupported');
+  }
+  return t('common.unknown');
+};
+
+const getReasoningModeLabel = (
+  mode: ReasoningMode,
+  t: ReturnType<typeof useI18n>['t']
+): string => {
+  if (mode === 'on') {
+    return t('settings.provider.reasoningModeOn');
+  }
+  if (mode === 'off') {
+    return t('settings.provider.reasoningModeOff');
+  }
+  return t('settings.provider.reasoningModeDefault');
+};
+
+const getImageSupportLabel = (
+  metadata: ProviderCatalogModel | undefined,
+  t: ReturnType<typeof useI18n>['t']
+): string => {
+  const support = resolveImageSupportStatus(metadata);
+  if (support === 'supported') {
+    return t('settings.provider.imageSupported');
+  }
+  if (support === 'unsupported') {
+    return t('settings.provider.imageUnsupported');
+  }
+  return t('settings.provider.imageUnknown');
+};
+
+const getInputModeLabel = (
+  inputType: 'text' | 'image',
+  t: ReturnType<typeof useI18n>['t']
+): string => (
+  inputType === 'image'
+    ? t('settings.provider.inputModeImage')
+    : t('settings.provider.inputModeText')
 );
 
 export const SettingsPage: React.FC = () => {
@@ -744,18 +804,11 @@ export const SettingsPage: React.FC = () => {
     }, CONNECTION_TEST_TIMEOUT_MS);
 
     try {
-      const authToken = await getBackendAuthToken({ isTestMode: import.meta.env.MODE === 'test' });
-      if (!authToken) {
-        setConnectionTestState(profileName, 'error', t('settings.validation.backendAuthFailed'));
-        return;
-      }
-
       const baseUrl = normalizeBaseUrl(profile.provider, profile.base_url);
-      const response = await fetch(backendTestConfigUrl, {
+      const response = await fetchWithBackendAuth(backendTestConfigUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...buildBackendAuthHeaders(authToken),
         },
         signal: abortController.signal,
         body: JSON.stringify({
@@ -763,8 +816,11 @@ export const SettingsPage: React.FC = () => {
           model: profile.model,
           api_key: profile.api_key,
           base_url: baseUrl,
-          enable_reasoning: profile.enable_reasoning ?? false,
+          enable_reasoning: toLegacyEnableReasoning(resolveReasoningMode(profile)),
+          reasoning_mode: resolveReasoningMode(profile),
         }),
+      }, {
+        isTestMode: import.meta.env.MODE === 'test',
       });
 
       const payload = await response.json().catch(() => ({}));
@@ -824,7 +880,8 @@ export const SettingsPage: React.FC = () => {
       model: primaryProfile.model,
       api_key: primaryProfile.api_key || '',
       base_url: primaryProfile.base_url || '',
-      enable_reasoning: primaryProfile.enable_reasoning ?? false,
+      enable_reasoning: toLegacyEnableReasoning(resolveReasoningMode(primaryProfile)),
+      reasoning_mode: resolveReasoningMode(primaryProfile),
       input_type: primaryProfile.input_type || 'text',
       profiles: {
         primary: {
@@ -832,7 +889,8 @@ export const SettingsPage: React.FC = () => {
           model: primaryProfile.model,
           api_key: primaryProfile.api_key || '',
           base_url: primaryProfile.base_url || '',
-          enable_reasoning: primaryProfile.enable_reasoning ?? false,
+          enable_reasoning: toLegacyEnableReasoning(resolveReasoningMode(primaryProfile)),
+          reasoning_mode: resolveReasoningMode(primaryProfile),
           input_type: primaryProfile.input_type || 'text',
           profile_name: 'primary',
         },
@@ -843,7 +901,8 @@ export const SettingsPage: React.FC = () => {
                 model: backgroundProfile.model,
                 api_key: backgroundProfile.api_key || '',
                 base_url: backgroundProfile.base_url || '',
-                enable_reasoning: backgroundProfile.enable_reasoning ?? false,
+                enable_reasoning: toLegacyEnableReasoning(resolveReasoningMode(backgroundProfile)),
+                reasoning_mode: resolveReasoningMode(backgroundProfile),
                 input_type: backgroundProfile.input_type || 'text',
                 profile_name: 'background',
               },
@@ -919,9 +978,13 @@ export const SettingsPage: React.FC = () => {
     options?: { description?: string; testButtonVariant?: 'primary' | 'secondary' },
   ) => {
     const connectionState = connectionTests[profileName];
-    const reasoningSupported = Boolean(
-      profile.provider && profile.model && supportsReasoning(profile.provider, profile.model)
-    );
+    const catalogEntry = profile.provider && profile.model
+      ? providerCatalog[profile.provider]?.find((entry) => entry.id === profile.model)
+      : undefined;
+    const imageSupportLabel = getImageSupportLabel(catalogEntry, t);
+    const inputMode = resolveConfiguredInputType(profile, catalogEntry);
+    const reasoningSupportLabel = getReasoningSupportLabel(catalogEntry, t);
+    const reasoningMode = resolveReasoningMode(profile);
     const isTestable = isProfileTestable(profile);
     const testButtonClassName = options?.testButtonVariant === 'secondary'
       ? 'rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800'
@@ -949,7 +1012,7 @@ export const SettingsPage: React.FC = () => {
           </button>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-4">
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div className={SETTINGS_PANEL_CLASS}>
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
               {t('settings.model.currentProvider')}
@@ -973,16 +1036,34 @@ export const SettingsPage: React.FC = () => {
               {t('settings.model.reasoningSupport')}
             </div>
             <p className="mt-3 text-base font-semibold text-gray-900 dark:text-white">
-              {reasoningSupported ? t('common.supported') : t('common.unsupported')}
+              {reasoningSupportLabel}
             </p>
           </div>
 
           <div className={SETTINGS_PANEL_CLASS}>
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-              {t('settings.model.reasoningEnabled')}
+              {t('settings.model.imageSupport')}
             </div>
             <p className="mt-3 text-base font-semibold text-gray-900 dark:text-white">
-              {reasoningSupported && profile.enable_reasoning ? t('common.enabled') : t('common.disabled')}
+              {imageSupportLabel}
+            </p>
+          </div>
+
+          <div className={SETTINGS_PANEL_CLASS}>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+              {t('settings.model.inputMode')}
+            </div>
+            <p className="mt-3 text-base font-semibold text-gray-900 dark:text-white">
+              {getInputModeLabel(inputMode, t)}
+            </p>
+          </div>
+
+          <div className={SETTINGS_PANEL_CLASS}>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+              {t('settings.model.reasoningMode')}
+            </div>
+            <p className="mt-3 text-base font-semibold text-gray-900 dark:text-white">
+              {getReasoningModeLabel(reasoningMode, t)}
             </p>
           </div>
         </div>

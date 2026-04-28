@@ -9,6 +9,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from llms.capabilities import (
     coerce_reasoning_enabled,
     get_supported_input_types,
+    resolve_reasoning_mode,
+    resolve_reasoning_support,
     supports_reasoning,
 )
 
@@ -18,6 +20,7 @@ class ModelCapabilitiesTests(unittest.TestCase):
         cases = [
             ("openai", "o1-preview", True),
             ("openai", "gpt-4o", False),
+            ("deepseek", "deepseek-v4-pro", True),
         ]
 
         for provider, model, expected in cases:
@@ -44,18 +47,26 @@ class ModelCapabilitiesTests(unittest.TestCase):
             with self.subTest(provider=provider, model=model):
                 self.assertEqual(['text'], get_supported_input_types(provider, model))
 
-    def test_unsupported_models_are_coerced_off(self) -> None:
-        for provider, model in [
-            ('openai', 'gpt-4o'),
-            ('minimax', 'MiniMax-M2.7'),
-        ]:
-            with self.subTest(provider=provider, model=model):
-                normalized = coerce_reasoning_enabled({
-                    'provider': provider,
-                    'model': model,
-                    'enable_reasoning': True,
-                })
-                self.assertFalse(normalized['enable_reasoning'])
+    def test_reasoning_mode_defaults_to_provider_default_when_unspecified(self) -> None:
+        normalized = coerce_reasoning_enabled({
+            'provider': 'openai',
+            'model': 'gpt-4o',
+            'enable_reasoning': False,
+        })
+
+        self.assertEqual('default', normalized['reasoning_mode'])
+        self.assertFalse(normalized['enable_reasoning'])
+
+    def test_reasoning_mode_preserves_explicit_override_when_support_is_unknown(self) -> None:
+        normalized = coerce_reasoning_enabled({
+            'provider': 'openai',
+            'model': 'gpt-4o',
+            'reasoning_mode': 'on',
+        })
+
+        self.assertEqual('on', resolve_reasoning_mode(normalized))
+        self.assertTrue(normalized['enable_reasoning'])
+        self.assertEqual('unknown', resolve_reasoning_support(normalized, 'openai', 'gpt-4o'))
 
 
 if __name__ == '__main__':

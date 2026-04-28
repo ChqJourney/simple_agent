@@ -1,6 +1,12 @@
 from typing import Any, Dict, Literal, Optional
 
-from llms.capabilities import get_default_context_length, get_supported_input_types, supports_reasoning
+from llms.capabilities import (
+    get_default_context_length,
+    resolve_image_support,
+    resolve_input_type,
+    resolve_reasoning_mode,
+    resolve_reasoning_support,
+)
 from runtime.config import DEFAULT_RUNTIME_POLICY
 
 from runtime.contracts import LockedModelRef
@@ -130,21 +136,36 @@ def resolve_capability_summary(config: Dict[str, Any], role: ExecutionRole) -> D
     model = str(profile.get("model") or "")
     catalog_entry = _get_provider_catalog_entry(config, provider, model)
     supports_image_in = (
-        catalog_entry.get("supports_image_in")
+        catalog_entry.get("image_support")
         if isinstance(catalog_entry, dict)
         else None
     )
+    if supports_image_in not in {"supported", "unsupported", "unknown"} and isinstance(catalog_entry, dict):
+        raw_supports_image_in = catalog_entry.get("supports_image_in")
+        if isinstance(raw_supports_image_in, bool):
+            supports_image_in = "supported" if raw_supports_image_in else "unsupported"
+    requested_input_type = resolve_input_type(
+        {
+            **profile,
+            "provider_catalog": config.get("provider_catalog", {}),
+        }
+    )
     supported_input_types = (
         ["text", "image"]
-        if supports_image_in is True
+        if supports_image_in == "supported" and requested_input_type == "image"
         else ["text"]
-        if supports_image_in is False
-        else get_supported_input_types(provider, model)
+        if supports_image_in == "unsupported"
+        else ["text", "image"]
+        if supports_image_in == "unknown" and requested_input_type == "image"
+        else ["text"]
     )
 
     return {
         "supported_input_types": supported_input_types,
-        "reasoning_supported": supports_reasoning(provider, model),
+        "image_support": resolve_image_support(config, provider, model),
+        "input_type": requested_input_type,
+        "reasoning_support": resolve_reasoning_support(config, provider, model),
+        "reasoning_mode": resolve_reasoning_mode(profile),
     }
 
 

@@ -7,7 +7,6 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from .base import BaseLLM
-from .capabilities import supports_reasoning
 
 __all__ = ["GLMLLM", "GLM_DEFAULT_BASE_URL"]
 
@@ -19,7 +18,6 @@ class GLMLLM(BaseLLM):
         base_url = str(config.get("base_url") or "").strip() or GLM_DEFAULT_BASE_URL
         config_with_defaults = {**config, "base_url": base_url}
         super().__init__(config_with_defaults)
-        self.enable_reasoning = bool(config.get("enable_reasoning", False))
         self.http_client = httpx.AsyncClient(timeout=self._get_timeout_seconds())
         self.client = AsyncOpenAI(
             api_key=self.api_key,
@@ -35,9 +33,10 @@ class GLMLLM(BaseLLM):
     ) -> Dict[str, Any]:
         tool_schemas = self._build_tool_schemas(tools) if tools else None
         extra_body: Dict[str, Any] = {}
-        if supports_reasoning("glm", self.model):
+        reasoning_mode = self._get_reasoning_mode()
+        if reasoning_mode in {"on", "off"}:
             extra_body["thinking"] = {
-                "type": "enabled" if self.enable_reasoning else "disabled",
+                "type": "enabled" if reasoning_mode == "on" else "disabled",
                 "clear_thinking": False,
             }
         if stream and tool_schemas:

@@ -16,7 +16,6 @@ class DeepSeekLLM(BaseLLM):
         base_url = str(config.get("base_url") or "").strip() or DEEPSEEK_DEFAULT_BASE_URL
         config_with_defaults = {**config, "base_url": base_url}
         super().__init__(config_with_defaults)
-        self.enable_reasoning = bool(config.get("enable_reasoning", False))
         self.http_client = httpx.AsyncClient(timeout=self._get_timeout_seconds())
         self.client = AsyncOpenAI(
             api_key=self.api_key,
@@ -31,6 +30,13 @@ class DeepSeekLLM(BaseLLM):
         stream: bool,
     ) -> Dict[str, Any]:
         tool_schemas = self._build_tool_schemas(tools) if tools else None
+        extra_body: Dict[str, Any] = {}
+        reasoning_mode = self._get_reasoning_mode()
+        if reasoning_mode in {"on", "off"}:
+            extra_body["thinking"] = {
+                "type": "enabled" if reasoning_mode == "on" else "disabled",
+            }
+
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -42,6 +48,8 @@ class DeepSeekLLM(BaseLLM):
         max_output_tokens = self._get_max_output_tokens()
         if max_output_tokens is not None:
             kwargs["max_tokens"] = max_output_tokens
+        if extra_body:
+            kwargs["extra_body"] = extra_body
         return kwargs
 
     async def stream(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> AsyncIterator[ChatCompletionChunk]:

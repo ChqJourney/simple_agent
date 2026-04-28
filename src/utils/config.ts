@@ -13,7 +13,18 @@ import {
   RuntimeConfig,
   RuntimePolicy,
 } from '../types';
-import { getSupportedInputTypes, supportsReasoning } from './modelCapabilities';
+import {
+  coerceReasoningModeForModel,
+  normalizeReasoningMode,
+  resolveReasoningMode,
+  resolveReasoningSupportStatus,
+  toLegacyEnableReasoning,
+} from './reasoningConfig';
+import {
+  coerceInputTypeForModel,
+  resolveConfiguredInputType,
+  supportsImageInputForConfiguredMode,
+} from './imageConfig';
 
 export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
   openai: 'https://api.openai.com/v1',
@@ -162,6 +173,17 @@ function normalizeProviderCatalogEntry(entry: ProviderCatalogModel): ProviderCat
       ? Math.round(entry.context_length)
       : undefined,
     supports_image_in: typeof entry.supports_image_in === 'boolean' ? entry.supports_image_in : undefined,
+    image_support: entry.image_support === 'supported' || entry.image_support === 'unsupported' || entry.image_support === 'unknown'
+      ? entry.image_support
+      : typeof entry.supports_image_in === 'boolean'
+        ? (entry.supports_image_in ? 'supported' : 'unsupported')
+        : undefined,
+    reasoning_support: entry.reasoning_support === 'supported' || entry.reasoning_support === 'unsupported' || entry.reasoning_support === 'unknown'
+      ? entry.reasoning_support
+      : undefined,
+    reasoning_toggle: entry.reasoning_toggle === 'can_toggle' || entry.reasoning_toggle === 'fixed_on' || entry.reasoning_toggle === 'fixed_off' || entry.reasoning_toggle === 'unknown'
+      ? entry.reasoning_toggle
+      : undefined,
   };
 }
 
@@ -209,17 +231,34 @@ export function normalizeProviderMemory(
   return normalized;
 }
 
-function normalizeProfileConfig(profile: ModelProfile, profileName: string): ModelProfile {
+function findProviderCatalogEntry(
+  providerCatalog: Partial<Record<ProviderType, ProviderCatalogModel[]>> | undefined,
+  provider: ProviderType,
+  model: string,
+): ProviderCatalogModel | undefined {
+  return providerCatalog?.[provider]?.find((entry) => entry.id === model);
+}
+
+function normalizeProfileConfig(
+  profile: ModelProfile,
+  profileName: string,
+  providerCatalog?: Partial<Record<ProviderType, ProviderCatalogModel[]>>,
+): ModelProfile {
   const provider = normalizeProviderType(profile.provider);
-  const inputType = profile.input_type || 'text';
-  const supportedInputTypes = getSupportedInputTypes(provider, profile.model);
+  const catalogEntry = findProviderCatalogEntry(providerCatalog, provider, profile.model);
+  const reasoningMode = coerceReasoningModeForModel(
+    normalizeReasoningMode(resolveReasoningMode(profile)),
+    catalogEntry,
+  );
+  const inputType = resolveConfiguredInputType(profile, catalogEntry);
 
   return {
     ...profile,
     provider,
     base_url: normalizeBaseUrl(provider, profile.base_url),
-    enable_reasoning: Boolean(profile.enable_reasoning) && supportsReasoning(provider, profile.model),
-    input_type: supportedInputTypes.includes(inputType) ? inputType : 'text',
+    enable_reasoning: toLegacyEnableReasoning(reasoningMode),
+    reasoning_mode: reasoningMode,
+    input_type: coerceInputTypeForModel(inputType, catalogEntry),
     profile_name: profile.profile_name || profileName,
   };
 }
@@ -267,23 +306,24 @@ export function resolveProfileForRole(
 export function resolveCapabilitySummaryForRole(
   config: ProviderConfig | null | undefined,
   role: ExecutionRole
-): { supportedInputTypes: InputType[]; reasoningSupported: boolean } {
+): { supportedInputTypes: InputType[]; reasoningSupport: ProviderCatalogModel['reasoning_support'] } {
   const profile = resolveProfileForRole(config, role);
   if (!hasConfiguredModelProfile(profile)) {
     return {
       supportedInputTypes: ['text'],
-      reasoningSupported: false,
+      reasoningSupport: 'unknown',
     };
   }
 
   const dynamicCatalogEntry = config?.provider_catalog?.[profile.provider]?.find((entry) => entry.id === profile.model);
-  const supportedInputTypes: InputType[] = typeof dynamicCatalogEntry?.supports_image_in === 'boolean'
-    ? (dynamicCatalogEntry.supports_image_in ? ['text', 'image'] : ['text'])
-    : getSupportedInputTypes(profile.provider, profile.model);
+  const selectedInputType = resolveConfiguredInputType(profile, dynamicCatalogEntry);
+  const supportedInputTypes: InputType[] = supportsImageInputForConfiguredMode(selectedInputType, dynamicCatalogEntry)
+    ? ['text', 'image']
+    : ['text'];
 
   return {
     supportedInputTypes,
-    reasoningSupported: supportsReasoning(profile.provider, profile.model),
+    reasoningSupport: resolveReasoningSupportStatus(dynamicCatalogEntry),
   };
 }
 
@@ -384,9 +424,14 @@ export function normalizeAppearanceConfig(appearance?: AppearanceConfig): Requir
 }
 
 export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig {
-  const primaryProfile = normalizeProfileConfig(config.profiles?.primary || config, 'primary');
+  const normalizedProviderCatalog = normalizeProviderCatalog(config.provider_catalog);
+  const primaryProfile = normalizeProfileConfig(
+    config.profiles?.primary || config,
+    'primary',
+    normalizedProviderCatalog,
+  );
   const backgroundProfile = config.profiles?.background
-    ? normalizeProfileConfig(config.profiles.background, 'background')
+    ? normalizeProfileConfig(config.profiles.background, 'background', normalizedProviderCatalog)
     : undefined;
 
   return {
@@ -397,7 +442,7 @@ export function normalizeProviderConfig(config: ProviderConfig): ProviderConfig 
     },
     system_prompt: normalizeSystemPrompt(config.system_prompt),
     provider_memory: normalizeProviderMemory(config.provider_memory),
-    provider_catalog: normalizeProviderCatalog(config.provider_catalog),
+    provider_catalog: normalizedProviderCatalog,
     runtime: normalizeRuntimeConfig(config.runtime),
     appearance: normalizeAppearanceConfig(config.appearance),
     context_providers: normalizeContextProviders(config.context_providers),

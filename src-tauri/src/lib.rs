@@ -90,6 +90,26 @@ fn configured_updater_endpoints(app: &tauri::AppHandle) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn cache_busting_updater_endpoints(app: &tauri::AppHandle) -> Result<Vec<url::Url>, String> {
+    let cache_bust = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("Failed to generate updater cache-bust token: {error}"))?
+        .as_millis()
+        .to_string();
+
+    configured_updater_endpoints(app)
+        .into_iter()
+        .map(|endpoint| {
+            let mut parsed = url::Url::parse(&endpoint)
+                .map_err(|error| format!("Invalid updater endpoint URL '{endpoint}': {error}"))?;
+            parsed
+                .query_pairs_mut()
+                .append_pair("_", &cache_bust);
+            Ok(parsed)
+        })
+        .collect()
+}
+
 fn set_last_updater_error(app: &tauri::AppHandle, message: Option<String>) {
     if let Ok(mut guard) = app.state::<UpdaterDiagnostics>().0.lock() {
         *guard = message;
@@ -101,7 +121,13 @@ fn clear_last_updater_error(app: &tauri::AppHandle) {
 }
 
 fn build_resilient_updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
-    let builder = app.updater_builder().timeout(UPDATER_CHECK_TIMEOUT);
+    let mut builder = app.updater_builder().timeout(UPDATER_CHECK_TIMEOUT);
+    let cache_busting_endpoints = cache_busting_updater_endpoints(app)?;
+    if !cache_busting_endpoints.is_empty() {
+        builder = builder
+            .endpoints(cache_busting_endpoints)
+            .map_err(|error| format!("Failed to override updater endpoints: {error}"))?;
+    }
     let builder = builder
         .header("Cache-Control", "no-cache, no-store, must-revalidate")
         .map_err(|error| format!("Failed to prepare updater request headers: {error}"))?;

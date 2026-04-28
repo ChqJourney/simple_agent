@@ -13,7 +13,6 @@ __all__ = ['OpenAILLM']
 class OpenAILLM(BaseLLM):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.enable_reasoning = bool(config.get('enable_reasoning', False))
         self.http_client = httpx.AsyncClient(timeout=self._get_timeout_seconds())
         self.client = AsyncOpenAI(
             api_key=self.api_key,
@@ -39,7 +38,7 @@ class OpenAILLM(BaseLLM):
         max_output_tokens = self._get_max_output_tokens()
         if max_output_tokens is not None:
             kwargs['max_tokens'] = max_output_tokens
-        reasoning_effort = get_openai_reasoning_effort(self.model, self.enable_reasoning)
+        reasoning_effort = get_openai_reasoning_effort(self._get_reasoning_mode())
         if reasoning_effort:
             kwargs['reasoning_effort'] = reasoning_effort
         return kwargs

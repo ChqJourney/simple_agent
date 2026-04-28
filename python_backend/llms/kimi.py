@@ -7,7 +7,6 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from .base import BaseLLM
-from .capabilities import supports_reasoning
 
 __all__ = ["KimiLLM", "KIMI_DEFAULT_BASE_URL"]
 
@@ -19,7 +18,6 @@ class KimiLLM(BaseLLM):
         base_url = str(config.get("base_url") or "").strip() or KIMI_DEFAULT_BASE_URL
         config_with_defaults = {**config, "base_url": base_url}
         super().__init__(config_with_defaults)
-        self.enable_reasoning = bool(config.get("enable_reasoning", False))
         self.http_client = httpx.AsyncClient(timeout=self._get_timeout_seconds())
         self.client = AsyncOpenAI(
             api_key=self.api_key,
@@ -33,7 +31,12 @@ class KimiLLM(BaseLLM):
     def _get_temperature(self) -> Optional[float]:
         if not self._requires_k2_5_constraints():
             return None
-        return 1.0 if self.enable_reasoning else 0.6
+        reasoning_mode = self._get_reasoning_mode()
+        if reasoning_mode == "on":
+            return 1.0
+        if reasoning_mode == "off":
+            return 0.6
+        return None
 
     def _prepare_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         prepared: List[Dict[str, Any]] = []
@@ -52,9 +55,10 @@ class KimiLLM(BaseLLM):
     ) -> Dict[str, Any]:
         tool_schemas = self._build_tool_schemas(tools) if tools else None
         extra_body: Dict[str, Any] = {}
-        if supports_reasoning("kimi", self.model):
+        reasoning_mode = self._get_reasoning_mode()
+        if reasoning_mode in {"on", "off"}:
             extra_body["thinking"] = {
-                "type": "enabled" if self.enable_reasoning else "disabled",
+                "type": "enabled" if reasoning_mode == "on" else "disabled",
             }
 
         kwargs: Dict[str, Any] = {

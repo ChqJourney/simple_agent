@@ -118,7 +118,7 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
             backend_main.create_llm = original_create_llm
             backend_main.runtime_state = original_runtime_state
 
-    async def test_handle_config_coerces_unsupported_reasoning_off_and_defaults_input_type(self) -> None:
+    async def test_handle_config_preserves_explicit_reasoning_override_and_defaults_input_type(self) -> None:
         captured_configs = []
         original_create_llm = backend_main.create_llm
         original_runtime_state = backend_main.runtime_state
@@ -145,7 +145,8 @@ class ConfigNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 send_callback,
             )
 
-            self.assertFalse(captured_configs[0]['enable_reasoning'])
+            self.assertTrue(captured_configs[0]['enable_reasoning'])
+            self.assertEqual('on', captured_configs[0]['reasoning_mode'])
             self.assertEqual('text', captured_configs[0]['input_type'])
         finally:
             backend_main.create_llm = original_create_llm

@@ -378,7 +378,7 @@ describe("ChatContainer", () => {
     );
   });
 
-  it("keeps image attachments enabled for supported models even before an API key is added", () => {
+  it("keeps image attachments enabled when provider metadata marks the conversation model as image-capable", () => {
     useConfigStore.setState({
       config: {
         provider: "openai",
@@ -386,6 +386,14 @@ describe("ChatContainer", () => {
         api_key: "",
         base_url: "https://api.openai.com/v1",
         enable_reasoning: false,
+        provider_catalog: {
+          openai: [
+            {
+              id: "gpt-4o",
+              image_support: "supported",
+            },
+          ],
+        },
         profiles: {
           primary: {
             provider: "openai",
@@ -418,6 +426,20 @@ describe("ChatContainer", () => {
         api_key: "test-key",
         base_url: "https://api.openai.com/v1",
         enable_reasoning: false,
+        provider_catalog: {
+          openai: [
+            {
+              id: "gpt-4o",
+              image_support: "supported",
+            },
+          ],
+          deepseek: [
+            {
+              id: "deepseek-chat",
+              image_support: "unsupported",
+            },
+          ],
+        },
         profiles: {
           primary: {
             provider: "openai",

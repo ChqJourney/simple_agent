@@ -863,10 +863,14 @@ def _supports_live_model_catalog(base_url: str, status_code: Optional[int] = Non
     return True
 
 
-def _extract_provider_model_supports_image(item: Dict[str, Any]) -> Optional[bool]:
+def _extract_provider_model_image_support(item: Dict[str, Any]) -> Optional[str]:
+    image_support = item.get("image_support")
+    if image_support in {"supported", "unsupported", "unknown"}:
+        return str(image_support)
+
     supports_image_in = item.get("supports_image_in")
     if isinstance(supports_image_in, bool):
-        return supports_image_in
+        return "supported" if supports_image_in else "unsupported"
 
     for key in ("input_types", "input_modalities", "modalities", "supported_inputs"):
         raw_value = item.get(key)
@@ -879,7 +883,7 @@ def _extract_provider_model_supports_image(item: Dict[str, Any]) -> Optional[boo
             if str(entry).strip()
         }
         if normalized:
-            return "image" in normalized
+            return "supported" if "image" in normalized else "unsupported"
 
     return None
 
@@ -889,6 +893,40 @@ def _extract_provider_model_context_length(item: Dict[str, Any]) -> Optional[int
         value = item.get(key)
         if isinstance(value, int) and value > 0:
             return value
+    return None
+
+
+def _extract_provider_model_reasoning_support(item: Dict[str, Any]) -> Optional[str]:
+    value = item.get("reasoning_support")
+    if value in {"supported", "unsupported", "unknown"}:
+        return str(value)
+
+    for key in ("supports_reasoning", "reasoning_supported", "supportsReasoning"):
+        value = item.get(key)
+        if isinstance(value, bool):
+            return "supported" if value else "unsupported"
+
+    capabilities = item.get("capabilities")
+    if isinstance(capabilities, dict):
+        value = capabilities.get("reasoning")
+        if isinstance(value, bool):
+            return "supported" if value else "unsupported"
+
+    return None
+
+
+def _extract_provider_model_reasoning_toggle(item: Dict[str, Any]) -> Optional[str]:
+    for key in ("reasoning_toggle", "reasoning_mode", "reasoning_control"):
+        value = item.get(key)
+        if value in {"can_toggle", "fixed_on", "fixed_off", "unknown"}:
+            return str(value)
+
+    capabilities = item.get("capabilities")
+    if isinstance(capabilities, dict):
+        value = capabilities.get("reasoning_toggle")
+        if value in {"can_toggle", "fixed_on", "fixed_off", "unknown"}:
+            return str(value)
+
     return None
 
 
@@ -907,13 +945,20 @@ def _extract_provider_models(payload: Any) -> List[Dict[str, Any]]:
             continue
 
         entry: Dict[str, Any] = {"id": model_id}
-        supports_image_in = _extract_provider_model_supports_image(item)
+        image_support = _extract_provider_model_image_support(item)
         context_length = _extract_provider_model_context_length(item)
+        reasoning_support = _extract_provider_model_reasoning_support(item)
+        reasoning_toggle = _extract_provider_model_reasoning_toggle(item)
 
-        if supports_image_in is not None:
-            entry["supports_image_in"] = supports_image_in
+        if image_support is not None:
+            entry["image_support"] = image_support
+            entry["supports_image_in"] = image_support == "supported"
         if context_length is not None:
             entry["context_length"] = context_length
+        if reasoning_support is not None:
+            entry["reasoning_support"] = reasoning_support
+        if reasoning_toggle is not None:
+            entry["reasoning_toggle"] = reasoning_toggle
 
         models_by_id[model_id] = entry
 

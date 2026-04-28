@@ -247,8 +247,8 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("background", execution_spec["role"])
         self.assertEqual("background", execution_spec["profile"]["profile_name"])
         self.assertEqual(128, execution_spec["runtime"]["max_output_tokens"])
-        self.assertEqual(["text", "image"], execution_spec["capability_summary"]["supported_input_types"])
-        self.assertFalse(execution_spec["capability_summary"]["reasoning_supported"])
+        self.assertEqual(["text"], execution_spec["capability_summary"]["supported_input_types"])
+        self.assertEqual("unknown", execution_spec["capability_summary"]["reasoning_support"])
 
     def test_build_execution_spec_supports_dedicated_runtime_for_delegated_task_role(self) -> None:
         execution_spec = build_execution_spec(backend_main.runtime_state.current_config, "delegated_task")
@@ -301,6 +301,7 @@ class ModelRouterTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "id": "gpt-4.1-nano",
                         "context_length": 200000,
+                        "image_support": "supported",
                         "supports_image_in": True,
                     },
                 ],

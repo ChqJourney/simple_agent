@@ -1,10 +1,10 @@
 import { ReferenceLibraryRoot } from '../types';
-import { buildBackendAuthHeaders, getBackendAuthToken } from './backendAuth';
 import {
   backendReferenceIndexBuildProgressUrl,
   backendReferenceIndexBuildUrl,
   backendReferenceIndexStatusUrl,
 } from './backendEndpoint';
+import { fetchWithBackendAuth } from './backendRequest';
 
 export type ReferenceIndexStatusState = 'missing_root' | 'ready' | 'stale';
 export type ReferenceIndexBuildMode = 'incremental' | 'rebuild';
@@ -90,14 +90,6 @@ interface ReferenceIndexBuildProgressResponse {
   progress?: ReferenceIndexBuildProgress;
 }
 
-async function getAuthToken(): Promise<string> {
-  const authToken = await getBackendAuthToken({ isTestMode: import.meta.env.MODE === 'test' });
-  if (!authToken) {
-    throw new Error('Backend auth handshake failed');
-  }
-  return authToken;
-}
-
 function buildRootPayload(root: Pick<ReferenceLibraryRoot, 'id' | 'path'>): Record<string, string> {
   return {
     root_id: root.id,
@@ -108,12 +100,10 @@ function buildRootPayload(root: Pick<ReferenceLibraryRoot, 'id' | 'path'>): Reco
 export async function fetchReferenceIndexStatus(
   root: Pick<ReferenceLibraryRoot, 'id' | 'path'>
 ): Promise<ReferenceIndexStatus> {
-  const authToken = await getAuthToken();
-  const response = await fetch(backendReferenceIndexStatusUrl, {
+  const response = await fetchWithBackendAuth(backendReferenceIndexStatusUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...buildBackendAuthHeaders(authToken),
     },
     body: JSON.stringify(buildRootPayload(root)),
   });
@@ -129,12 +119,10 @@ export async function startReferenceIndexBuild(
   root: Pick<ReferenceLibraryRoot, 'id' | 'path'>,
   mode: ReferenceIndexBuildMode = 'incremental'
 ): Promise<ReferenceIndexBuildProgress> {
-  const authToken = await getAuthToken();
-  const response = await fetch(backendReferenceIndexBuildUrl, {
+  const response = await fetchWithBackendAuth(backendReferenceIndexBuildUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...buildBackendAuthHeaders(authToken),
     },
     body: JSON.stringify({
       ...buildRootPayload(root),
@@ -150,12 +138,10 @@ export async function startReferenceIndexBuild(
 }
 
 export async function fetchReferenceIndexBuildProgress(buildId: string): Promise<ReferenceIndexBuildProgress> {
-  const authToken = await getAuthToken();
-  const response = await fetch(backendReferenceIndexBuildProgressUrl, {
+  const response = await fetchWithBackendAuth(backendReferenceIndexBuildProgressUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...buildBackendAuthHeaders(authToken),
     },
     body: JSON.stringify({ build_id: buildId }),
   });

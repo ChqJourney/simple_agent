@@ -151,6 +151,13 @@ class BaseLLM(ABC):
 
         return parsed if parsed > 0 else default
 
+    def _get_reasoning_mode(self) -> str:
+        value = self.config.get("reasoning_mode")
+        normalized = str(value or "").strip().lower()
+        if normalized in {"default", "on", "off"}:
+            return normalized
+        return "on" if bool(self.config.get("enable_reasoning", False)) else "default"
+
     @staticmethod
     def _coerce_usage_field(raw_usage: Any, field: str) -> Optional[int]:
         field_aliases = {

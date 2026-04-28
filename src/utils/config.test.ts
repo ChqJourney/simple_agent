@@ -265,7 +265,7 @@ describe("normalizeProviderConfig", () => {
     expect(resolveProfileForRole(normalized, "delegated_task")?.provider).toBe("deepseek");
   });
 
-  it("computes conversation image capability from the conversation role profile", () => {
+  it("defaults unknown image capability to text-only mode", () => {
     const normalized = normalizeProviderConfig({
       provider: "openai",
       model: "gpt-4o",
@@ -292,10 +292,24 @@ describe("normalizeProviderConfig", () => {
       },
     });
 
-    expect(resolveCapabilitySummaryForRole(normalized, "conversation").supportedInputTypes).toEqual(["text", "image"]);
+    expect(resolveCapabilitySummaryForRole(normalized, "conversation").supportedInputTypes).toEqual(["text"]);
     expect(resolveCapabilitySummaryForRole(normalized, "background").supportedInputTypes).toEqual(["text"]);
-    expect(supportsImageAttachmentsForRole(normalized, "conversation")).toBe(true);
+    expect(supportsImageAttachmentsForRole(normalized, "conversation")).toBe(false);
     expect(supportsImageAttachmentsForRole(normalized, "background")).toBe(false);
+  });
+
+  it("allows manual image mode when provider metadata is unknown", () => {
+    const normalized = normalizeProviderConfig({
+      provider: "openai",
+      model: "gpt-4o",
+      api_key: "test-key",
+      base_url: "https://api.openai.com/v1",
+      enable_reasoning: false,
+      input_type: "image",
+    });
+
+    expect(resolveCapabilitySummaryForRole(normalized, "conversation").supportedInputTypes).toEqual(["text", "image"]);
+    expect(supportsImageAttachmentsForRole(normalized, "conversation")).toBe(true);
   });
 
   it("prefers live provider catalog metadata for supported input types", () => {

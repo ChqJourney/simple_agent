@@ -39,8 +39,8 @@ describe("listProviderModels", () => {
     const models = await listProviderModels("openai", "https://api.openai.com/v1", "key");
 
     expect(models).toEqual([
-      { id: "gpt-4.1-mini", context_length: 128000, supports_image_in: true },
-      { id: "gpt-4.1", supports_image_in: false },
+      { id: "gpt-4.1-mini", context_length: 128000, supports_image_in: true, image_support: "supported" },
+      { id: "gpt-4.1", supports_image_in: false, image_support: "unsupported" },
     ]);
   });
 

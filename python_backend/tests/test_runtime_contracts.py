@@ -89,7 +89,7 @@ class RuntimeContractTests(unittest.TestCase):
                 "model": "MiniMax-M2.7",
                 "enable_reasoning": True,
                 "expected_base_url": "https://api.minimaxi.com/v1",
-                "expected_enable_reasoning": False,
+                "expected_enable_reasoning": True,
             },
         ]
 
@@ -234,7 +234,7 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual(20, execution_spec["runtime"]["max_tool_rounds"])
         self.assertEqual(120, execution_spec["runtime"]["timeout_seconds"])
         self.assertEqual(["text"], execution_spec["capability_summary"]["supported_input_types"])
-        self.assertFalse(execution_spec["capability_summary"]["reasoning_supported"])
+        self.assertEqual("unknown", execution_spec["capability_summary"]["reasoning_support"])
 
     def test_build_execution_spec_clamps_runtime_when_it_exceeds_known_model_limits(self) -> None:
         normalized = normalize_runtime_config(

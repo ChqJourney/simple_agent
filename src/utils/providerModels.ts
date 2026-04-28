@@ -1,6 +1,6 @@
-import { buildBackendAuthHeaders, getBackendAuthToken } from './backendAuth';
 import { backendProviderModelsUrl } from './backendEndpoint';
 import { InputType, ProviderCatalogModel, ProviderType } from '../types';
+import { fetchWithBackendAuth } from './backendRequest';
 
 interface ProviderModelsResponse {
   ok?: boolean;
@@ -13,6 +13,16 @@ const PROVIDER_MODELS_TIMEOUT_MS = 10000;
 function deriveSupportsImageInput(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') {
     return value;
+  }
+  return undefined;
+}
+
+function normalizeImageSupport(value: unknown): ProviderCatalogModel['image_support'] | undefined {
+  if (value === 'supported' || value === 'unsupported' || value === 'unknown') {
+    return value;
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'supported' : 'unsupported';
   }
   return undefined;
 }
@@ -55,7 +65,24 @@ function normalizeContextLength(value: unknown): number | undefined {
     : undefined;
 }
 
-function normalizeProviderCatalogModel(model: unknown): ProviderCatalogModel | null {
+function normalizeReasoningSupport(value: unknown): ProviderCatalogModel['reasoning_support'] | undefined {
+  if (value === 'supported' || value === 'unsupported' || value === 'unknown') {
+    return value;
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'supported' : 'unsupported';
+  }
+  return undefined;
+}
+
+function normalizeReasoningToggle(value: unknown): ProviderCatalogModel['reasoning_toggle'] | undefined {
+  if (value === 'can_toggle' || value === 'fixed_on' || value === 'fixed_off' || value === 'unknown') {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeProviderCatalogModel(_provider: ProviderType, model: unknown): ProviderCatalogModel | null {
   if (typeof model === 'string') {
     const id = model.trim();
     return id ? { id } : null;
@@ -85,16 +112,46 @@ function normalizeProviderCatalogModel(model: unknown): ProviderCatalogModel | n
       ?? candidate.modalities
       ?? candidate.supported_inputs
     );
+  const imageSupport = normalizeImageSupport(
+    candidate.image_support
+    ?? candidate.input_support
+    ?? candidate.supports_image_in
+  ) ?? (
+    typeof supportsImageInput === 'boolean'
+      ? (supportsImageInput ? 'supported' : 'unsupported')
+      : undefined
+  );
+  const contextLength = normalizeContextLength(
+    candidate.context_length
+    ?? candidate.context_window
+    ?? candidate.max_context_length
+    ?? candidate.input_token_limit
+  );
+  const reasoningSupport = normalizeReasoningSupport(
+    candidate.reasoning_support
+    ?? candidate.reasoning_supported
+    ?? candidate.supports_reasoning
+    ?? candidate.supportsReasoning
+    ?? (typeof candidate.capabilities === 'object' && candidate.capabilities !== null
+      ? (candidate.capabilities as Record<string, unknown>).reasoning
+      : undefined)
+  );
+  const reasoningToggle = normalizeReasoningToggle(
+    candidate.reasoning_toggle
+    ?? candidate.reasoning_mode
+    ?? candidate.reasoning_control
+    ?? (typeof candidate.capabilities === 'object' && candidate.capabilities !== null
+      ? (candidate.capabilities as Record<string, unknown>).reasoning_toggle
+      : undefined)
+  );
 
   return {
     id,
-    context_length: normalizeContextLength(
-      candidate.context_length
-      ?? candidate.context_window
-      ?? candidate.max_context_length
-      ?? candidate.input_token_limit
-    ),
-    supports_image_in: supportsImageInput,
+    ...(typeof contextLength === 'number' ? { context_length: contextLength } : {}),
+    ...(typeof supportsImageInput === 'boolean' ? { supports_image_in: supportsImageInput } : {}),
+    ...(imageSupport ? { image_support: imageSupport } : {}),
+    ...(reasoningSupport ? { reasoning_support: reasoningSupport } : {}),
+    ...(reasoningToggle ? { reasoning_toggle: reasoningToggle } : {}),
   };
 }
 
@@ -104,11 +161,6 @@ export async function listProviderModels(
   apiKey: string,
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<ProviderCatalogModel[]> {
-  const authToken = await getBackendAuthToken({ isTestMode: import.meta.env.MODE === 'test' });
-  if (!authToken) {
-    throw new Error('Backend auth handshake failed');
-  }
-
   const requestController = new AbortController();
   const timeoutMs = options.timeoutMs ?? PROVIDER_MODELS_TIMEOUT_MS;
   const timeoutId = timeoutMs > 0
@@ -129,11 +181,10 @@ export async function listProviderModels(
   }
 
   try {
-    const response = await fetch(backendProviderModelsUrl, {
+    const response = await fetchWithBackendAuth(backendProviderModelsUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...buildBackendAuthHeaders(authToken),
       },
       body: JSON.stringify({
         provider,
@@ -141,6 +192,8 @@ export async function listProviderModels(
         api_key: apiKey,
       }),
       signal: requestController.signal,
+    }, {
+      isTestMode: import.meta.env.MODE === 'test',
     });
 
     if (response.status === 404) {
@@ -155,7 +208,7 @@ export async function listProviderModels(
 
     const models = Array.isArray(payload.models) ? payload.models : [];
     return models
-      .map((model) => normalizeProviderCatalogModel(model))
+      .map((model) => normalizeProviderCatalogModel(provider, model))
       .filter((model): model is ProviderCatalogModel => model !== null);
   } catch (error) {
     if (requestController.signal.aborted && !options.signal?.aborted) {

@@ -1,14 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { translate, useI18n } from '../../i18n';
-import { ProviderCatalogModel, ProviderType, ProviderConfig } from '../../types';
+import { InputType, ProviderCatalogModel, ProviderType, ProviderConfig, ReasoningMode } from '../../types';
 import {
   getDefaultContextLength,
-  getImageSupportStatus,
-  ImageSupportStatus,
-  supportsReasoning,
 } from '../../utils/modelCapabilities';
 import { normalizeBaseUrl } from '../../utils/config';
 import { listProviderModels } from '../../utils/providerModels';
+import {
+  canChangeReasoningMode,
+  coerceReasoningModeForModel,
+  resolveReasoningMode,
+  resolveReasoningSupportStatus,
+  resolveReasoningToggleStatus,
+  toLegacyEnableReasoning,
+} from '../../utils/reasoningConfig';
+import {
+  coerceInputTypeForModel,
+  resolveConfiguredInputType,
+  resolveImageSupportStatus,
+} from '../../utils/imageConfig';
 import { CustomSelect } from '../common';
 
 interface ProviderConfigProps {
@@ -50,19 +60,23 @@ const BUILT_IN_MODELS: Record<ProviderType, string[]> = {
   qwen: ['qwen3-max-2026-01-23', 'qwen3.5-plus-2026-02-15','qwen3.5-plus', 'qwen3-coder-next'],
 };
 
-function getImageSupportBadge(status: ImageSupportStatus): string {
+function getImageSupportBadge(status: ProviderCatalogModel['image_support']): string {
   switch (status) {
     case 'supported':
       return 'supported';
+    case 'unknown':
+      return 'unknown';
     default:
       return 'unsupported';
   }
 }
 
-function getImageSupportDescription(status: ImageSupportStatus, t: ReturnType<typeof useI18n>['t']): string {
+function getImageSupportDescription(status: ProviderCatalogModel['image_support'], t: ReturnType<typeof useI18n>['t']): string {
   switch (status) {
     case 'supported':
       return t('settings.provider.imageSupportedDesc');
+    case 'unknown':
+      return t('settings.provider.imageUnknownDesc');
     default:
       return t('settings.provider.imageUnsupportedDesc');
   }
@@ -97,25 +111,13 @@ function formatContextLength(contextLength: number): string {
   return String(contextLength);
 }
 
-function resolveImageSupportStatus(
-  provider: ProviderType,
-  modelName: string,
-  metadata?: ProviderCatalogModel
-): ImageSupportStatus {
-  if (typeof metadata?.supports_image_in === 'boolean') {
-    return metadata.supports_image_in ? 'supported' : 'unsupported';
-  }
-
-  return getImageSupportStatus(provider, modelName);
-}
-
 function buildModelHint(
-  provider: ProviderType,
-  modelName: string,
+  _provider: ProviderType,
+  _modelName: string,
   t: ReturnType<typeof useI18n>['t'],
   metadata?: ProviderCatalogModel
 ): string {
-  const imageSupportStatus = resolveImageSupportStatus(provider, modelName, metadata);
+  const imageSupportStatus = resolveImageSupportStatus(metadata);
   const parts = [
     t(
       `settings.provider.image${getImageSupportBadge(imageSupportStatus).charAt(0).toUpperCase()}${getImageSupportBadge(imageSupportStatus).slice(1)}`
@@ -131,6 +133,61 @@ function buildModelHint(
   }
 
   return parts.join(' · ');
+}
+
+function getReasoningSupportBadge(
+  metadata: ProviderCatalogModel | undefined,
+  t: ReturnType<typeof useI18n>['t']
+): string {
+  const support = resolveReasoningSupportStatus(metadata);
+  if (support === 'supported') {
+    return t('common.supported');
+  }
+  if (support === 'unsupported') {
+    return t('common.unsupported');
+  }
+  return t('common.unknown');
+}
+
+function getReasoningHint(
+  metadata: ProviderCatalogModel | undefined,
+  t: ReturnType<typeof useI18n>['t']
+): string {
+  const support = resolveReasoningSupportStatus(metadata);
+  const toggle = resolveReasoningToggleStatus(metadata);
+
+  if (toggle === 'fixed_on') {
+    return t('settings.provider.reasoningFixedOnHint');
+  }
+  if (toggle === 'fixed_off' || support === 'unsupported') {
+    return t('settings.provider.reasoningUnsupportedHint');
+  }
+  if (toggle === 'can_toggle') {
+    return t('settings.provider.reasoningToggleHint');
+  }
+  if (support === 'unknown') {
+    return t('settings.provider.reasoningUnknownHint');
+  }
+  return t('settings.provider.reasoningToggleHint');
+}
+
+function getInputModeHint(
+  inputType: InputType,
+  metadata: ProviderCatalogModel | undefined,
+  t: ReturnType<typeof useI18n>['t']
+): string {
+  const support = resolveImageSupportStatus(metadata);
+  if (support === 'unsupported') {
+    return t('settings.provider.imageUnsupportedHint');
+  }
+  if (support === 'unknown') {
+    return inputType === 'image'
+      ? t('settings.provider.imageManualEnabledHint')
+      : t('settings.provider.imageUnknownHint');
+  }
+  return inputType === 'image'
+    ? t('settings.provider.imageModeImageHint')
+    : t('settings.provider.imageModeTextHint');
 }
 
 function fieldIdPrefix(title?: string): string {
@@ -176,20 +233,41 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
       provider,
       model: '',
       enable_reasoning: false,
+      reasoning_mode: 'default',
+      input_type: 'text',
     });
   };
 
   const handleModelChange = (model: string) => {
-    const reasoningEnabled = provider ? supportsReasoning(provider, model) : false;
+    const selectedMetadata = provider ? dynamicModels.find((entry) => entry.id === model) : undefined;
+    const reasoningMode = coerceReasoningModeForModel(resolveReasoningMode(config), selectedMetadata);
+    const inputType = resolveConfiguredInputType(config, selectedMetadata);
     onChange({
       ...config,
       model,
-      enable_reasoning: reasoningEnabled,
+      enable_reasoning: toLegacyEnableReasoning(reasoningMode),
+      reasoning_mode: reasoningMode,
+      input_type: inputType,
     });
   };
 
-  const canShowReasoningToggle = Boolean(provider && config.model);
-  const reasoningSupported = Boolean(provider && config.model && supportsReasoning(provider, config.model));
+  const handleReasoningModeChange = (value: string) => {
+    const nextMode = coerceReasoningModeForModel(value as ReasoningMode, selectedModelMetadata);
+    onChange({
+      ...config,
+      reasoning_mode: nextMode,
+      enable_reasoning: toLegacyEnableReasoning(nextMode),
+    });
+  };
+  const handleInputTypeChange = (value: string) => {
+    const nextInputType = coerceInputTypeForModel(value as InputType, selectedModelMetadata);
+    onChange({
+      ...config,
+      input_type: nextInputType,
+    });
+  };
+
+  const canShowReasoningMode = Boolean(provider && config.model);
   const builtInModels = provider ? BUILT_IN_MODELS[provider] : [];
   const resolvedBaseUrl = provider
     ? normalizeBaseUrl(provider, config.base_url || '')
@@ -258,9 +336,10 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
   const selectedModelMetadata = provider && config.model
     ? dynamicModelMap.get(config.model)
     : undefined;
-  const selectedImageSupport = provider && config.model
-    ? resolveImageSupportStatus(provider, config.model, selectedModelMetadata)
-    : 'unsupported';
+  const reasoningMode = coerceReasoningModeForModel(resolveReasoningMode(config), selectedModelMetadata);
+  const reasoningModeDisabled = !canChangeReasoningMode(selectedModelMetadata);
+  const selectedImageSupport = resolveImageSupportStatus(selectedModelMetadata);
+  const selectedInputType = resolveConfiguredInputType(config, selectedModelMetadata);
   const selectedContextLength = provider && config.model
     ? selectedModelMetadata?.context_length ?? getDefaultContextLength(provider, config.model)
     : undefined;
@@ -317,6 +396,35 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
       ? 'text-amber-600 dark:text-amber-400'
       : 'text-gray-500 dark:text-gray-400';
   const canApplyCustomModel = customModelInput.trim().length > 0 && customModelInput.trim() !== (config.model || '');
+  const reasoningModeOptions = [
+    {
+      value: 'default',
+      label: t('settings.provider.reasoningModeDefault'),
+      hint: t('settings.provider.reasoningModeDefaultHint'),
+    },
+    {
+      value: 'on',
+      label: t('settings.provider.reasoningModeOn'),
+      hint: t('settings.provider.reasoningModeOnHint'),
+    },
+    {
+      value: 'off',
+      label: t('settings.provider.reasoningModeOff'),
+      hint: t('settings.provider.reasoningModeOffHint'),
+    },
+  ];
+  const inputTypeOptions = [
+    {
+      value: 'text',
+      label: t('settings.provider.inputModeText'),
+      hint: t('settings.provider.inputModeTextHint'),
+    },
+    {
+      value: 'image',
+      label: t('settings.provider.inputModeImage'),
+      hint: t('settings.provider.inputModeImageHint'),
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -445,19 +553,63 @@ export const ProviderConfigForm: React.FC<ProviderConfigProps> = ({
             />
           </div>
 
-          {showReasoningToggle && canShowReasoningToggle && (
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id={`${idPrefix}-enable-reasoning`}
-                checked={reasoningSupported ? (config.enable_reasoning ?? false) : false}
-                onChange={(e) => handleChange('enable_reasoning', e.target.checked)}
-                disabled={!reasoningSupported}
-                className="rounded border-gray-300 dark:border-gray-600"
-              />
-              <label htmlFor={`${idPrefix}-enable-reasoning`} className="text-sm text-gray-700 dark:text-gray-300">
-                {t('settings.provider.enableReasoning')}
-              </label>
+          {showReasoningToggle && canShowReasoningMode && (
+            <div className="space-y-2">
+              <div>
+                <label
+                  id={`${idPrefix}-reasoning-mode-label`}
+                  className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {t('settings.provider.reasoningMode')}
+                </label>
+                <CustomSelect
+                  ariaLabel={`${title || 'Model'} Reasoning Mode`}
+                  ariaLabelledBy={`${idPrefix}-reasoning-mode-label`}
+                  value={reasoningMode}
+                  onChange={handleReasoningModeChange}
+                  options={reasoningModeOptions}
+                  disabled={reasoningModeDisabled}
+                />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t('settings.provider.reasoningSupportLabel', {
+                  value: getReasoningSupportBadge(selectedModelMetadata, t),
+                })}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {getReasoningHint(selectedModelMetadata, t)}
+              </p>
+            </div>
+          )}
+
+          {provider && config.model && (
+            <div className="space-y-2">
+              <div>
+                <label
+                  id={`${idPrefix}-input-mode-label`}
+                  className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {t('settings.provider.inputMode')}
+                </label>
+                <CustomSelect
+                  ariaLabel={`${title || 'Model'} Input Mode`}
+                  ariaLabelledBy={`${idPrefix}-input-mode-label`}
+                  value={selectedInputType}
+                  onChange={handleInputTypeChange}
+                  options={inputTypeOptions}
+                  disabled={selectedImageSupport === 'unsupported'}
+                />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t('settings.provider.imageSupportLabel', {
+                  value: t(
+                    `settings.provider.image${getImageSupportBadge(selectedImageSupport).charAt(0).toUpperCase()}${getImageSupportBadge(selectedImageSupport).slice(1)}`
+                  ),
+                })}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {getInputModeHint(selectedInputType, selectedModelMetadata, t)}
+              </p>
             </div>
           )}
 

@@ -10,6 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.user import Message, Session
 from llms.openai import OpenAILLM
+from llms.deepseek import DeepSeekLLM
 from llms.glm import GLMLLM
 from llms.kimi import KimiLLM
 from llms.minimax import MiniMaxLLM
@@ -51,7 +52,7 @@ class ProviderReasoningRequestTests(unittest.IsolatedAsyncioTestCase):
             'model': 'gpt-4o',
             'api_key': 'test-key',
             'base_url': 'https://api.openai.com/v1',
-            'enable_reasoning': True,
+            'reasoning_mode': 'default',
         })
         llm.client.chat.completions.create = AsyncMock(return_value=empty_stream())
 
@@ -97,7 +98,7 @@ class ProviderReasoningRequestTests(unittest.IsolatedAsyncioTestCase):
             'model': 'kimi-k2.5',
             'api_key': 'test-key',
             'base_url': 'https://api.moonshot.cn/v1',
-            'enable_reasoning': False,
+            'reasoning_mode': 'off',
         })
         llm.client.chat.completions.create = AsyncMock(return_value=empty_stream())
 
@@ -167,6 +168,36 @@ class ProviderReasoningRequestTests(unittest.IsolatedAsyncioTestCase):
             {'thinking': {'type': 'enabled', 'clear_thinking': False}, 'tool_stream': True},
             kwargs.get('extra_body'),
         )
+
+    async def test_deepseek_v4_reasoning_model_sends_thinking_toggle(self) -> None:
+        llm = DeepSeekLLM({
+            'model': 'deepseek-v4-pro',
+            'api_key': 'test-key',
+            'base_url': 'https://api.deepseek.com',
+            'enable_reasoning': True,
+        })
+        llm.client.chat.completions.create = AsyncMock(return_value=empty_stream())
+
+        async for _ in llm.stream([{'role': 'user', 'content': 'hello'}], None):
+            pass
+
+        kwargs = llm.client.chat.completions.create.await_args.kwargs
+        self.assertEqual({'thinking': {'type': 'enabled'}}, kwargs.get('extra_body'))
+
+    async def test_deepseek_v4_non_reasoning_request_sends_disabled_thinking(self) -> None:
+        llm = DeepSeekLLM({
+            'model': 'deepseek-v4-pro',
+            'api_key': 'test-key',
+            'base_url': 'https://api.deepseek.com',
+            'reasoning_mode': 'off',
+        })
+        llm.client.chat.completions.create = AsyncMock(return_value=empty_stream())
+
+        async for _ in llm.stream([{'role': 'user', 'content': 'hello'}], None):
+            pass
+
+        kwargs = llm.client.chat.completions.create.await_args.kwargs
+        self.assertEqual({'thinking': {'type': 'disabled'}}, kwargs.get('extra_body'))
 
     async def test_minimax_request_enables_reasoning_split(self) -> None:
         llm = MiniMaxLLM({

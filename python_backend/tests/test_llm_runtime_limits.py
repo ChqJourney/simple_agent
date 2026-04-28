@@ -94,12 +94,12 @@ class LLMRuntimeLimitTests(unittest.TestCase):
 
     def test_kimi_request_uses_role_specific_temperature(self) -> None:
         cases = [
-            (True, 1.0),
-            (False, 0.6),
+            ({"enable_reasoning": True}, 1.0),
+            ({"reasoning_mode": "off"}, 0.6),
         ]
 
-        for enable_reasoning, expected_temperature in cases:
-            with self.subTest(enable_reasoning=enable_reasoning):
+        for overrides, expected_temperature in cases:
+            with self.subTest(overrides=overrides):
                 llm = KimiLLM(
                     {
                         "provider": "kimi",
@@ -107,7 +107,7 @@ class LLMRuntimeLimitTests(unittest.TestCase):
                         "api_key": "test-key",
                         "base_url": "https://api.moonshot.cn/v1",
                         "max_output_tokens": 144,
-                        "enable_reasoning": enable_reasoning,
+                        **overrides,
                     }
                 )
 

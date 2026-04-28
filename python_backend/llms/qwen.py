@@ -5,7 +5,6 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from .base import BaseLLM
-from .capabilities import supports_reasoning
 
 __all__ = ['QwenLLM']
 
@@ -17,7 +16,6 @@ class QwenLLM(BaseLLM):
         base_url = config.get('base_url', QWEN_DEFAULT_BASE_URL)
         config_with_defaults = {**config, 'base_url': base_url}
         super().__init__(config_with_defaults)
-        self.enable_reasoning = bool(config.get('enable_reasoning', False))
         self.http_client = httpx.AsyncClient(timeout=self._get_timeout_seconds())
         self.client = AsyncOpenAI(
             api_key=self.api_key,
@@ -43,9 +41,10 @@ class QwenLLM(BaseLLM):
         max_output_tokens = self._get_max_output_tokens()
         if max_output_tokens is not None:
             kwargs['max_tokens'] = max_output_tokens
-        if supports_reasoning('qwen', self.model):
+        reasoning_mode = self._get_reasoning_mode()
+        if reasoning_mode in {'on', 'off'}:
             kwargs['extra_body'] = {
-                'enable_thinking': self.enable_reasoning,
+                'enable_thinking': reasoning_mode == 'on',
             }
         return kwargs
 

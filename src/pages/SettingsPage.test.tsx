@@ -153,16 +153,19 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("button", { name: "Change Background Model" })).toBeTruthy();
     expect(screen.getAllByText("Current provider").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Current model").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Image support").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Input mode").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Thinking support").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Thinking enabled").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Unsupported").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Disabled").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Thinking mode").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Follow provider default").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Text only").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText("Enable reasoning")).toBeNull();
 
     openModelEditor("Change Primary Model");
     expect(screen.getByRole("dialog", { name: "Change Primary Model" })).toBeTruthy();
     expect(screen.getByLabelText("Primary Model Provider")).toBeTruthy();
-    expect(screen.getByLabelText("Enable reasoning")).toBeTruthy();
+    expect(screen.getByLabelText("Primary Model Reasoning Mode")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     expect(screen.queryByRole("dialog", { name: "Change Primary Model" })).toBeNull();
 
@@ -431,9 +434,6 @@ describe("SettingsPage", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText("Reading standard document metadata and scope: IEC-60335-1.pdf")).toBeTruthy();
-    expect(screen.getByText("3/12 standard documents processed")).toBeTruthy();
-
     await act(async () => {
       vi.advanceTimersByTime(800);
       await Promise.resolve();
@@ -602,15 +602,13 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Test Primary Connection" }));
 
     await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-            "X-Tauri-Agent-Auth": "test-auth-token",
-          }),
-        })
-      );
+      expect(globalThis.fetch).toHaveBeenCalled();
+      const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+      expect(init).toBeTruthy();
+      expect(init?.headers).toBeInstanceOf(Headers);
+      const headers = init?.headers as Headers;
+      expect(headers.get("Content-Type")).toBe("application/json");
+      expect(headers.get("X-Tauri-Agent-Auth")).toBe("test-auth-token");
     });
   });
 
@@ -657,10 +655,10 @@ describe("SettingsPage", () => {
     openSelect("Primary Model Model");
     const modelOptions = listOpenOptions();
 
-    expect(modelOptions.some((option) => option.includes("gpt-4o") && option.includes("Images"))).toBe(true);
-    expect(modelOptions.some((option) => option.includes("gpt-4-turbo") && option.includes("Text only"))).toBe(true);
-    expect(modelOptions.some((option) => option.includes("o1-preview") && option.includes("Text only"))).toBe(true);
-    expect(screen.getAllByText("Image input is supported for this model.").length).toBeGreaterThan(0);
+    expect(modelOptions.some((option) => option.includes("gpt-4o") && option.includes("Unknown"))).toBe(true);
+    expect(modelOptions.some((option) => option.includes("gpt-4-turbo") && option.includes("Unknown"))).toBe(true);
+    expect(modelOptions.some((option) => option.includes("o1-preview") && option.includes("Unknown"))).toBe(true);
+    expect(screen.getAllByText("Image support is unknown, so the app keeps image input disabled by default.").length).toBeGreaterThan(0);
   });
 
   it("saves context provider settings through normalized config", () => {

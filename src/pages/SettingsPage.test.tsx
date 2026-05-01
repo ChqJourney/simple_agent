@@ -717,6 +717,46 @@ describe("SettingsPage", () => {
     );
   });
 
+  it("loads tools only after opening the tools tab", async () => {
+    render(<SettingsPage />);
+
+    expect(listToolsMock).not.toHaveBeenCalled();
+
+    openTab("Tools");
+
+    await waitFor(() => {
+      expect(listToolsMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByText("file_read")).toBeTruthy();
+    expect(screen.getByText("skill_loader")).toBeTruthy();
+  });
+
+  it("retries loading tools when returning to the tools tab after a failure", async () => {
+    listToolsMock
+      .mockRejectedValueOnce(new Error("tools unavailable"))
+      .mockResolvedValueOnce([
+        {
+          name: "file_write",
+          description: "Write a file in the workspace.",
+        },
+      ]);
+
+    render(<SettingsPage />);
+
+    openTab("Tools");
+
+    expect(await screen.findByText("tools unavailable")).toBeTruthy();
+    expect(listToolsMock).toHaveBeenCalledTimes(1);
+
+    openTab("Runtime");
+    openTab("Tools");
+
+    await waitFor(() => {
+      expect(listToolsMock).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText("file_write")).toBeTruthy();
+  });
+
   it("saves role-specific runtime overrides alongside shared runtime defaults", () => {
     render(<SettingsPage />);
 

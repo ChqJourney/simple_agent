@@ -176,6 +176,7 @@ export const SettingsPage: React.FC = () => {
   const [referenceLibraryError, setReferenceLibraryError] = useState<string | null>(null);
   const [referenceIndexStates, setReferenceIndexStates] = useState<Record<string, ReferenceIndexUiState>>({});
   const isMountedRef = useRef(true);
+  const toolsLoadedRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const settingsTabs: Array<{ value: SettingsTab; label: string; description: string }> = [
     { value: 'model', label: t('settings.tab.model'), description: t('settings.tab.modelDescription') },
@@ -298,6 +299,14 @@ export const SettingsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (activeTab !== 'tools') {
+      return undefined;
+    }
+
+    if (toolsLoadedRef.current && !toolsError) {
+      return undefined;
+    }
+
     let cancelled = false;
 
     const loadTools = async () => {
@@ -306,10 +315,12 @@ export const SettingsPage: React.FC = () => {
       try {
         const toolCatalog = await listTools();
         if (!cancelled) {
+          toolsLoadedRef.current = true;
           setTools(toolCatalog);
         }
       } catch (error) {
         if (!cancelled) {
+          toolsLoadedRef.current = false;
           setToolsError(error instanceof Error ? error.message : t('settings.error.loadTools'));
           setTools([]);
         }
@@ -324,7 +335,7 @@ export const SettingsPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeTab]);
 
   const primaryProfile: Partial<ModelProfile> = draftConfig.profiles?.primary || draftConfig;
   const backgroundProfile: Partial<ModelProfile> = draftConfig.profiles?.background || {};

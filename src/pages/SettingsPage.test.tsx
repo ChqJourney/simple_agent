@@ -439,8 +439,9 @@ describe("SettingsPage", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    vi.useRealTimers();
 
-    expect(screen.getByText("Index updated: 4 created, 1 updated, 0 removed.")).toBeTruthy();
+    expect(await screen.findByText("Index updated: 4 created, 1 updated, 0 removed.")).toBeTruthy();
   });
 
   it("shows default runtime values when runtime config is missing", () => {
